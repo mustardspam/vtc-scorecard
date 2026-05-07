@@ -598,7 +598,10 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 -- ============================================================
 -- Run in Supabase dashboard: create a public bucket called 'uploads'
 -- Or use the SQL below:
-INSERT INTO storage.buckets (id, name, public) VALUES ('uploads', 'uploads', false);
+INSERT INTO storage.buckets (id, name, public) VALUES ('uploads', 'uploads', false) ON CONFLICT (id) DO NOTHING;
+
+DROP POLICY IF EXISTS storage_uploads_insert ON storage.objects;
+DROP POLICY IF EXISTS storage_uploads_select ON storage.objects;
 
 CREATE POLICY storage_uploads_insert ON storage.objects FOR INSERT WITH CHECK (
   bucket_id = 'uploads' AND auth.uid() IS NOT NULL
