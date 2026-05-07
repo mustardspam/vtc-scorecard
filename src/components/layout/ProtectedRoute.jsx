@@ -14,8 +14,19 @@ export default function ProtectedRoute({ children, allowedRoles }) {
 
   if (!user) return <Navigate to="/login" replace />
 
-  if (allowedRoles && !allowedRoles.includes(profile?.role)) {
-    if (profile?.role === 'builder') return <Navigate to="/feedback/submit" replace />
+  if (!profile) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto" />
+          <p className="mt-4 text-sm text-gray-500">Loading profile...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (allowedRoles && !allowedRoles.includes(profile.role)) {
+    if (profile.role === 'builder') return <Navigate to="/feedback/submit" replace />
     return <Navigate to="/dashboard" replace />
   }
 

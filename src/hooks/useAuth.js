@@ -7,11 +7,21 @@ export const useAuth = create((set, get) => ({
   loading: true,
 
   initialize: async () => {
-    const { data: { session } } = await supabase.auth.getSession()
-    if (session?.user) {
-      const profile = await get().fetchProfile(session.user.id)
-      set({ user: session.user, profile, loading: false })
-    } else {
+    try {
+      const { data: { session }, error } = await supabase.auth.getSession()
+      if (error) {
+        console.error('Auth session error:', error)
+        set({ loading: false })
+        return
+      }
+      if (session?.user) {
+        const profile = await get().fetchProfile(session.user.id)
+        set({ user: session.user, profile, loading: false })
+      } else {
+        set({ loading: false })
+      }
+    } catch (err) {
+      console.error('Auth initialize error:', err)
       set({ loading: false })
     }
 
@@ -26,11 +36,12 @@ export const useAuth = create((set, get) => ({
   },
 
   fetchProfile: async (userId) => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('profiles')
       .select('*')
       .eq('id', userId)
       .single()
+    if (error) console.error('Profile fetch error:', error)
     return data
   },
 
