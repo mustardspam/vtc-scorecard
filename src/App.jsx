@@ -1,0 +1,73 @@
+import { useEffect } from 'react'
+import { Routes, Route, Navigate } from 'react-router-dom'
+import { useAuth } from './hooks/useAuth'
+import AppLayout from './components/layout/AppLayout'
+import ProtectedRoute from './components/layout/ProtectedRoute'
+import LoginPage from './pages/LoginPage'
+import DashboardPage from './pages/DashboardPage'
+import ScoresPage from './pages/ScoresPage'
+import FeedbackPage from './pages/FeedbackPage'
+import BuilderFeedbackPage from './pages/BuilderFeedbackPage'
+import UploadsPage from './pages/UploadsPage'
+import SnapshotsPage from './pages/SnapshotsPage'
+import ActivityPage from './pages/ActivityPage'
+import AdminPage from './pages/AdminPage'
+
+export default function App() {
+  const { initialize, loading } = useAuth()
+
+  useEffect(() => {
+    initialize()
+  }, [])
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-gray-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mx-auto" />
+          <p className="mt-4 text-sm text-gray-500">Loading...</p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <Routes>
+      <Route path="/login" element={<LoginPage />} />
+
+      <Route path="/feedback/submit" element={
+        <ProtectedRoute allowedRoles={['builder']}>
+          <BuilderFeedbackPage />
+        </ProtectedRoute>
+      } />
+
+      <Route element={
+        <ProtectedRoute allowedRoles={['admin', 'manager', 'viewer']}>
+          <AppLayout />
+        </ProtectedRoute>
+      }>
+        <Route path="/dashboard" element={<DashboardPage />} />
+        <Route path="/scores" element={<ScoresPage />} />
+        <Route path="/feedback" element={
+          <ProtectedRoute allowedRoles={['admin', 'manager']}>
+            <FeedbackPage />
+          </ProtectedRoute>
+        } />
+        <Route path="/uploads" element={
+          <ProtectedRoute allowedRoles={['admin', 'manager']}>
+            <UploadsPage />
+          </ProtectedRoute>
+        } />
+        <Route path="/snapshots" element={<SnapshotsPage />} />
+        <Route path="/activity" element={<ActivityPage />} />
+        <Route path="/admin" element={
+          <ProtectedRoute allowedRoles={['admin']}>
+            <AdminPage />
+          </ProtectedRoute>
+        } />
+      </Route>
+
+      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+    </Routes>
+  )
+}
