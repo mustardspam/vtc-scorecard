@@ -32,7 +32,7 @@ export default function SubmitFeedbackPage() {
       supabase.from('profiles').select('id, full_name, email').eq('role', 'viewer').eq('is_active', true).order('full_name'),
       supabase.from('feedback_point_rules').select('*').order('sort_order'),
       supabase.from('builder_feedback')
-        .select('*, vendors(name), communities(name), cm:profiles!builder_feedback_construction_manager_id_fkey(full_name, email)')
+        .select('*, vendors(name), communities(name)')
         .eq('submitted_by', user.id)
         .order('submitted_at', { ascending: false })
         .limit(20),
@@ -291,7 +291,6 @@ export default function SubmitFeedbackPage() {
                   </div>
                   <p className="text-xs text-gray-500 mt-1 line-clamp-2">{s.description}</p>
                   <p className="text-xs text-gray-400 mt-1">
-                    {s.cm?.full_name && `CM: ${s.cm.full_name} · `}
                     {s.communities?.name && `${s.communities.name} · `}
                     {new Date(s.submitted_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                   </p>
