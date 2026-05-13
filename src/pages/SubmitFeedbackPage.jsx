@@ -29,7 +29,7 @@ export default function SubmitFeedbackPage() {
     const [vRes, cRes, mRes, rRes, sRes] = await Promise.all([
       supabase.from('vendors').select('id, name, vendor_categories(name)').eq('is_active', true).order('name'),
       supabase.from('communities').select('id, name, code').eq('is_active', true).order('name'),
-      supabase.from('profiles').select('id, full_name, email').in('role', ['admin', 'manager']).eq('is_active', true).order('full_name'),
+      supabase.from('profiles').select('id, full_name, email').eq('role', 'viewer').eq('is_active', true).order('full_name'),
       supabase.from('feedback_point_rules').select('*').order('sort_order'),
       supabase.from('builder_feedback')
         .select('*, vendors(name), communities(name), cm:profiles!builder_feedback_construction_manager_id_fkey(full_name, email)')
