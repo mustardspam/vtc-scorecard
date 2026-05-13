@@ -8,9 +8,11 @@ export default function SubmitFeedbackPage() {
   const { user, profile } = useAuth()
   const [vendors, setVendors] = useState([])
   const [communities, setCommunities] = useState([])
+  const [managers, setManagers] = useState([])
   const [rules, setRules] = useState([])
   const [submissions, setSubmissions] = useState([])
   const [form, setForm] = useState({
+    construction_manager_id: '',
     vendor_id: '',
     community_id: '',
     category: '',
@@ -24,18 +26,20 @@ export default function SubmitFeedbackPage() {
   useEffect(() => { loadData() }, [])
 
   async function loadData() {
-    const [vRes, cRes, rRes, sRes] = await Promise.all([
+    const [vRes, cRes, mRes, rRes, sRes] = await Promise.all([
       supabase.from('vendors').select('id, name, vendor_categories(name)').eq('is_active', true).order('name'),
       supabase.from('communities').select('id, name, code').eq('is_active', true).order('name'),
+      supabase.from('profiles').select('id, full_name, email').in('role', ['admin', 'manager']).eq('is_active', true).order('full_name'),
       supabase.from('feedback_point_rules').select('*').order('sort_order'),
       supabase.from('builder_feedback')
-        .select('*, vendors(name), communities(name)')
+        .select('*, vendors(name), communities(name), cm:profiles!builder_feedback_construction_manager_id_fkey(full_name, email)')
         .eq('submitted_by', user.id)
         .order('submitted_at', { ascending: false })
         .limit(20),
     ])
     setVendors(vRes.data || [])
     setCommunities(cRes.data || [])
+    setManagers(mRes.data || [])
     setRules(rRes.data || [])
     setSubmissions(sRes.data || [])
   }
@@ -62,6 +66,7 @@ export default function SubmitFeedbackPage() {
     try {
       const { error: insertError } = await supabase.from('builder_feedback').insert({
         submitted_by: user.id,
+        construction_manager_id: form.construction_manager_id || null,
         vendor_id: form.vendor_id,
         community_id: form.community_id || null,
         category: form.category,
@@ -77,7 +82,7 @@ export default function SubmitFeedbackPage() {
       )
 
       setSuccess(true)
-      setForm({ vendor_id: '', community_id: '', category: '', severity: '', description: '' })
+      setForm({ construction_manager_id: '', vendor_id: '', community_id: '', category: '', severity: '', description: '' })
       loadData()
       setTimeout(() => setSuccess(false), 4000)
     } catch (err) {
@@ -121,6 +126,21 @@ export default function SubmitFeedbackPage() {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-5">
+          {/* Construction Manager */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Construction Manager</label>
+            <select
+              value={form.construction_manager_id}
+              onChange={e => setForm(f => ({ ...f, construction_manager_id: e.target.value }))}
+              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white"
+            >
+              <option value="">— Select construction manager (optional) —</option>
+              {managers.map(m => (
+                <option key={m.id} value={m.id}>{m.full_name || m.email}</option>
+              ))}
+            </select>
+          </div>
+
           {/* Vendor */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">
@@ -271,6 +291,7 @@ export default function SubmitFeedbackPage() {
                   </div>
                   <p className="text-xs text-gray-500 mt-1 line-clamp-2">{s.description}</p>
                   <p className="text-xs text-gray-400 mt-1">
+                    {s.cm?.full_name && `CM: ${s.cm.full_name} · `}
                     {s.communities?.name && `${s.communities.name} · `}
                     {new Date(s.submitted_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                   </p>

@@ -17,7 +17,7 @@ export default function FeedbackPage() {
     setLoading(true)
     let query = supabase
       .from('builder_feedback')
-      .select('*, vendors(name), communities(name), submitted_profile:profiles!builder_feedback_submitted_by_fkey(full_name, email)')
+      .select('*, vendors(name), communities(name), submitted_profile:profiles!builder_feedback_submitted_by_fkey(full_name, email), cm:profiles!builder_feedback_construction_manager_id_fkey(full_name, email)')
       .order('submitted_at', { ascending: false })
 
     if (filter === 'pending') query = query.eq('is_approved', false).is('reviewed_at', null)
@@ -109,8 +109,9 @@ export default function FeedbackPage() {
                   </div>
                   {f.subject && <p className="text-sm font-medium text-gray-700">{f.subject}</p>}
                   <p className="text-sm text-gray-600 mt-1">{f.description}</p>
-                  <div className="flex items-center gap-4 mt-2 text-xs text-gray-400">
+                  <div className="flex items-center gap-4 mt-2 text-xs text-gray-400 flex-wrap">
                     <span>By: {f.submitted_profile?.full_name || f.submitted_profile?.email || 'Unknown'}</span>
+                    {f.cm?.full_name && <span className="text-blue-500 font-medium">CM: {f.cm.full_name}</span>}
                     {f.communities?.name && <span>{f.communities.name}</span>}
                     {f.lot_or_address && <span>{f.lot_or_address}</span>}
                     <span>{new Date(f.submitted_at).toLocaleString()}</span>
