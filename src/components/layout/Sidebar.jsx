@@ -2,13 +2,14 @@ import { NavLink } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import {
   LayoutDashboard, Table2, MessageSquare, Upload, Camera,
-  Activity, Settings, LogOut
+  Activity, Settings, LogOut, Send
 } from 'lucide-react'
 
 const navItems = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', roles: ['admin', 'manager', 'viewer'] },
   { to: '/scores', icon: Table2, label: 'Scores', roles: ['admin', 'manager', 'viewer'] },
-  { to: '/feedback', icon: MessageSquare, label: 'Feedback', roles: ['admin', 'manager'] },
+  { to: '/feedback/submit', icon: Send, label: 'Submit Feedback', roles: ['admin', 'manager', 'viewer'] },
+  { to: '/feedback', icon: MessageSquare, label: 'Feedback Review', roles: ['admin', 'manager'] },
   { to: '/uploads', icon: Upload, label: 'Uploads', roles: ['admin', 'manager'] },
   { to: '/snapshots', icon: Camera, label: 'Snapshots', roles: ['admin', 'manager', 'viewer'] },
   { to: '/activity', icon: Activity, label: 'Activity', roles: ['admin', 'manager', 'viewer'] },
