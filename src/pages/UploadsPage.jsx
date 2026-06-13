@@ -53,6 +53,7 @@ export default function UploadsPage() {
   const [selectedCommunities, setSelectedCommunities] = useState(new Set())
   const [importError, setImportError] = useState(null)
   const [importProgress, setImportProgress] = useState('')
+  const [selectedUnmatched, setSelectedUnmatched] = useState(new Set())
   const { user } = useAuth()
 
   useEffect(() => {
@@ -189,6 +190,8 @@ export default function UploadsPage() {
       const rawNames = [...new Set(rows.map(r => r.vendor_name).filter(Boolean))]
       const matches = matchVendors(rawNames, vendors, aliases, brandRefs)
       setVendorMatches(matches)
+      const unmatched = matches.filter(m => m.source === 'unmatched')
+      setSelectedUnmatched(new Set(unmatched.map(m => m.rawName)))
       const needsReview = matches.some(m => m.needsConfirmation || !m.matchedVendor)
       if (needsReview) { setStep('vendor-match'); return }
     }
@@ -527,6 +530,7 @@ export default function UploadsPage() {
     setSelectedCommunities(new Set())
     setImportError(null)
     setImportProgress('')
+    setSelectedUnmatched(new Set())
   }
 
   return (
@@ -817,35 +821,132 @@ export default function UploadsPage() {
         </div>
       )}
 
-      {step === 'vendor-match' && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
-          <h2 className="text-lg font-semibold">Vendor Name Matching</h2>
-          <p className="text-sm text-gray-500">Some vendor names need confirmation. Review the matches below:</p>
+      {step === 'vendor-match' && (() => {
+        const unmatchedList = vendorMatches.filter(m => m.source === 'unmatched' && !m.skipped)
+        const fuzzyList = vendorMatches.filter(m => m.needsConfirmation && !m.confirmed && !m.skipped)
+        const allUnmatchedSelected = unmatchedList.length > 0 && unmatchedList.every(m => selectedUnmatched.has(m.rawName))
 
+        function skipSelected() {
+          const toSkip = unmatchedList.filter(m => selectedUnmatched.has(m.rawName))
+          setVendorMatches(prev => prev.map(m =>
+            selectedUnmatched.has(m.rawName) ? { ...m, matchedVendor: null, needsConfirmation: false, skipped: true } : m
+          ))
+          setSelectedUnmatched(new Set())
+        }
+
+        return (
           <div className="space-y-4">
-            {vendorMatches.filter(m => m.needsConfirmation || (!m.matchedVendor && !m.skipped)).map(match => (
-              <VendorMatchCard
-                key={match.rawName}
-                match={match}
-                vendors={vendors}
-                onConfirm={handleVendorMatchConfirm}
-                onSkip={handleVendorMatchSkip}
-              />
-            ))}
-          </div>
+            {/* Section 1: Not in master list — batch skip */}
+            {unmatchedList.length > 0 && (
+              <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-3">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <h2 className="text-base font-semibold text-gray-900">Not in master list ({unmatchedList.length})</h2>
+                    <p className="text-sm text-gray-500 mt-0.5">These names have no match in your vendor database. Select all to skip them in one go, or uncheck any you want to manually assign.</p>
+                  </div>
+                  <div className="flex gap-2 flex-shrink-0 ml-4">
+                    <button
+                      onClick={() => setSelectedUnmatched(new Set(unmatchedList.map(m => m.rawName)))}
+                      className="text-xs px-2 py-1 border border-gray-300 rounded hover:bg-gray-50"
+                    >Select all</button>
+                    <button
+                      onClick={() => setSelectedUnmatched(new Set())}
+                      className="text-xs px-2 py-1 border border-gray-300 rounded hover:bg-gray-50"
+                    >Deselect all</button>
+                  </div>
+                </div>
 
-          {vendorMatches.filter(m => m.needsConfirmation || (!m.matchedVendor && !m.skipped)).length === 0 && (
-            <p className="text-sm text-green-600">All vendor names resolved.</p>
-          )}
+                <div className="border border-gray-200 rounded-lg overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="w-10 px-3 py-2">
+                          <input
+                            type="checkbox"
+                            checked={allUnmatchedSelected}
+                            onChange={e => setSelectedUnmatched(e.target.checked ? new Set(unmatchedList.map(m => m.rawName)) : new Set())}
+                          />
+                        </th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-600">Name in file</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-600">Closest master list entry</th>
+                        <th className="w-20 px-3 py-2 text-left text-xs font-medium text-gray-600">Score</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {unmatchedList.map(m => {
+                        const top = m.candidates?.[0]
+                        const checked = selectedUnmatched.has(m.rawName)
+                        return (
+                          <tr key={m.rawName} className={checked ? 'bg-gray-50 opacity-60' : ''}>
+                            <td className="px-3 py-2 text-center">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={e => {
+                                  const next = new Set(selectedUnmatched)
+                                  e.target.checked ? next.add(m.rawName) : next.delete(m.rawName)
+                                  setSelectedUnmatched(next)
+                                }}
+                              />
+                            </td>
+                            <td className="px-3 py-2 font-medium text-gray-800">{m.rawName}</td>
+                            <td className="px-3 py-2 text-gray-400">{top ? top.vendor.name : '—'}</td>
+                            <td className="px-3 py-2 text-gray-400 text-xs">{top ? `${(top.score * 100).toFixed(0)}%` : '—'}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
 
-          <div className="flex gap-3">
-            <button onClick={() => setStep('map-columns')} className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Back</button>
-            <button onClick={proceedFromMatching} className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-              Continue to Preview <ArrowRight className="w-4 h-4 inline ml-1" />
-            </button>
+                {selectedUnmatched.size > 0 && (
+                  <button
+                    onClick={skipSelected}
+                    className="flex items-center gap-2 px-4 py-2 text-sm bg-gray-800 text-white rounded-lg hover:bg-gray-900"
+                  >
+                    <XCircle className="w-4 h-4" />
+                    Skip {selectedUnmatched.size} selected vendor{selectedUnmatched.size !== 1 ? 's' : ''}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Section 2: Fuzzy matches needing confirmation */}
+            {fuzzyList.length > 0 && (
+              <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
+                <div>
+                  <h2 className="text-base font-semibold text-gray-900">Confirm matches ({fuzzyList.length})</h2>
+                  <p className="text-sm text-gray-500 mt-0.5">These names are similar to vendors in your database — confirm or correct each one.</p>
+                </div>
+                <div className="space-y-3">
+                  {fuzzyList.map(match => (
+                    <VendorMatchCard
+                      key={match.rawName}
+                      match={match}
+                      vendors={vendors}
+                      onConfirm={handleVendorMatchConfirm}
+                      onSkip={handleVendorMatchSkip}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {unmatchedList.length === 0 && fuzzyList.length === 0 && (
+              <div className="bg-white rounded-xl border border-gray-200 p-6">
+                <p className="text-sm text-green-600">All vendor names resolved.</p>
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <button onClick={() => setStep('map-columns')} className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Back</button>
+              <button onClick={proceedFromMatching} className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                Continue to Preview <ArrowRight className="w-4 h-4 inline ml-1" />
+              </button>
+            </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {step === 'preview' && (
         <div className="space-y-4">
