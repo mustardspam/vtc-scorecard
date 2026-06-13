@@ -297,17 +297,17 @@ export default function UploadsPage() {
     try {
       const activeCommunities = jcParsed.communities.filter(c => selectedCommunities.has(c.code))
 
-      // 1. Check/insert communities (fetch first, insert only missing ones to avoid onConflict issues)
+      // 1. Check/insert communities — fetch ALL then filter client-side (avoids .in() encoding issues)
       setImportProgress(`Checking ${activeCommunities.length} communities...`)
-      console.log('[JC] Step 1: fetching existing communities')
-      const { data: existingComms, error: existingCommErr } = await withTimeout(
-        supabase.from('communities').select('code').in('code', activeCommunities.map(c => c.code)),
+      console.log('[JC] Step 1: fetching all communities')
+      const { data: allExistingComms, error: existingCommErr } = await withTimeout(
+        supabase.from('communities').select('code'),
         60000, 'communities SELECT'
       )
-      console.log('[JC] Step 1 result:', existingComms, existingCommErr)
+      console.log('[JC] Step 1 result:', allExistingComms?.length, existingCommErr)
       if (existingCommErr) throw new Error('Fetch existing communities failed: ' + existingCommErr.message)
 
-      const existingCommCodes = new Set((existingComms || []).map(c => c.code))
+      const existingCommCodes = new Set((allExistingComms || []).map(c => c.code))
       const missingComms = activeCommunities.filter(c => !existingCommCodes.has(c.code))
       console.log('[JC] Step 1: existing =', existingCommCodes.size, 'missing =', missingComms.length)
 
