@@ -218,13 +218,15 @@ export default function UploadsPage() {
   async function handleApprove() {
     setImporting(true)
     try {
+      const storagePath = `${Date.now()}_${file.name}`
       const { data: fileRecord } = await supabase.storage
         .from('uploads')
-        .upload(`${Date.now()}_${file.name}`, file)
+        .upload(storagePath, file)
+      // Storage upload is best-effort — missing bucket shouldn't block import
 
       const { data: uploadedFile } = await supabase.from('uploaded_files').insert({
         original_filename: file.name,
-        storage_path: fileRecord?.path || `${Date.now()}_${file.name}`,
+        storage_path: fileRecord?.path || storagePath,
         file_type: fileType,
         file_size_bytes: file.size,
         mime_type: file.type,
@@ -282,54 +284,67 @@ export default function UploadsPage() {
     try {
       const activeCommunities = jcParsed.communities.filter(c => selectedCommunities.has(c.code))
 
-      // 1. Upsert only selected communities
-      for (const c of activeCommunities) {
-        await supabase.from('communities').upsert(
-          { name: c.code, code: c.code, brand, is_active: true },
+      // 1. Batch upsert selected communities (1 call)
+      if (activeCommunities.length > 0) {
+        const { error } = await supabase.from('communities').upsert(
+          activeCommunities.map(c => ({ name: c.code, code: c.code, brand, is_active: true })),
           { onConflict: 'code' }
         )
+        if (error) throw new Error('Communities upsert failed: ' + error.message)
       }
 
-      // 2. Build lookup maps
-      const { data: allCommunities } = await supabase.from('communities').select('id, code')
-      const communityCodeMap = new Map((allCommunities || []).map(c => [c.code, c.id]))
+      // 2. Fetch lookup maps (3 parallel calls)
+      const [commRes, vendorRes, refRes] = await Promise.all([
+        supabase.from('communities').select('id, code'),
+        supabase.from('vendors').select('id, name'),
+        supabase.from('vendor_brand_references').select('jc_vendor_id, brand'),
+      ])
+      if (commRes.error) throw new Error('Fetch communities failed: ' + commRes.error.message)
+      if (vendorRes.error) throw new Error('Fetch vendors failed: ' + vendorRes.error.message)
+      if (refRes.error) throw new Error('Fetch brand refs failed: ' + refRes.error.message)
 
-      const { data: existingVendors } = await supabase.from('vendors').select('id, name')
-      const vendorNameMap = new Map((existingVendors || []).map(v => [v.name.toLowerCase().trim(), v.id]))
+      const communityCodeMap = new Map((commRes.data || []).map(c => [c.code, c.id]))
+      const vendorNameMap = new Map((vendorRes.data || []).map(v => [v.name.toLowerCase().trim(), v.id]))
+      const existingRefSet = new Set((refRes.data || []).map(r => `${r.brand}:${r.jc_vendor_id}`))
 
-      const { data: existingRefs } = await supabase.from('vendor_brand_references').select('jc_vendor_id, brand')
-      const existingRefSet = new Set((existingRefs || []).map(r => `${r.brand}:${r.jc_vendor_id}`))
+      // 3. Determine which vendors have active assignments
+      const activeVendors = jcParsed.vendors.map(v => ({
+        ...v,
+        filteredAssignments: v.assignments.filter(a => selectedCommunities.has(a.communityCode))
+      })).filter(v => v.filteredAssignments.length > 0)
 
-      // 3. Import vendors — only those with at least one assignment in a selected community
-      let importedVendors = 0
-      let importedAssignments = 0
-      for (const v of jcParsed.vendors) {
-        const filteredAssignments = v.assignments.filter(a => selectedCommunities.has(a.communityCode))
-        if (filteredAssignments.length === 0) continue
+      // 4. Batch insert new vendors (1-2 calls)
+      const newVendorNames = [...new Set(
+        activeVendors
+          .filter(v => !vendorNameMap.has(v.name.toLowerCase().trim()))
+          .map(v => v.name)
+      )]
+      if (newVendorNames.length > 0) {
+        const { data: inserted, error } = await supabase.from('vendors')
+          .insert(newVendorNames.map(name => ({ name, is_active: true, created_by: user?.id })))
+          .select('id, name')
+        if (error) throw new Error('Vendor insert failed: ' + error.message)
+        for (const v of (inserted || [])) vendorNameMap.set(v.name.toLowerCase().trim(), v.id)
+      }
 
-        const refKey = `${brand}:${v.jcVendorId}`
+      // 5. Batch insert new brand references (1 call)
+      const newRefs = activeVendors
+        .filter(v => !existingRefSet.has(`${brand}:${v.jcVendorId}`))
+        .map(v => ({
+          vendor_id: vendorNameMap.get(v.name.toLowerCase().trim()),
+          brand, jc_vendor_id: v.jcVendorId, jc_vendor_name: v.name,
+        }))
+        .filter(r => r.vendor_id)
+      if (newRefs.length > 0) {
+        const { error } = await supabase.from('vendor_brand_references').insert(newRefs)
+        if (error) throw new Error('Brand refs insert failed: ' + error.message)
+      }
 
-        // Find or create canonical vendor record
-        let vendorId = vendorNameMap.get(v.name.toLowerCase().trim())
-        if (!vendorId) {
-          const { data: newVendor } = await supabase.from('vendors').insert({
-            name: v.name, is_active: true, created_by: user?.id,
-          }).select('id').single()
-          vendorId = newVendor?.id
-          if (vendorId) vendorNameMap.set(v.name.toLowerCase().trim(), vendorId)
-        }
-        if (!vendorId) continue
-
-        // Insert brand reference (skip if already exists)
-        if (!existingRefSet.has(refKey)) {
-          await supabase.from('vendor_brand_references').insert({
-            vendor_id: vendorId, brand, jc_vendor_id: v.jcVendorId, jc_vendor_name: v.name,
-          })
-          existingRefSet.add(refKey)
-        }
-
-        // Insert community assignments (selected only)
-        const assignmentRows = filteredAssignments
+      // 6. Batch upsert community assignments in chunks of 500 (to stay under request limits)
+      const allAssignments = activeVendors.flatMap(v => {
+        const vendorId = vendorNameMap.get(v.name.toLowerCase().trim())
+        if (!vendorId) return []
+        return v.filteredAssignments
           .filter(a => communityCodeMap.has(a.communityCode))
           .map(a => ({
             vendor_id: vendorId,
@@ -337,16 +352,18 @@ export default function UploadsPage() {
             cost_code: a.costCode,
             brand,
           }))
-
-        if (assignmentRows.length > 0) {
-          await supabase.from('vendor_community_assignments').upsert(
-            assignmentRows,
-            { onConflict: 'vendor_id,community_id,cost_code' }
-          )
-          importedAssignments += assignmentRows.length
-        }
-        importedVendors++
+      })
+      const CHUNK = 500
+      for (let i = 0; i < allAssignments.length; i += CHUNK) {
+        const { error } = await supabase.from('vendor_community_assignments').upsert(
+          allAssignments.slice(i, i + CHUNK),
+          { onConflict: 'vendor_id,community_id,cost_code' }
+        )
+        if (error) throw new Error('Assignments upsert failed: ' + error.message)
       }
+
+      const importedVendors = activeVendors.length
+      const importedAssignments = allAssignments.length
 
       await logActivity('import_approved',
         `Imported JC Vendor Report (${brand}): ${importedVendors} vendors, ${activeCommunities.length} communities, ${importedAssignments} assignments`,
