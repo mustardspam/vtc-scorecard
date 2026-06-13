@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { parseCSV } from '../lib/parsers/csv-parser'
 import { parseXLSX } from '../lib/parsers/xlsx-parser'
 import { matchVendors } from '../lib/parsers/vendor-matcher'
-import { parseJCVendorReport } from '../lib/parsers/jc-vendor-parser'
+import { parseJCVendorReport, parseJCVendorReportXLSX } from '../lib/parsers/jc-vendor-parser'
 import { logActivity } from '../hooks/useActivityLog'
 import { useAuth } from '../hooks/useAuth'
 import { Upload, FileText, CheckCircle, XCircle, AlertTriangle, ArrowRight, Loader2, Building2 } from 'lucide-react'
@@ -86,12 +86,21 @@ export default function UploadsPage() {
   async function handleParse() {
     if (!file || !fileType) return
 
-    // JC Vendor Report has its own parse path
+    // JC Vendor Report has its own parse path (supports both CSV and XLSX)
     if (fileType === 'jc_vendor_report') {
       try {
-        const text = await file.text()
-        const result = parseJCVendorReport(text)
-        if (!result) { alert('Could not parse this file as a JC Preferred Vendors Report. Check the file format.'); return }
+        const ext = file.name.split('.').pop().toLowerCase()
+        let result
+        if (ext === 'csv') {
+          const text = await file.text()
+          result = parseJCVendorReport(text)
+        } else if (['xls', 'xlsx'].includes(ext)) {
+          result = await parseJCVendorReportXLSX(file)
+        } else {
+          alert('Please upload a CSV or XLSX file.')
+          return
+        }
+        if (!result) { alert('Could not parse this file as a JC Preferred Vendors Report. Make sure the file contains a "Cost Code" header row.'); return }
         setJcParsed(result)
         setStep('jc-preview')
       } catch (err) {
