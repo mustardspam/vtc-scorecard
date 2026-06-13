@@ -50,6 +50,7 @@ export default function UploadsPage() {
   const [importing, setImporting] = useState(false)
   const [history, setHistory] = useState([])
   const [jcParsed, setJcParsed] = useState(null)
+  const [selectedCommunities, setSelectedCommunities] = useState(new Set())
   const { user } = useAuth()
 
   useEffect(() => {
@@ -102,6 +103,7 @@ export default function UploadsPage() {
         }
         if (!result) { alert('Could not parse this file as a JC Preferred Vendors Report. Make sure the file contains a "Cost Code" header row.'); return }
         setJcParsed(result)
+        setSelectedCommunities(new Set(result.communities.map(c => c.code)))
         setStep('jc-preview')
       } catch (err) {
         alert('Parse error: ' + err.message)
@@ -278,8 +280,10 @@ export default function UploadsPage() {
   async function insertJCVendorReport() {
     setImporting(true)
     try {
-      // 1. Upsert communities
-      for (const c of jcParsed.communities) {
+      const activeCommunities = jcParsed.communities.filter(c => selectedCommunities.has(c.code))
+
+      // 1. Upsert only selected communities
+      for (const c of activeCommunities) {
         await supabase.from('communities').upsert(
           { name: c.code, code: c.code, brand, is_active: true },
           { onConflict: 'code' }
@@ -296,10 +300,14 @@ export default function UploadsPage() {
       const { data: existingRefs } = await supabase.from('vendor_brand_references').select('jc_vendor_id, brand')
       const existingRefSet = new Set((existingRefs || []).map(r => `${r.brand}:${r.jc_vendor_id}`))
 
-      // 3. Import each vendor
+      // 3. Import vendors — only those with at least one assignment in a selected community
+      let importedVendors = 0
+      let importedAssignments = 0
       for (const v of jcParsed.vendors) {
+        const filteredAssignments = v.assignments.filter(a => selectedCommunities.has(a.communityCode))
+        if (filteredAssignments.length === 0) continue
+
         const refKey = `${brand}:${v.jcVendorId}`
-        if (existingRefSet.has(refKey)) continue
 
         // Find or create canonical vendor record
         let vendorId = vendorNameMap.get(v.name.toLowerCase().trim())
@@ -312,13 +320,16 @@ export default function UploadsPage() {
         }
         if (!vendorId) continue
 
-        // Insert brand reference
-        await supabase.from('vendor_brand_references').insert({
-          vendor_id: vendorId, brand, jc_vendor_id: v.jcVendorId, jc_vendor_name: v.name,
-        })
+        // Insert brand reference (skip if already exists)
+        if (!existingRefSet.has(refKey)) {
+          await supabase.from('vendor_brand_references').insert({
+            vendor_id: vendorId, brand, jc_vendor_id: v.jcVendorId, jc_vendor_name: v.name,
+          })
+          existingRefSet.add(refKey)
+        }
 
-        // Insert community assignments
-        const assignmentRows = v.assignments
+        // Insert community assignments (selected only)
+        const assignmentRows = filteredAssignments
           .filter(a => communityCodeMap.has(a.communityCode))
           .map(a => ({
             vendor_id: vendorId,
@@ -332,12 +343,14 @@ export default function UploadsPage() {
             assignmentRows,
             { onConflict: 'vendor_id,community_id,cost_code' }
           )
+          importedAssignments += assignmentRows.length
         }
+        importedVendors++
       }
 
       await logActivity('import_approved',
-        `Imported JC Vendor Report (${brand}): ${jcParsed.vendors.length} vendors, ${jcParsed.communities.length} communities`,
-        { brand, vendor_count: jcParsed.vendors.length, community_count: jcParsed.communities.length }
+        `Imported JC Vendor Report (${brand}): ${importedVendors} vendors, ${activeCommunities.length} communities, ${importedAssignments} assignments`,
+        { brand, vendor_count: importedVendors, community_count: activeCommunities.length, assignment_count: importedAssignments }
       )
 
       setStep('done')
@@ -445,6 +458,7 @@ export default function UploadsPage() {
     setMappedRows([])
     setErrors([])
     setJcParsed(null)
+    setSelectedCommunities(new Set())
   }
 
   return (
@@ -535,78 +549,125 @@ export default function UploadsPage() {
       )}
 
       {/* JC Vendor Report preview */}
-      {step === 'jc-preview' && jcParsed && (
-        <div className="space-y-4">
-          <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-5">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">JC Vendor Report — Preview</h2>
-              <p className="text-sm text-gray-500 mt-1">Brand: <strong>{brand}</strong> · File: {file?.name}</p>
-            </div>
+      {step === 'jc-preview' && jcParsed && (() => {
+        const activeVendors = jcParsed.vendors.map(v => ({
+          ...v,
+          assignments: v.assignments.filter(a => selectedCommunities.has(a.communityCode))
+        })).filter(v => v.assignments.length > 0)
+        const activeAssignments = activeVendors.reduce((sum, v) => sum + v.assignments.length, 0)
+        const allSelected = selectedCommunities.size === jcParsed.communities.length
 
-            <div className="grid grid-cols-3 gap-4">
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
-                <p className="text-2xl font-bold text-blue-700">{jcParsed.communities.length}</p>
-                <p className="text-sm text-blue-600 mt-1">Communities</p>
+        return (
+          <div className="space-y-4">
+            <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-5">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">JC Vendor Report — Preview</h2>
+                <p className="text-sm text-gray-500 mt-1">Brand: <strong>{brand}</strong> · File: {file?.name}</p>
               </div>
-              <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
-                <p className="text-2xl font-bold text-green-700">{jcParsed.vendors.length}</p>
-                <p className="text-sm text-green-600 mt-1">Unique Vendors</p>
-              </div>
-              <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 text-center">
-                <p className="text-2xl font-bold text-purple-700">
-                  {jcParsed.vendors.reduce((sum, v) => sum + v.assignments.length, 0).toLocaleString()}
-                </p>
-                <p className="text-sm text-purple-600 mt-1">Assignments</p>
-              </div>
-            </div>
 
-            <div>
-              <p className="text-sm font-medium text-gray-700 mb-2">Community codes ({jcParsed.communities.length}):</p>
-              <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
-                {jcParsed.communities.map(c => (
-                  <span key={c.code} className="text-xs font-mono bg-gray-100 text-gray-700 px-2 py-1 rounded">
-                    {c.code}
-                  </span>
-                ))}
+              <div className="grid grid-cols-3 gap-4">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
+                  <p className="text-2xl font-bold text-blue-700">{selectedCommunities.size}</p>
+                  <p className="text-xs text-blue-500 mt-0.5">of {jcParsed.communities.length} total</p>
+                  <p className="text-sm text-blue-600 mt-1">Communities</p>
+                </div>
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
+                  <p className="text-2xl font-bold text-green-700">{activeVendors.length}</p>
+                  <p className="text-xs text-green-500 mt-0.5">of {jcParsed.vendors.length} total</p>
+                  <p className="text-sm text-green-600 mt-1">Unique Vendors</p>
+                </div>
+                <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 text-center">
+                  <p className="text-2xl font-bold text-purple-700">{activeAssignments.toLocaleString()}</p>
+                  <p className="text-xs text-purple-500 mt-0.5">of {jcParsed.vendors.reduce((s, v) => s + v.assignments.length, 0).toLocaleString()} total</p>
+                  <p className="text-sm text-purple-600 mt-1">Assignments</p>
+                </div>
               </div>
-            </div>
 
-            <div>
-              <p className="text-sm font-medium text-gray-700 mb-2">
-                Vendors (showing {Math.min(25, jcParsed.vendors.length)} of {jcParsed.vendors.length}):
-              </p>
-              <div className="space-y-1 max-h-56 overflow-y-auto border border-gray-200 rounded-lg">
-                {jcParsed.vendors.slice(0, 25).map(v => (
-                  <div key={v.jcVendorId} className="flex items-center justify-between px-3 py-1.5 text-xs odd:bg-gray-50">
-                    <span className="text-gray-800 font-medium">{v.name}</span>
-                    <div className="flex items-center gap-3 text-gray-400 flex-shrink-0">
-                      <span className="font-mono">{v.jcVendorId}</span>
-                      <span>{v.assignments.length} assignments</span>
-                    </div>
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm font-medium text-gray-700">
+                    Community codes — click to toggle ({selectedCommunities.size} of {jcParsed.communities.length} selected):
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setSelectedCommunities(new Set(jcParsed.communities.map(c => c.code)))}
+                      className="text-xs px-2 py-1 text-blue-600 hover:bg-blue-50 rounded border border-blue-200"
+                    >
+                      All
+                    </button>
+                    <button
+                      onClick={() => setSelectedCommunities(new Set())}
+                      className="text-xs px-2 py-1 text-gray-500 hover:bg-gray-50 rounded border border-gray-200"
+                    >
+                      None
+                    </button>
                   </div>
-                ))}
-                {jcParsed.vendors.length > 25 && (
-                  <p className="text-xs text-gray-400 px-3 py-2">+ {jcParsed.vendors.length - 25} more vendors</p>
-                )}
+                </div>
+                <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto p-1">
+                  {jcParsed.communities.map(c => {
+                    const on = selectedCommunities.has(c.code)
+                    return (
+                      <button
+                        key={c.code}
+                        onClick={() => setSelectedCommunities(prev => {
+                          const next = new Set(prev)
+                          if (next.has(c.code)) next.delete(c.code)
+                          else next.add(c.code)
+                          return next
+                        })}
+                        className={`text-xs font-mono px-2 py-1 rounded border transition-colors ${
+                          on
+                            ? 'bg-blue-600 text-white border-blue-600'
+                            : 'bg-gray-100 text-gray-400 border-gray-200 line-through'
+                        }`}
+                      >
+                        {c.code}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <p className="text-sm font-medium text-gray-700 mb-2">
+                  Vendors with active assignments (showing {Math.min(25, activeVendors.length)} of {activeVendors.length}):
+                </p>
+                <div className="space-y-1 max-h-56 overflow-y-auto border border-gray-200 rounded-lg">
+                  {activeVendors.slice(0, 25).map(v => (
+                    <div key={v.jcVendorId} className="flex items-center justify-between px-3 py-1.5 text-xs odd:bg-gray-50">
+                      <span className="text-gray-800 font-medium">{v.name}</span>
+                      <div className="flex items-center gap-3 text-gray-400 flex-shrink-0">
+                        <span className="font-mono">{v.jcVendorId}</span>
+                        <span>{v.assignments.length} assignments</span>
+                      </div>
+                    </div>
+                  ))}
+                  {activeVendors.length > 25 && (
+                    <p className="text-xs text-gray-400 px-3 py-2">+ {activeVendors.length - 25} more vendors</p>
+                  )}
+                  {activeVendors.length === 0 && (
+                    <p className="text-xs text-gray-400 px-3 py-3 text-center">No vendors — select at least one community above.</p>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
 
-          <div className="flex gap-3">
-            <button onClick={() => setStep('upload')} className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">
-              Back
-            </button>
-            <button
-              onClick={insertJCVendorReport}
-              disabled={importing}
-              className="flex items-center gap-2 px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
-            >
-              {importing ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-              {importing ? 'Importing...' : `Import ${brand} Data`}
-            </button>
+            <div className="flex gap-3">
+              <button onClick={() => setStep('upload')} className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">
+                Back
+              </button>
+              <button
+                onClick={insertJCVendorReport}
+                disabled={importing || selectedCommunities.size === 0}
+                className="flex items-center gap-2 px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+              >
+                {importing ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                {importing ? 'Importing...' : `Import ${selectedCommunities.size} Communities`}
+              </button>
+            </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {step === 'select-sheet' && parsed?.sheetNames && (
         <div className="bg-white rounded-xl border border-gray-200 p-6">
