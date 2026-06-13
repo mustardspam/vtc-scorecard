@@ -51,6 +51,7 @@ export default function UploadsPage() {
   const [history, setHistory] = useState([])
   const [jcParsed, setJcParsed] = useState(null)
   const [selectedCommunities, setSelectedCommunities] = useState(new Set())
+  const [importError, setImportError] = useState(null)
   const { user } = useAuth()
 
   useEffect(() => {
@@ -281,6 +282,7 @@ export default function UploadsPage() {
 
   async function insertJCVendorReport() {
     setImporting(true)
+    setImportError(null)
     try {
       const activeCommunities = jcParsed.communities.filter(c => selectedCommunities.has(c.code))
 
@@ -374,7 +376,7 @@ export default function UploadsPage() {
       loadHistory()
       loadVendors()
     } catch (err) {
-      alert('Import error: ' + err.message)
+      setImportError(err.message)
     } finally {
       setImporting(false)
     }
@@ -476,6 +478,7 @@ export default function UploadsPage() {
     setErrors([])
     setJcParsed(null)
     setSelectedCommunities(new Set())
+    setImportError(null)
   }
 
   return (
@@ -668,6 +671,20 @@ export default function UploadsPage() {
                 </div>
               </div>
             </div>
+
+            {importError && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                <p className="text-sm font-medium text-red-800 flex items-center gap-2">
+                  <XCircle className="w-4 h-4 flex-shrink-0" /> Import failed
+                </p>
+                <p className="text-xs text-red-700 mt-1 font-mono whitespace-pre-wrap">{importError}</p>
+                {(importError.includes('vendor_brand_references') || importError.includes('vendor_community_assignments')) && (
+                  <p className="text-xs text-red-600 mt-2">
+                    Required database tables are missing. Run the SQL migration in Supabase → SQL Editor before importing.
+                  </p>
+                )}
+              </div>
+            )}
 
             <div className="flex gap-3">
               <button onClick={() => setStep('upload')} className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">
