@@ -52,6 +52,7 @@ export default function UploadsPage() {
   const [jcParsed, setJcParsed] = useState(null)
   const [selectedCommunities, setSelectedCommunities] = useState(new Set())
   const [importError, setImportError] = useState(null)
+  const [importProgress, setImportProgress] = useState('')
   const { user } = useAuth()
 
   useEffect(() => {
@@ -283,10 +284,12 @@ export default function UploadsPage() {
   async function insertJCVendorReport() {
     setImporting(true)
     setImportError(null)
+    setImportProgress('')
     try {
       const activeCommunities = jcParsed.communities.filter(c => selectedCommunities.has(c.code))
 
-      // 1. Batch upsert selected communities (1 call)
+      // 1. Batch upsert selected communities
+      setImportProgress(`Upserting ${activeCommunities.length} communities...`)
       if (activeCommunities.length > 0) {
         const { error } = await supabase.from('communities').upsert(
           activeCommunities.map(c => ({ name: c.code, code: c.code, brand, is_active: true })),
@@ -295,14 +298,17 @@ export default function UploadsPage() {
         if (error) throw new Error('Communities upsert failed: ' + error.message)
       }
 
-      // 2. Fetch lookup maps (3 parallel calls)
-      const [commRes, vendorRes, refRes] = await Promise.all([
-        supabase.from('communities').select('id, code'),
-        supabase.from('vendors').select('id, name'),
-        supabase.from('vendor_brand_references').select('jc_vendor_id, brand'),
-      ])
+      // 2. Fetch lookup maps
+      setImportProgress('Fetching communities...')
+      const commRes = await supabase.from('communities').select('id, code')
       if (commRes.error) throw new Error('Fetch communities failed: ' + commRes.error.message)
+
+      setImportProgress('Fetching vendors...')
+      const vendorRes = await supabase.from('vendors').select('id, name')
       if (vendorRes.error) throw new Error('Fetch vendors failed: ' + vendorRes.error.message)
+
+      setImportProgress('Fetching brand references...')
+      const refRes = await supabase.from('vendor_brand_references').select('jc_vendor_id, brand')
       if (refRes.error) throw new Error('Fetch brand refs failed: ' + refRes.error.message)
 
       const communityCodeMap = new Map((commRes.data || []).map(c => [c.code, c.id]))
@@ -315,13 +321,14 @@ export default function UploadsPage() {
         filteredAssignments: v.assignments.filter(a => selectedCommunities.has(a.communityCode))
       })).filter(v => v.filteredAssignments.length > 0)
 
-      // 4. Batch insert new vendors (1-2 calls)
+      // 4. Batch insert new vendors
       const newVendorNames = [...new Set(
         activeVendors
           .filter(v => !vendorNameMap.has(v.name.toLowerCase().trim()))
           .map(v => v.name)
       )]
       if (newVendorNames.length > 0) {
+        setImportProgress(`Inserting ${newVendorNames.length} new vendors...`)
         const { data: inserted, error } = await supabase.from('vendors')
           .insert(newVendorNames.map(name => ({ name, is_active: true, created_by: user?.id })))
           .select('id, name')
@@ -329,7 +336,7 @@ export default function UploadsPage() {
         for (const v of (inserted || [])) vendorNameMap.set(v.name.toLowerCase().trim(), v.id)
       }
 
-      // 5. Batch insert new brand references (1 call)
+      // 5. Batch insert new brand references
       const newRefs = activeVendors
         .filter(v => !existingRefSet.has(`${brand}:${v.jcVendorId}`))
         .map(v => ({
@@ -338,11 +345,12 @@ export default function UploadsPage() {
         }))
         .filter(r => r.vendor_id)
       if (newRefs.length > 0) {
+        setImportProgress(`Inserting ${newRefs.length} brand references...`)
         const { error } = await supabase.from('vendor_brand_references').insert(newRefs)
         if (error) throw new Error('Brand refs insert failed: ' + error.message)
       }
 
-      // 6. Batch upsert community assignments in chunks of 500 (to stay under request limits)
+      // 6. Batch upsert community assignments in chunks of 500
       const allAssignments = activeVendors.flatMap(v => {
         const vendorId = vendorNameMap.get(v.name.toLowerCase().trim())
         if (!vendorId) return []
@@ -357,6 +365,7 @@ export default function UploadsPage() {
       })
       const CHUNK = 500
       for (let i = 0; i < allAssignments.length; i += CHUNK) {
+        setImportProgress(`Upserting assignments ${i + 1}–${Math.min(i + CHUNK, allAssignments.length)} of ${allAssignments.length}...`)
         const { error } = await supabase.from('vendor_community_assignments').upsert(
           allAssignments.slice(i, i + CHUNK),
           { onConflict: 'vendor_id,community_id,cost_code' }
@@ -364,6 +373,7 @@ export default function UploadsPage() {
         if (error) throw new Error('Assignments upsert failed: ' + error.message)
       }
 
+      setImportProgress('Logging activity...')
       const importedVendors = activeVendors.length
       const importedAssignments = allAssignments.length
 
@@ -479,6 +489,7 @@ export default function UploadsPage() {
     setJcParsed(null)
     setSelectedCommunities(new Set())
     setImportError(null)
+    setImportProgress('')
   }
 
   return (
@@ -671,6 +682,12 @@ export default function UploadsPage() {
                 </div>
               </div>
             </div>
+
+            {importing && importProgress && (
+              <p className="text-sm text-blue-700 flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" /> {importProgress}
+              </p>
+            )}
 
             {importError && (
               <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
