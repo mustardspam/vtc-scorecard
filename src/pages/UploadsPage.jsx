@@ -302,7 +302,7 @@ export default function UploadsPage() {
       console.log('[JC] Step 1: fetching existing communities')
       const { data: existingComms, error: existingCommErr } = await withTimeout(
         supabase.from('communities').select('code').in('code', activeCommunities.map(c => c.code)),
-        20000, 'communities SELECT'
+        60000, 'communities SELECT'
       )
       console.log('[JC] Step 1 result:', existingComms, existingCommErr)
       if (existingCommErr) throw new Error('Fetch existing communities failed: ' + existingCommErr.message)
@@ -732,6 +732,11 @@ export default function UploadsPage() {
                   <XCircle className="w-4 h-4 flex-shrink-0" /> Import failed
                 </p>
                 <p className="text-xs text-red-700 mt-1 font-mono whitespace-pre-wrap">{importError}</p>
+                {importError.includes('Timed out') && (
+                  <p className="text-xs text-red-600 mt-2">
+                    The database is waking up (Supabase free tier cold start). Wait 30 seconds and click Import again — it will work on the second attempt.
+                  </p>
+                )}
                 {(importError.includes('vendor_brand_references') || importError.includes('vendor_community_assignments')) && (
                   <p className="text-xs text-red-600 mt-2">
                     Required database tables are missing. Run the SQL migration in Supabase → SQL Editor before importing.
