@@ -3,9 +3,10 @@ import { supabase } from '../lib/supabase'
 import { parseCSV } from '../lib/parsers/csv-parser'
 import { parseXLSX } from '../lib/parsers/xlsx-parser'
 import { matchVendors } from '../lib/parsers/vendor-matcher'
+import { parseJCVendorReport } from '../lib/parsers/jc-vendor-parser'
 import { logActivity } from '../hooks/useActivityLog'
 import { useAuth } from '../hooks/useAuth'
-import { Upload, FileText, CheckCircle, XCircle, AlertTriangle, ArrowRight, Loader2 } from 'lucide-react'
+import { Upload, FileText, CheckCircle, XCircle, AlertTriangle, ArrowRight, Loader2, Building2 } from 'lucide-react'
 
 const FILE_TYPES = [
   { value: 'schedule', label: 'Schedule Data', description: 'Monthly schedule adherence report' },
@@ -13,6 +14,7 @@ const FILE_TYPES = [
   { value: 'rework', label: 'Rework / Backcharges', description: 'Backcharge records with costs' },
   { value: 'vendor_master', label: 'Vendor Master List', description: 'Master list of vendors/trades' },
   { value: 'community_reference', label: 'Community Reference', description: 'Community/neighborhood list' },
+  { value: 'jc_vendor_report', label: 'JC Vendor Report', description: 'JC Preferred Vendors pivot report (auto-parses vendors + communities)' },
 ]
 
 const REQUIRED_FIELDS = {
@@ -35,16 +37,19 @@ export default function UploadsPage() {
   const [step, setStep] = useState('upload')
   const [file, setFile] = useState(null)
   const [fileType, setFileType] = useState('')
+  const [brand, setBrand] = useState('Ashton Woods')
   const [parsed, setParsed] = useState(null)
   const [sheetName, setSheetName] = useState('')
   const [columnMap, setColumnMap] = useState({})
   const [vendorMatches, setVendorMatches] = useState([])
   const [vendors, setVendors] = useState([])
   const [aliases, setAliases] = useState([])
+  const [brandRefs, setBrandRefs] = useState([])
   const [mappedRows, setMappedRows] = useState([])
   const [errors, setErrors] = useState([])
   const [importing, setImporting] = useState(false)
   const [history, setHistory] = useState([])
+  const [jcParsed, setJcParsed] = useState(null)
   const { user } = useAuth()
 
   useEffect(() => {
@@ -53,12 +58,14 @@ export default function UploadsPage() {
   }, [])
 
   async function loadVendors() {
-    const [vRes, aRes] = await Promise.all([
+    const [vRes, aRes, brRes] = await Promise.all([
       supabase.from('vendors').select('id, name, category_id').eq('is_active', true).order('name'),
-      supabase.from('vendor_aliases').select('*')
+      supabase.from('vendor_aliases').select('*'),
+      supabase.from('vendor_brand_references').select('jc_vendor_id, vendor_id, brand'),
     ])
     setVendors(vRes.data || [])
     setAliases(aRes.data || [])
+    setBrandRefs(brRes.data || [])
   }
 
   async function loadHistory() {
@@ -78,6 +85,21 @@ export default function UploadsPage() {
 
   async function handleParse() {
     if (!file || !fileType) return
+
+    // JC Vendor Report has its own parse path
+    if (fileType === 'jc_vendor_report') {
+      try {
+        const text = await file.text()
+        const result = parseJCVendorReport(text)
+        if (!result) { alert('Could not parse this file as a JC Preferred Vendors Report. Check the file format.'); return }
+        setJcParsed(result)
+        setStep('jc-preview')
+      } catch (err) {
+        alert('Parse error: ' + err.message)
+      }
+      return
+    }
+
     try {
       let result
       const ext = file.name.split('.').pop().toLowerCase()
@@ -152,13 +174,10 @@ export default function UploadsPage() {
 
     if (['schedule', 'safety', 'rework'].includes(fileType)) {
       const rawNames = [...new Set(rows.map(r => r.vendor_name).filter(Boolean))]
-      const matches = matchVendors(rawNames, vendors, aliases)
+      const matches = matchVendors(rawNames, vendors, aliases, brandRefs)
       setVendorMatches(matches)
       const needsReview = matches.some(m => m.needsConfirmation || !m.matchedVendor)
-      if (needsReview) {
-        setStep('vendor-match')
-        return
-      }
+      if (needsReview) { setStep('vendor-match'); return }
     }
 
     setStep('preview')
@@ -183,9 +202,7 @@ export default function UploadsPage() {
     ))
   }
 
-  function proceedFromMatching() {
-    setStep('preview')
-  }
+  function proceedFromMatching() { setStep('preview') }
 
   async function handleApprove() {
     setImporting(true)
@@ -230,15 +247,11 @@ export default function UploadsPage() {
 
       const vendorMap = new Map(vendorMatches.map(m => [m.rawName, m.matchedVendor?.id]))
 
-      if (fileType === 'schedule') {
-        await insertScheduleRecords(batch.id, mappedRows, vendorMap)
-      } else if (fileType === 'safety') {
-        await insertSafetyRecords(batch.id, mappedRows, vendorMap)
-      } else if (fileType === 'rework') {
-        await insertReworkRecords(batch.id, mappedRows, vendorMap)
-      } else if (fileType === 'vendor_master') {
-        await insertVendorMaster(mappedRows)
-      }
+      if (fileType === 'schedule') await insertScheduleRecords(batch.id, mappedRows, vendorMap)
+      else if (fileType === 'safety') await insertSafetyRecords(batch.id, mappedRows, vendorMap)
+      else if (fileType === 'rework') await insertReworkRecords(batch.id, mappedRows, vendorMap)
+      else if (fileType === 'vendor_master') await insertVendorMaster(mappedRows)
+      else if (fileType === 'community_reference') await insertCommunityReference(mappedRows)
 
       await logActivity('import_approved', `Imported ${fileType} data: ${file.name} (${mappedRows.length} rows)`, {
         batch_id: batch.id, file_id: uploadedFile.id, filename: file.name, row_count: mappedRows.length
@@ -253,81 +266,139 @@ export default function UploadsPage() {
     }
   }
 
-  async function insertScheduleRecords(batchId, rows, vendorMap) {
-    const records = rows
-      .filter(r => r.vendor_name)
-      .map(r => {
-        const totalJobs = Number(r.total_jobs) || 0
-        const noShows = Number(r.no_shows) || 0
-        const adherence = totalJobs > 0 ? (totalJobs - noShows) / totalJobs : 1
-        return {
-          batch_id: batchId,
-          vendor_id: vendorMap.get(r.vendor_name) || null,
-          vendor_name_raw: r.vendor_name,
-          period_month: r.period_month || new Date().toISOString().slice(0, 8) + '01',
-          total_jobs: totalJobs,
-          no_shows: noShows,
-          adherence_pct: adherence,
+  async function insertJCVendorReport() {
+    setImporting(true)
+    try {
+      // 1. Upsert communities
+      for (const c of jcParsed.communities) {
+        await supabase.from('communities').upsert(
+          { name: c.code, code: c.code, brand, is_active: true },
+          { onConflict: 'code' }
+        )
+      }
+
+      // 2. Build lookup maps
+      const { data: allCommunities } = await supabase.from('communities').select('id, code')
+      const communityCodeMap = new Map((allCommunities || []).map(c => [c.code, c.id]))
+
+      const { data: existingVendors } = await supabase.from('vendors').select('id, name')
+      const vendorNameMap = new Map((existingVendors || []).map(v => [v.name.toLowerCase().trim(), v.id]))
+
+      const { data: existingRefs } = await supabase.from('vendor_brand_references').select('jc_vendor_id, brand')
+      const existingRefSet = new Set((existingRefs || []).map(r => `${r.brand}:${r.jc_vendor_id}`))
+
+      // 3. Import each vendor
+      for (const v of jcParsed.vendors) {
+        const refKey = `${brand}:${v.jcVendorId}`
+        if (existingRefSet.has(refKey)) continue
+
+        // Find or create canonical vendor record
+        let vendorId = vendorNameMap.get(v.name.toLowerCase().trim())
+        if (!vendorId) {
+          const { data: newVendor } = await supabase.from('vendors').insert({
+            name: v.name, is_active: true, created_by: user?.id,
+          }).select('id').single()
+          vendorId = newVendor?.id
+          if (vendorId) vendorNameMap.set(v.name.toLowerCase().trim(), vendorId)
         }
-      })
-    if (records.length > 0) {
-      await supabase.from('schedule_records').insert(records)
+        if (!vendorId) continue
+
+        // Insert brand reference
+        await supabase.from('vendor_brand_references').insert({
+          vendor_id: vendorId, brand, jc_vendor_id: v.jcVendorId, jc_vendor_name: v.name,
+        })
+
+        // Insert community assignments
+        const assignmentRows = v.assignments
+          .filter(a => communityCodeMap.has(a.communityCode))
+          .map(a => ({
+            vendor_id: vendorId,
+            community_id: communityCodeMap.get(a.communityCode),
+            cost_code: a.costCode,
+            brand,
+          }))
+
+        if (assignmentRows.length > 0) {
+          await supabase.from('vendor_community_assignments').upsert(
+            assignmentRows,
+            { onConflict: 'vendor_id,community_id,cost_code' }
+          )
+        }
+      }
+
+      await logActivity('import_approved',
+        `Imported JC Vendor Report (${brand}): ${jcParsed.vendors.length} vendors, ${jcParsed.communities.length} communities`,
+        { brand, vendor_count: jcParsed.vendors.length, community_count: jcParsed.communities.length }
+      )
+
+      setStep('done')
+      loadHistory()
+      loadVendors()
+    } catch (err) {
+      alert('Import error: ' + err.message)
+    } finally {
+      setImporting(false)
     }
+  }
+
+  async function insertScheduleRecords(batchId, rows, vendorMap) {
+    const records = rows.filter(r => r.vendor_name).map(r => {
+      const totalJobs = Number(r.total_jobs) || 0
+      const noShows = Number(r.no_shows) || 0
+      const adherence = totalJobs > 0 ? (totalJobs - noShows) / totalJobs : 1
+      return {
+        batch_id: batchId,
+        vendor_id: vendorMap.get(r.vendor_name) || null,
+        vendor_name_raw: r.vendor_name,
+        period_month: r.period_month || new Date().toISOString().slice(0, 8) + '01',
+        total_jobs: totalJobs, no_shows: noShows, adherence_pct: adherence,
+      }
+    })
+    if (records.length > 0) await supabase.from('schedule_records').insert(records)
   }
 
   async function insertSafetyRecords(batchId, rows, vendorMap) {
     const severityPoints = { equipment: 1, ppe: 2, near_miss: 5, first_aid: 10, recordable: 25, lost_time: 50 }
-    const records = rows
-      .filter(r => r.vendor_name)
-      .map(r => {
-        const sev = (r.severity || '').toLowerCase().replace(/\s+/g, '_')
-        return {
-          batch_id: batchId,
-          vendor_id: vendorMap.get(r.vendor_name) || null,
-          vendor_name_raw: r.vendor_name,
-          incident_date: r.incident_date || null,
-          incident_type: r.incident_type || null,
-          severity: sev || 'ppe',
-          severity_points: severityPoints[sev] || 2,
-          record_date: r.incident_date || new Date().toISOString().slice(0, 10),
-        }
-      })
-    if (records.length > 0) {
-      await supabase.from('safety_records').insert(records)
-    }
+    const records = rows.filter(r => r.vendor_name).map(r => {
+      const sev = (r.severity || '').toLowerCase().replace(/\s+/g, '_')
+      return {
+        batch_id: batchId,
+        vendor_id: vendorMap.get(r.vendor_name) || null,
+        vendor_name_raw: r.vendor_name,
+        incident_date: r.incident_date || null,
+        incident_type: r.incident_type || null,
+        severity: sev || 'ppe',
+        severity_points: severityPoints[sev] || 2,
+        record_date: r.incident_date || new Date().toISOString().slice(0, 10),
+      }
+    })
+    if (records.length > 0) await supabase.from('safety_records').insert(records)
   }
 
   async function insertReworkRecords(batchId, rows, vendorMap) {
-    const records = rows
-      .filter(r => r.vendor_name)
-      .map(r => {
-        const cost = Math.abs(Number(r.cost) || 0)
-        let severity, penaltyPoints
-        if (cost <= 100) { severity = 'low'; penaltyPoints = 2 }
-        else if (cost <= 250) { severity = 'medium'; penaltyPoints = 5 }
-        else { severity = 'high'; penaltyPoints = 10 }
-        return {
-          batch_id: batchId,
-          vendor_id: vendorMap.get(r.vendor_name) || null,
-          vendor_name_raw: r.vendor_name,
-          rework_date: r.rework_date || null,
-          description: r.description || null,
-          cost,
-          severity,
-          penalty_points: penaltyPoints,
-          lot_or_address: r.lot_or_address || null,
-          record_date: r.rework_date || new Date().toISOString().slice(0, 10),
-        }
-      })
-    if (records.length > 0) {
-      await supabase.from('rework_records').insert(records)
-    }
+    const records = rows.filter(r => r.vendor_name).map(r => {
+      const cost = Math.abs(Number(r.cost) || 0)
+      let severity, penaltyPoints
+      if (cost <= 100) { severity = 'low'; penaltyPoints = 2 }
+      else if (cost <= 250) { severity = 'medium'; penaltyPoints = 5 }
+      else { severity = 'high'; penaltyPoints = 10 }
+      return {
+        batch_id: batchId,
+        vendor_id: vendorMap.get(r.vendor_name) || null,
+        vendor_name_raw: r.vendor_name,
+        rework_date: r.rework_date || null,
+        description: r.description || null,
+        cost, severity, penalty_points: penaltyPoints,
+        lot_or_address: r.lot_or_address || null,
+        record_date: r.rework_date || new Date().toISOString().slice(0, 10),
+      }
+    })
+    if (records.length > 0) await supabase.from('rework_records').insert(records)
   }
 
   async function insertVendorMaster(rows) {
     const { data: categories } = await supabase.from('vendor_categories').select('id, name')
     const catMap = new Map((categories || []).map(c => [c.name.toLowerCase(), c.id]))
-
     for (const row of rows) {
       if (!row.vendor_name) continue
       const catId = catMap.get((row.category || '').toLowerCase())
@@ -342,6 +413,18 @@ export default function UploadsPage() {
     loadVendors()
   }
 
+  async function insertCommunityReference(rows) {
+    for (const row of rows) {
+      if (!row.name || !row.code) continue
+      await supabase.from('communities').upsert({
+        name: row.name,
+        code: row.code,
+        brand: row.brand || null,
+        is_active: true,
+      }, { onConflict: 'code' })
+    }
+  }
+
   function resetUpload() {
     setStep('upload')
     setFile(null)
@@ -352,6 +435,7 @@ export default function UploadsPage() {
     setVendorMatches([])
     setMappedRows([])
     setErrors([])
+    setJcParsed(null)
   }
 
   return (
@@ -390,6 +474,23 @@ export default function UploadsPage() {
             ))}
           </div>
 
+          {/* Brand selector for JC reports */}
+          {fileType === 'jc_vendor_report' && (
+            <div className="flex items-center gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <Building2 className="w-4 h-4 text-blue-600 flex-shrink-0" />
+              <label className="text-sm font-medium text-blue-800">Brand:</label>
+              <select
+                value={brand}
+                onChange={e => setBrand(e.target.value)}
+                className="px-3 py-1.5 border border-blue-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+              >
+                <option value="Ashton Woods">Ashton Woods</option>
+                <option value="Starlight">Starlight</option>
+              </select>
+              <span className="text-xs text-blue-600">Select the brand this report belongs to</span>
+            </div>
+          )}
+
           <button
             onClick={handleParse}
             disabled={!file || !fileType}
@@ -421,6 +522,80 @@ export default function UploadsPage() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* JC Vendor Report preview */}
+      {step === 'jc-preview' && jcParsed && (
+        <div className="space-y-4">
+          <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-5">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">JC Vendor Report — Preview</h2>
+              <p className="text-sm text-gray-500 mt-1">Brand: <strong>{brand}</strong> · File: {file?.name}</p>
+            </div>
+
+            <div className="grid grid-cols-3 gap-4">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
+                <p className="text-2xl font-bold text-blue-700">{jcParsed.communities.length}</p>
+                <p className="text-sm text-blue-600 mt-1">Communities</p>
+              </div>
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
+                <p className="text-2xl font-bold text-green-700">{jcParsed.vendors.length}</p>
+                <p className="text-sm text-green-600 mt-1">Unique Vendors</p>
+              </div>
+              <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 text-center">
+                <p className="text-2xl font-bold text-purple-700">
+                  {jcParsed.vendors.reduce((sum, v) => sum + v.assignments.length, 0).toLocaleString()}
+                </p>
+                <p className="text-sm text-purple-600 mt-1">Assignments</p>
+              </div>
+            </div>
+
+            <div>
+              <p className="text-sm font-medium text-gray-700 mb-2">Community codes ({jcParsed.communities.length}):</p>
+              <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+                {jcParsed.communities.map(c => (
+                  <span key={c.code} className="text-xs font-mono bg-gray-100 text-gray-700 px-2 py-1 rounded">
+                    {c.code}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <p className="text-sm font-medium text-gray-700 mb-2">
+                Vendors (showing {Math.min(25, jcParsed.vendors.length)} of {jcParsed.vendors.length}):
+              </p>
+              <div className="space-y-1 max-h-56 overflow-y-auto border border-gray-200 rounded-lg">
+                {jcParsed.vendors.slice(0, 25).map(v => (
+                  <div key={v.jcVendorId} className="flex items-center justify-between px-3 py-1.5 text-xs odd:bg-gray-50">
+                    <span className="text-gray-800 font-medium">{v.name}</span>
+                    <div className="flex items-center gap-3 text-gray-400 flex-shrink-0">
+                      <span className="font-mono">{v.jcVendorId}</span>
+                      <span>{v.assignments.length} assignments</span>
+                    </div>
+                  </div>
+                ))}
+                {jcParsed.vendors.length > 25 && (
+                  <p className="text-xs text-gray-400 px-3 py-2">+ {jcParsed.vendors.length - 25} more vendors</p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex gap-3">
+            <button onClick={() => setStep('upload')} className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">
+              Back
+            </button>
+            <button
+              onClick={insertJCVendorReport}
+              disabled={importing}
+              className="flex items-center gap-2 px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
+            >
+              {importing ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+              {importing ? 'Importing...' : `Import ${brand} Data`}
+            </button>
+          </div>
         </div>
       )}
 
@@ -577,7 +752,7 @@ export default function UploadsPage() {
         <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
           <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-4" />
           <h2 className="text-xl font-semibold text-gray-900">Import Complete</h2>
-          <p className="text-sm text-gray-500 mt-2">{mappedRows.length} records imported from {file?.name}</p>
+          <p className="text-sm text-gray-500 mt-2">{file?.name}</p>
           <button onClick={resetUpload} className="mt-6 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">
             Upload Another File
           </button>

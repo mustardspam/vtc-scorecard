@@ -13,6 +13,7 @@ import UploadsPage from './pages/UploadsPage'
 import SnapshotsPage from './pages/SnapshotsPage'
 import ActivityPage from './pages/ActivityPage'
 import AdminPage from './pages/AdminPage'
+import DataPage from './pages/DataPage'
 
 export default function App() {
   const { initialize, loading } = useAuth()
@@ -50,6 +51,7 @@ export default function App() {
       }>
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/scores" element={<ScoresPage />} />
+        <Route path="/data" element={<DataPage />} />
         <Route path="/feedback/submit" element={<SubmitFeedbackPage />} />
         <Route path="/feedback" element={
           <ProtectedRoute allowedRoles={['admin', 'manager']}>

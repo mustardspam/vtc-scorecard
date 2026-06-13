@@ -3,13 +3,14 @@ import { useAuth } from '../../hooks/useAuth'
 import { useState } from 'react'
 import {
   LayoutDashboard, Table2, MessageSquare, Upload, Camera,
-  Activity, Settings, LogOut, Send, KeyRound, X
+  Activity, Settings, LogOut, Send, KeyRound, X, Database
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 
 const navItems = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', roles: ['admin', 'manager', 'viewer'] },
   { to: '/scores', icon: Table2, label: 'Scores', roles: ['admin', 'manager', 'viewer'] },
+  { to: '/data', icon: Database, label: 'Data', roles: ['admin', 'manager', 'viewer'] },
   { to: '/feedback/submit', icon: Send, label: 'Submit Feedback', roles: ['admin', 'manager', 'viewer'] },
   { to: '/feedback', icon: MessageSquare, label: 'Feedback Review', roles: ['admin', 'manager'] },
   { to: '/uploads', icon: Upload, label: 'Uploads', roles: ['admin', 'manager'] },
