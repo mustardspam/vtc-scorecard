@@ -50,16 +50,24 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="w-64 bg-white border-r border-gray-200 flex flex-col h-screen fixed left-0 top-0">
-      <div className="p-6 border-b border-gray-200">
-        <h1 className="text-lg font-bold text-gray-900">VTC Scorecard</h1>
-        <p className="text-xs text-gray-500 mt-1 truncate">{profile?.full_name || profile?.email}</p>
-        <span className="inline-block mt-1 px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-800 rounded">
+    <aside className="w-64 flex flex-col h-screen fixed left-0 top-0" style={{ backgroundColor: '#1c1c1a' }}>
+      {/* Logo */}
+      <div className="px-5 py-5 border-b border-white/10">
+        <img
+          src="/vtc-scorecard/aw-stl-logo.jpg"
+          alt="Ashton Woods / Starlight Homes"
+          className="w-full max-w-[180px]"
+          style={{ filter: 'brightness(0) invert(1)' }}
+        />
+        <p className="text-xs mt-3 truncate" style={{ color: 'rgba(255,255,255,0.45)' }}>
+          {profile?.full_name || profile?.email}
+        </p>
+        <span className="inline-block mt-1 px-2 py-0.5 text-xs font-medium rounded" style={{ backgroundColor: 'rgba(8,116,130,0.35)', color: '#6dd4de' }}>
           {profile?.role}
         </span>
       </div>
 
-      <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
+      <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
         {items.filter(item => item.roles.includes(profile?.role)).map(item => (
           <NavLink
             key={item.to}
@@ -67,36 +75,40 @@ export default function Sidebar() {
             className={({ isActive }) =>
               `flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                 isActive
-                  ? 'bg-blue-50 text-blue-700'
-                  : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                  ? 'text-white'
+                  : 'hover:text-white'
               }`
             }
+            style={({ isActive }) => isActive
+              ? { backgroundColor: '#087482', color: '#fff' }
+              : { color: 'rgba(255,255,255,0.55)' }
+            }
           >
-            <item.icon className="w-5 h-5" />
+            <item.icon className="w-4 h-4 shrink-0" />
             {item.label}
           </NavLink>
         ))}
       </nav>
 
-      <div className="p-4 border-t border-gray-200 space-y-1">
-        {/* Change password modal */}
+      <div className="p-3 border-t border-white/10 space-y-0.5">
         {showChangePassword && (
-          <div className="mb-3 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+          <div className="mb-3 p-3 rounded-lg border border-white/10" style={{ backgroundColor: 'rgba(255,255,255,0.06)' }}>
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-medium text-gray-700">Change Password</span>
+              <span className="text-xs font-medium" style={{ color: 'rgba(255,255,255,0.7)' }}>Change Password</span>
               <button onClick={() => { setShowChangePassword(false); setPwError(''); setPwMsg('') }}>
-                <X className="w-3.5 h-3.5 text-gray-400 hover:text-gray-600" />
+                <X className="w-3.5 h-3.5" style={{ color: 'rgba(255,255,255,0.4)' }} />
               </button>
             </div>
             <form onSubmit={handleChangePassword} className="space-y-2">
-              {pwError && <p className="text-xs text-red-600">{pwError}</p>}
-              {pwMsg && <p className="text-xs text-green-600">{pwMsg}</p>}
+              {pwError && <p className="text-xs text-red-400">{pwError}</p>}
+              {pwMsg && <p className="text-xs text-green-400">{pwMsg}</p>}
               <input
                 type="password"
                 value={newPassword}
                 onChange={e => setNewPassword(e.target.value)}
                 placeholder="New password"
-                className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 outline-none"
+                className="w-full px-2 py-1.5 text-xs rounded outline-none border border-white/10"
+                style={{ backgroundColor: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.85)' }}
                 required
               />
               <input
@@ -104,13 +116,15 @@ export default function Sidebar() {
                 value={confirmPassword}
                 onChange={e => setConfirmPassword(e.target.value)}
                 placeholder="Confirm password"
-                className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 outline-none"
+                className="w-full px-2 py-1.5 text-xs rounded outline-none border border-white/10"
+                style={{ backgroundColor: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.85)' }}
                 required
               />
               <button
                 type="submit"
                 disabled={pwLoading}
-                className="w-full py-1.5 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                className="w-full py-1.5 text-xs text-white rounded disabled:opacity-50 transition-colors"
+                style={{ backgroundColor: '#087482' }}
               >
                 {pwLoading ? 'Saving...' : 'Update Password'}
               </button>
@@ -120,16 +134,18 @@ export default function Sidebar() {
 
         <button
           onClick={() => setShowChangePassword(v => !v)}
-          className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-900 w-full"
+          className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium w-full transition-colors hover:text-white"
+          style={{ color: 'rgba(255,255,255,0.55)' }}
         >
-          <KeyRound className="w-5 h-5" />
+          <KeyRound className="w-4 h-4" />
           Change Password
         </button>
         <button
           onClick={logout}
-          className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-900 w-full"
+          className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium w-full transition-colors hover:text-white"
+          style={{ color: 'rgba(255,255,255,0.55)' }}
         >
-          <LogOut className="w-5 h-5" />
+          <LogOut className="w-4 h-4" />
           Sign Out
         </button>
       </div>

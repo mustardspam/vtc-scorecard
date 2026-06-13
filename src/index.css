@@ -1,1 +1,15 @@
 @import "tailwindcss";
+
+@theme {
+  --font-sans: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
+
+  --color-brand-teal: #087482;
+  --color-brand-teal-dark: #2f687a;
+  --color-brand-teal-hover: #076570;
+  --color-brand-teal-light: #e6f3f5;
+  --color-brand-cream: #f3f1ea;
+  --color-brand-cream-dark: #e8e5db;
+  --color-brand-charcoal: #525249;
+  --color-brand-dark: #1c1c1a;
+  --color-brand-dark-muted: #2e2e2b;
+}

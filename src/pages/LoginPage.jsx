@@ -56,12 +56,22 @@ export default function LoginPage() {
     }
   }
 
+  const inputClass = "w-full px-3 py-2 border border-gray-300 rounded-lg outline-none text-sm focus:ring-2 focus:border-transparent transition-colors"
+  const inputStyle = { '--tw-ring-color': '#087482' }
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+    <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#f3f1ea' }}>
       <div className="w-full max-w-md bg-white rounded-xl shadow-sm border border-gray-200 p-8">
-        <div className="text-center mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">VTC Scorecard</h1>
-          <p className="text-sm text-gray-500 mt-1">Vendor & Trade Performance Portal</p>
+        {/* Logo */}
+        <div className="text-center mb-7">
+          <img
+            src="/vtc-scorecard/aw-stl-logo.jpg"
+            alt="Ashton Woods / Starlight Homes"
+            className="h-12 mx-auto object-contain"
+          />
+          <p className="text-xs mt-3" style={{ color: '#525249', opacity: 0.65 }}>
+            Vendor &amp; Trade Performance Portal
+          </p>
         </div>
 
         {/* Tabs */}
@@ -99,7 +109,8 @@ export default function LoginPage() {
                 type="email"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm"
+                className={inputClass}
+                style={inputStyle}
                 required
               />
             </div>
@@ -109,14 +120,18 @@ export default function LoginPage() {
                 type="password"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm"
+                className={inputClass}
+                style={inputStyle}
                 required
               />
             </div>
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-2.5 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors text-sm"
+              className="w-full py-2.5 text-white font-medium rounded-lg disabled:opacity-50 transition-colors text-sm"
+              style={{ backgroundColor: loading ? '#087482' : '#087482' }}
+              onMouseEnter={e => { if (!loading) e.currentTarget.style.backgroundColor = '#076570' }}
+              onMouseLeave={e => { e.currentTarget.style.backgroundColor = '#087482' }}
             >
               {loading ? 'Signing in...' : 'Sign In'}
             </button>
@@ -138,7 +153,10 @@ export default function LoginPage() {
               </p>
               <button
                 onClick={() => { setTab('signin'); setSignupSuccess(false); setPassword(''); setConfirmPassword('') }}
-                className="mt-4 text-sm text-blue-600 hover:text-blue-700 font-medium"
+                className="mt-4 text-sm font-medium transition-colors"
+                style={{ color: '#087482' }}
+                onMouseEnter={e => { e.currentTarget.style.color = '#076570' }}
+                onMouseLeave={e => { e.currentTarget.style.color = '#087482' }}
               >
                 Go to Sign In →
               </button>
@@ -151,7 +169,8 @@ export default function LoginPage() {
                   type="text"
                   value={fullName}
                   onChange={e => setFullName(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm"
+                  className={inputClass}
+                  style={inputStyle}
                   placeholder="John Smith"
                   required
                 />
@@ -162,7 +181,8 @@ export default function LoginPage() {
                   type="email"
                   value={email}
                   onChange={e => setEmail(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm"
+                  className={inputClass}
+                  style={inputStyle}
                   required
                 />
               </div>
@@ -172,7 +192,8 @@ export default function LoginPage() {
                   type="password"
                   value={password}
                   onChange={e => setPassword(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm"
+                  className={inputClass}
+                  style={inputStyle}
                   placeholder="Min. 8 characters"
                   required
                 />
@@ -183,14 +204,18 @@ export default function LoginPage() {
                   type="password"
                   value={confirmPassword}
                   onChange={e => setConfirmPassword(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm"
+                  className={inputClass}
+                  style={inputStyle}
                   required
                 />
               </div>
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full py-2.5 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors text-sm"
+                className="w-full py-2.5 text-white font-medium rounded-lg disabled:opacity-50 transition-colors text-sm"
+                style={{ backgroundColor: '#087482' }}
+                onMouseEnter={e => { if (!loading) e.currentTarget.style.backgroundColor = '#076570' }}
+                onMouseLeave={e => { e.currentTarget.style.backgroundColor = '#087482' }}
               >
                 {loading ? 'Creating account...' : 'Create Account'}
               </button>

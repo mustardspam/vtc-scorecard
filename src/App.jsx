@@ -24,10 +24,10 @@ export default function App() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-50">
+      <div className="flex items-center justify-center h-screen" style={{ backgroundColor: '#f3f1ea' }}>
         <div className="text-center">
-          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mx-auto" />
-          <p className="mt-4 text-sm text-gray-500">Loading...</p>
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 mx-auto" style={{ borderColor: '#087482' }} />
+          <p className="mt-4 text-sm" style={{ color: '#525249', opacity: 0.6 }}>Loading...</p>
         </div>
       </div>
     )
