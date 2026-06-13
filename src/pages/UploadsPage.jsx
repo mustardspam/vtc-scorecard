@@ -288,27 +288,44 @@ export default function UploadsPage() {
     try {
       const activeCommunities = jcParsed.communities.filter(c => selectedCommunities.has(c.code))
 
-      // 1. Batch upsert selected communities
-      setImportProgress(`Upserting ${activeCommunities.length} communities...`)
-      if (activeCommunities.length > 0) {
-        const { error } = await supabase.from('communities').upsert(
-          activeCommunities.map(c => ({ name: c.code, code: c.code, brand, is_active: true })),
-          { onConflict: 'code' }
+      // 1. Check/insert communities (fetch first, insert only missing ones to avoid onConflict issues)
+      setImportProgress(`Checking ${activeCommunities.length} communities...`)
+      console.log('[JC] Step 1: fetching existing communities')
+      const { data: existingComms, error: existingCommErr } = await supabase
+        .from('communities').select('code').in('code', activeCommunities.map(c => c.code))
+      console.log('[JC] Step 1 result:', existingComms, existingCommErr)
+      if (existingCommErr) throw new Error('Fetch existing communities failed: ' + existingCommErr.message)
+
+      const existingCommCodes = new Set((existingComms || []).map(c => c.code))
+      const missingComms = activeCommunities.filter(c => !existingCommCodes.has(c.code))
+      console.log('[JC] Step 1: existing =', existingCommCodes.size, 'missing =', missingComms.length)
+
+      if (missingComms.length > 0) {
+        setImportProgress(`Inserting ${missingComms.length} new communities...`)
+        const { error: insertCommErr } = await supabase.from('communities').insert(
+          missingComms.map(c => ({ name: c.code, code: c.code, brand, is_active: true }))
         )
-        if (error) throw new Error('Communities upsert failed: ' + error.message)
+        console.log('[JC] Step 1 insert result:', insertCommErr)
+        if (insertCommErr) throw new Error('Communities insert failed: ' + insertCommErr.message)
       }
 
       // 2. Fetch lookup maps
       setImportProgress('Fetching communities...')
+      console.log('[JC] Step 2a: fetching all communities')
       const commRes = await supabase.from('communities').select('id, code')
+      console.log('[JC] Step 2a result:', commRes.data?.length, commRes.error)
       if (commRes.error) throw new Error('Fetch communities failed: ' + commRes.error.message)
 
       setImportProgress('Fetching vendors...')
+      console.log('[JC] Step 2b: fetching vendors')
       const vendorRes = await supabase.from('vendors').select('id, name')
+      console.log('[JC] Step 2b result:', vendorRes.data?.length, vendorRes.error)
       if (vendorRes.error) throw new Error('Fetch vendors failed: ' + vendorRes.error.message)
 
       setImportProgress('Fetching brand references...')
+      console.log('[JC] Step 2c: fetching brand refs')
       const refRes = await supabase.from('vendor_brand_references').select('jc_vendor_id, brand')
+      console.log('[JC] Step 2c result:', refRes.data?.length, refRes.error)
       if (refRes.error) throw new Error('Fetch brand refs failed: ' + refRes.error.message)
 
       const communityCodeMap = new Map((commRes.data || []).map(c => [c.code, c.id]))
