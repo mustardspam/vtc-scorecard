@@ -1,6 +1,33 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { Search, ChevronDown, ChevronUp, Database } from 'lucide-react'
+
+const CATEGORY_COLORS = {
+  'Painter':        'bg-purple-100 text-purple-700',
+  'Service':        'bg-slate-100 text-slate-600',
+  'SWPPP':          'bg-lime-100 text-lime-700',
+  'Grading':        'bg-amber-100 text-amber-800',
+  'Electrician':    'bg-yellow-100 text-yellow-700',
+  'HVAC':           'bg-cyan-100 text-cyan-700',
+  'Plumber':        'bg-blue-100 text-blue-700',
+  'Framer':         'bg-orange-100 text-orange-700',
+  'Insulation':     'bg-pink-100 text-pink-700',
+  'Fence':          'bg-stone-200 text-stone-700',
+  'Mirror/Glass':   'bg-sky-100 text-sky-700',
+  'Bricker':        'bg-red-100 text-red-700',
+  'Concrete':       'bg-gray-200 text-gray-700',
+  'Landscape':      'bg-green-100 text-green-700',
+  'Garage Door':    'bg-indigo-100 text-indigo-700',
+  'Cleaner':        'bg-teal-100 text-teal-700',
+  'Trash':          'bg-zinc-100 text-zinc-600',
+  'Drywall':        'bg-orange-200 text-orange-800',
+  'Roofer':         'bg-rose-100 text-rose-700',
+  'Flooring':       'bg-amber-200 text-amber-900',
+  'Countertops':    'bg-stone-100 text-stone-700',
+  'Cabinets':       'bg-yellow-200 text-yellow-900',
+  'Supplier':       'bg-violet-100 text-violet-700',
+  'Trim Carpenter': 'bg-orange-300 text-orange-900',
+}
 
 export default function DataPage() {
   const [tab, setTab] = useState('vendors')
@@ -18,8 +45,8 @@ export default function DataPage() {
     setLoading(true)
     const [vRes, cRes, catRes] = await Promise.all([
       supabase.from('vendors').select(`
-        id, name, is_active, is_trade,
-        vendor_categories(name),
+        id, name, is_active, is_trade, category_id,
+        vendor_categories(id, name),
         vendor_brand_references(brand, jc_vendor_id),
         vendor_community_assignments(
           cost_code,
@@ -33,12 +60,21 @@ export default function DataPage() {
           vendors(id, name, is_trade, vendor_categories(name))
         )
       `).eq('is_active', true).order('name'),
-      supabase.from('vendor_categories').select('*').order('name'),
+      supabase.from('vendor_categories').select('*').order('sort_order'),
     ])
     setVendors(vRes.data || [])
     setCommunities(cRes.data || [])
     setCategories(catRes.data || [])
     setLoading(false)
+  }
+
+  async function updateVendorCategory(vendorId, categoryId, categoryName) {
+    // Optimistic update
+    setVendors(prev => prev.map(v => v.id === vendorId
+      ? { ...v, category_id: categoryId, vendor_categories: { id: categoryId, name: categoryName } }
+      : v
+    ))
+    await supabase.from('vendors').update({ category_id: categoryId }).eq('id', vendorId)
   }
 
   const filteredVendors = vendors.filter(v => {
@@ -138,7 +174,11 @@ export default function DataPage() {
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
         </div>
       ) : tab === 'vendors' ? (
-        <VendorList vendors={filteredVendors} />
+        <VendorList
+          vendors={filteredVendors}
+          categories={categories}
+          onCategoryChange={updateVendorCategory}
+        />
       ) : (
         <CommunityList communities={filteredCommunities} />
       )}
@@ -146,7 +186,54 @@ export default function DataPage() {
   )
 }
 
-function VendorList({ vendors }) {
+function CategoryBadge({ vendorId, categoryName, categories, onCategoryChange }) {
+  const [editing, setEditing] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const selectRef = useRef(null)
+
+  const colorClass = CATEGORY_COLORS[categoryName] || 'bg-gray-100 text-gray-600'
+
+  async function handleChange(e) {
+    const cat = categories.find(c => c.name === e.target.value)
+    if (!cat || cat.name === categoryName) { setEditing(false); return }
+    setSaving(true)
+    await onCategoryChange(vendorId, cat.id, cat.name)
+    setSaving(false)
+    setEditing(false)
+  }
+
+  if (editing) {
+    return (
+      <select
+        ref={selectRef}
+        autoFocus
+        defaultValue={categoryName || ''}
+        onChange={handleChange}
+        onBlur={() => setEditing(false)}
+        onClick={e => e.stopPropagation()}
+        className="text-xs border-2 border-blue-400 rounded-full px-2 py-0.5 bg-white outline-none cursor-pointer shadow-sm"
+        style={{ minWidth: 110 }}
+      >
+        <option value="" disabled>— pick category —</option>
+        {categories.map(c => (
+          <option key={c.id} value={c.name}>{c.name}</option>
+        ))}
+      </select>
+    )
+  }
+
+  return (
+    <button
+      onClick={e => { e.stopPropagation(); setEditing(true) }}
+      title="Click to change category"
+      className={`text-xs px-2 py-0.5 rounded-full font-medium transition-all hover:ring-2 hover:ring-offset-1 hover:ring-blue-400 cursor-pointer ${colorClass}`}
+    >
+      {saving ? '…' : (categoryName || 'No category')}
+    </button>
+  )
+}
+
+function VendorList({ vendors, categories, onCategoryChange }) {
   const [expandedId, setExpandedId] = useState(null)
 
   if (vendors.length === 0) {
@@ -166,7 +253,6 @@ function VendorList({ vendors }) {
           const assignments = v.vendor_community_assignments || []
           const brandRefs = v.vendor_brand_references || []
 
-          // Unique communities from assignments
           const communityMap = new Map()
           assignments.forEach(a => {
             if (a.communities?.id) {
@@ -185,15 +271,17 @@ function VendorList({ vendors }) {
                 onClick={() => setExpandedId(isExpanded ? null : v.id)}
               >
                 <div className="flex items-start justify-between gap-4">
-                  {/* Left: name + badges + JC IDs */}
                   <div className="flex-1 min-w-0 space-y-1">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-sm font-semibold text-gray-900">{v.name}</span>
-                      {v.vendor_categories?.name && (
-                        <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full">
-                          {v.vendor_categories.name}
-                        </span>
-                      )}
+
+                      <CategoryBadge
+                        vendorId={v.id}
+                        categoryName={v.vendor_categories?.name}
+                        categories={categories}
+                        onCategoryChange={onCategoryChange}
+                      />
+
                       <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                         v.is_trade ? 'bg-indigo-100 text-indigo-700' : 'bg-purple-100 text-purple-700'
                       }`}>
@@ -216,7 +304,6 @@ function VendorList({ vendors }) {
                     )}
                   </div>
 
-                  {/* Right: community codes + expand */}
                   <div className="flex items-center gap-3 flex-shrink-0">
                     {uniqueCommunities.length > 0 && (
                       <div className="flex items-center gap-1 flex-wrap justify-end max-w-52">
@@ -240,7 +327,6 @@ function VendorList({ vendors }) {
 
               {isExpanded && (
                 <div className="px-4 pb-4 bg-gray-50 border-t border-gray-100 space-y-4 pt-3">
-                  {/* JC ID detail */}
                   {brandRefs.length > 0 && (
                     <div>
                       <p className="text-xs font-medium text-gray-500 mb-1.5">JC Vendor IDs</p>
@@ -257,7 +343,6 @@ function VendorList({ vendors }) {
                     </div>
                   )}
 
-                  {/* Community assignments */}
                   {uniqueCommunities.length > 0 ? (
                     <div>
                       <p className="text-xs font-medium text-gray-500 mb-2">
@@ -321,7 +406,6 @@ function CommunityList({ communities }) {
           const isExpanded = expandedId === c.id
           const assignments = c.vendor_community_assignments || []
 
-          // Unique vendors from assignments
           const vendorMap = new Map()
           assignments.forEach(a => {
             if (a.vendors?.id) {
@@ -373,28 +457,37 @@ function CommunityList({ communities }) {
                   {uniqueVendors.length > 0 ? (
                     <div className="space-y-1.5">
                       <p className="text-xs font-medium text-gray-500 mb-2">Assigned Vendors & Trades</p>
-                      {uniqueVendors.map(v => (
-                        <div key={v.id} className="flex items-center justify-between px-3 py-2 bg-white border border-gray-100 rounded-lg">
-                          <div className="min-w-0 flex-1">
-                            <p className="text-xs font-medium text-gray-800 truncate">{v.name}</p>
-                            <p className="text-xs text-gray-400">
-                              {v.vendor_categories?.name || 'No category'}
-                              {' · '}
-                              {v.is_trade ? 'Trade' : 'Vendor'}
-                            </p>
+                      {uniqueVendors.map(v => {
+                        const catName = v.vendor_categories?.name
+                        const colorClass = CATEGORY_COLORS[catName] || 'bg-gray-100 text-gray-600'
+                        return (
+                          <div key={v.id} className="flex items-center justify-between px-3 py-2 bg-white border border-gray-100 rounded-lg">
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs font-medium text-gray-800 truncate">{v.name}</p>
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                {catName && (
+                                  <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${colorClass}`}>
+                                    {catName}
+                                  </span>
+                                )}
+                                <span className="text-xs text-gray-400">
+                                  {v.is_trade ? 'Trade' : 'Vendor'}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="flex gap-1 flex-wrap justify-end ml-3 max-w-36 flex-shrink-0">
+                              {v.costCodes.sort().slice(0, 4).map(cc => (
+                                <span key={cc} className="text-xs font-mono bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">
+                                  {cc}
+                                </span>
+                              ))}
+                              {v.costCodes.length > 4 && (
+                                <span className="text-xs text-gray-400">+{v.costCodes.length - 4}</span>
+                              )}
+                            </div>
                           </div>
-                          <div className="flex gap-1 flex-wrap justify-end ml-3 max-w-36 flex-shrink-0">
-                            {v.costCodes.sort().slice(0, 4).map(cc => (
-                              <span key={cc} className="text-xs font-mono bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">
-                                {cc}
-                              </span>
-                            ))}
-                            {v.costCodes.length > 4 && (
-                              <span className="text-xs text-gray-400">+{v.costCodes.length - 4}</span>
-                            )}
-                          </div>
-                        </div>
-                      ))}
+                        )
+                      })}
                     </div>
                   ) : (
                     <p className="text-xs text-gray-400">No vendor assignments yet.</p>

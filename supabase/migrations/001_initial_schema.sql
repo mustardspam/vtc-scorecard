@@ -512,7 +512,7 @@ BEGIN
   v_safety_mult := COALESCE((SELECT (value#>>'{}')::numeric FROM system_config WHERE key = 'safety_multiplier'), 10);
   v_rework_mult := COALESCE((SELECT (value#>>'{}')::numeric FROM system_config WHERE key = 'rework_multiplier'), 5);
 
-  DELETE FROM score_results;
+  TRUNCATE TABLE score_results;
 
   INSERT INTO score_results (
     vendor_id, category_id, period_start, period_end,
@@ -578,7 +578,8 @@ BEGIN
      + CASE WHEN schedule_score IS NOT NULL THEN v_weights.schedule_weight ELSE 0 END
      + CASE WHEN rework_score IS NOT NULL THEN v_weights.rework_weight ELSE 0 END
      + CASE WHEN feedback_score IS NOT NULL THEN v_weights.feedback_weight ELSE 0 END), 0)
-  ), 2);
+  ), 2)
+  WHERE id IS NOT NULL;
 
   -- Rankings
   WITH ranked AS (
