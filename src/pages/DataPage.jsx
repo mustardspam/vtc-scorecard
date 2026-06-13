@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
-import { Search, ChevronDown, ChevronUp, Database } from 'lucide-react'
+import { Search, ChevronDown, ChevronUp, Database, Trash2 } from 'lucide-react'
 
 const CATEGORY_COLORS = {
   'Painter':        'bg-purple-100 text-purple-700',
@@ -38,6 +38,8 @@ export default function DataPage() {
   const [search, setSearch] = useState('')
   const [filterCategory, setFilterCategory] = useState('')
   const [filterBrand, setFilterBrand] = useState('')
+  const [selectedVendorIds, setSelectedVendorIds] = useState(new Set())
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => { loadData() }, [])
 
@@ -66,6 +68,41 @@ export default function DataPage() {
     setCommunities(cRes.data || [])
     setCategories(catRes.data || [])
     setLoading(false)
+  }
+
+  function toggleVendorSelect(id) {
+    setSelectedVendorIds(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  function toggleSelectAll(visibleIds) {
+    setSelectedVendorIds(prev => {
+      const allSelected = visibleIds.every(id => prev.has(id))
+      if (allSelected) {
+        const next = new Set(prev)
+        visibleIds.forEach(id => next.delete(id))
+        return next
+      }
+      return new Set([...prev, ...visibleIds])
+    })
+  }
+
+  async function deleteSelectedVendors() {
+    if (selectedVendorIds.size === 0) return
+    const ids = [...selectedVendorIds]
+    const names = vendors.filter(v => ids.includes(v.id)).map(v => v.name)
+    const confirmed = window.confirm(
+      `Delete ${ids.length} vendor${ids.length !== 1 ? 's' : ''}?\n\n${names.slice(0, 10).join('\n')}${names.length > 10 ? `\n…and ${names.length - 10} more` : ''}\n\nThis cannot be undone.`
+    )
+    if (!confirmed) return
+    setDeleting(true)
+    await supabase.from('vendors').delete().in('id', ids)
+    setVendors(prev => prev.filter(v => !ids.includes(v.id)))
+    setSelectedVendorIds(new Set())
+    setDeleting(false)
   }
 
   async function updateVendorCategory(vendorId, categoryId, categoryName) {
@@ -178,6 +215,11 @@ export default function DataPage() {
           vendors={filteredVendors}
           categories={categories}
           onCategoryChange={updateVendorCategory}
+          selectedIds={selectedVendorIds}
+          onToggleSelect={toggleVendorSelect}
+          onToggleSelectAll={toggleSelectAll}
+          onDeleteSelected={deleteSelectedVendors}
+          deleting={deleting}
         />
       ) : (
         <CommunityList communities={filteredCommunities} />
@@ -233,8 +275,13 @@ function CategoryBadge({ vendorId, categoryName, categories, onCategoryChange })
   )
 }
 
-function VendorList({ vendors, categories, onCategoryChange }) {
+function VendorList({ vendors, categories, onCategoryChange, selectedIds, onToggleSelect, onToggleSelectAll, onDeleteSelected, deleting }) {
   const [expandedId, setExpandedId] = useState(null)
+
+  const visibleIds = vendors.map(v => v.id)
+  const allSelected = visibleIds.length > 0 && visibleIds.every(id => selectedIds.has(id))
+  const someSelected = visibleIds.some(id => selectedIds.has(id))
+  const selectedCount = visibleIds.filter(id => selectedIds.has(id)).length
 
   if (vendors.length === 0) {
     return (
@@ -247,9 +294,38 @@ function VendorList({ vendors, categories, onCategoryChange }) {
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+
+      {/* Bulk action bar */}
+      <div className={`flex items-center gap-3 px-4 py-2 border-b transition-colors ${someSelected ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-100'}`}>
+        <input
+          type="checkbox"
+          checked={allSelected}
+          ref={el => { if (el) el.indeterminate = someSelected && !allSelected }}
+          onChange={() => onToggleSelectAll(visibleIds)}
+          className="w-4 h-4 rounded border-gray-300 accent-red-600 cursor-pointer"
+          title={allSelected ? 'Deselect all' : 'Select all'}
+        />
+        {someSelected ? (
+          <>
+            <span className="text-sm font-medium text-red-700">{selectedCount} selected</span>
+            <button
+              onClick={onDeleteSelected}
+              disabled={deleting}
+              className="flex items-center gap-1.5 px-3 py-1 text-sm font-medium bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              {deleting ? 'Deleting…' : `Delete ${selectedCount}`}
+            </button>
+          </>
+        ) : (
+          <span className="text-xs text-gray-400">Select vendors to delete</span>
+        )}
+      </div>
+
       <div className="divide-y divide-gray-100">
         {vendors.map(v => {
           const isExpanded = expandedId === v.id
+          const isSelected = selectedIds.has(v.id)
           const assignments = v.vendor_community_assignments || []
           const brandRefs = v.vendor_brand_references || []
 
@@ -265,43 +341,52 @@ function VendorList({ vendors, categories, onCategoryChange }) {
           const uniqueCommunities = Array.from(communityMap.values())
 
           return (
-            <div key={v.id}>
+            <div key={v.id} className={isSelected ? 'bg-red-50' : ''}>
               <div
-                className="px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors"
+                className={`px-4 py-3 cursor-pointer transition-colors ${isSelected ? 'hover:bg-red-100' : 'hover:bg-gray-50'}`}
                 onClick={() => setExpandedId(isExpanded ? null : v.id)}
               >
                 <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1 min-w-0 space-y-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-semibold text-gray-900">{v.name}</span>
+                  <div className="flex items-start gap-3 flex-1 min-w-0">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => onToggleSelect(v.id)}
+                      onClick={e => e.stopPropagation()}
+                      className="mt-0.5 w-4 h-4 rounded border-gray-300 accent-red-600 cursor-pointer flex-shrink-0"
+                    />
+                    <div className="flex-1 min-w-0 space-y-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-semibold text-gray-900">{v.name}</span>
 
-                      <CategoryBadge
-                        vendorId={v.id}
-                        categoryName={v.vendor_categories?.name}
-                        categories={categories}
-                        onCategoryChange={onCategoryChange}
-                      />
+                        <CategoryBadge
+                          vendorId={v.id}
+                          categoryName={v.vendor_categories?.name}
+                          categories={categories}
+                          onCategoryChange={onCategoryChange}
+                        />
 
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                        v.is_trade ? 'bg-indigo-100 text-indigo-700' : 'bg-purple-100 text-purple-700'
-                      }`}>
-                        {v.is_trade ? 'Trade' : 'Vendor'}
-                      </span>
-                    </div>
-
-                    {brandRefs.length > 0 && (
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        {brandRefs.map(r => (
-                          <span key={r.jc_vendor_id} className={`text-xs font-mono px-1.5 py-0.5 rounded border ${
-                            r.brand === 'Starlight'
-                              ? 'bg-yellow-50 text-yellow-800 border-yellow-200'
-                              : 'bg-blue-50 text-blue-800 border-blue-200'
-                          }`}>
-                            {r.brand === 'Starlight' ? 'SL' : 'AW'}:{r.jc_vendor_id}
-                          </span>
-                        ))}
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                          v.is_trade ? 'bg-indigo-100 text-indigo-700' : 'bg-purple-100 text-purple-700'
+                        }`}>
+                          {v.is_trade ? 'Trade' : 'Vendor'}
+                        </span>
                       </div>
-                    )}
+
+                      {brandRefs.length > 0 && (
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {brandRefs.map(r => (
+                            <span key={r.jc_vendor_id} className={`text-xs font-mono px-1.5 py-0.5 rounded border ${
+                              r.brand === 'Starlight'
+                                ? 'bg-yellow-50 text-yellow-800 border-yellow-200'
+                                : 'bg-blue-50 text-blue-800 border-blue-200'
+                            }`}>
+                              {r.brand === 'Starlight' ? 'SL' : 'AW'}:{r.jc_vendor_id}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   <div className="flex items-center gap-3 flex-shrink-0">
@@ -326,7 +411,7 @@ function VendorList({ vendors, categories, onCategoryChange }) {
               </div>
 
               {isExpanded && (
-                <div className="px-4 pb-4 bg-gray-50 border-t border-gray-100 space-y-4 pt-3">
+                <div className="pl-11 pr-4 pb-4 bg-gray-50 border-t border-gray-100 space-y-4 pt-3">
                   {brandRefs.length > 0 && (
                     <div>
                       <p className="text-xs font-medium text-gray-500 mb-1.5">JC Vendor IDs</p>
