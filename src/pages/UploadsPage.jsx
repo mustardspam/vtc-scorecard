@@ -271,6 +271,10 @@ export default function UploadsPage() {
       else if (fileType === 'vendor_master') await insertVendorMaster(mappedRows)
       else if (fileType === 'community_reference') await insertCommunityReference(mappedRows)
 
+      if (['schedule', 'safety', 'rework'].includes(fileType)) {
+        await supabase.rpc('calculate_scores')
+      }
+
       await logActivity('import_approved', `Imported ${fileType} data: ${file.name} (${mappedRows.length} rows)`, {
         batch_id: batch.id, file_id: uploadedFile.id, filename: file.name, row_count: mappedRows.length
       })

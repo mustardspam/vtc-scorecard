@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
-import { ArrowUpDown, Search, Download, ChevronDown, ChevronUp } from 'lucide-react'
+import { ArrowUpDown, Search, Download, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react'
 
 function scoreColor(score) {
   if (score == null) return 'text-gray-400'
@@ -21,6 +21,7 @@ function scoreBg(score) {
 export default function ScoresPage() {
   const [scores, setScores] = useState([])
   const [loading, setLoading] = useState(true)
+  const [recalculating, setRecalculating] = useState(false)
   const [search, setSearch] = useState('')
   const [sortField, setSortField] = useState('weighted_total')
   const [sortDir, setSortDir] = useState('desc')
@@ -39,6 +40,13 @@ export default function ScoresPage() {
       .order('weighted_total', { ascending: false, nullsFirst: false })
     setScores(data || [])
     setLoading(false)
+  }
+
+  async function handleRecalculate() {
+    setRecalculating(true)
+    await supabase.rpc('calculate_scores')
+    await loadScores()
+    setRecalculating(false)
   }
 
   function handleSort(field) {
@@ -126,6 +134,14 @@ export default function ScoresPage() {
               className="pl-9 pr-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
             />
           </div>
+          <button
+            onClick={handleRecalculate}
+            disabled={recalculating}
+            className="flex items-center gap-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+          >
+            <RefreshCw className={`w-4 h-4 ${recalculating ? 'animate-spin' : ''}`} />
+            {recalculating ? 'Recalculating...' : 'Recalculate'}
+          </button>
           <button onClick={exportCSV} className="flex items-center gap-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">
             <Download className="w-4 h-4" /> Export CSV
           </button>
