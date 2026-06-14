@@ -4,7 +4,7 @@ import { useTheme } from '../../context/ThemeContext'
 import { useState } from 'react'
 import {
   LayoutDashboard, Table2, MessageSquare, Upload, Camera,
-  Activity, Settings, LogOut, Send, KeyRound, X, Database, Sun, Moon
+  Activity, Settings, LogOut, Send, KeyRound, X, Database, Sun, Moon, MapPin, Mail
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 
@@ -15,8 +15,10 @@ const navItems = [
   { to: '/feedback/submit', icon: Send, label: 'Submit Feedback', roles: ['admin', 'manager', 'viewer'] },
   { to: '/feedback', icon: MessageSquare, label: 'Feedback Review', roles: ['admin', 'manager'], end: true },
   { to: '/uploads', icon: Upload, label: 'Uploads', roles: ['admin', 'manager'] },
+  { to: '/community', icon: MapPin, label: 'Communities', roles: ['admin', 'manager', 'viewer'] },
   { to: '/snapshots', icon: Camera, label: 'Snapshots', roles: ['admin', 'manager', 'viewer'] },
   { to: '/activity', icon: Activity, label: 'Activity', roles: ['admin', 'manager', 'viewer'] },
+  { to: '/digest', icon: Mail, label: 'Digest Email', roles: ['admin', 'manager'] },
   { to: '/admin', icon: Settings, label: 'Admin', roles: ['admin'] },
 ]
 

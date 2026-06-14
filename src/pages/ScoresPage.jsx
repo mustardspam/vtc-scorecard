@@ -1,10 +1,17 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
-import { ArrowUpDown, Search, Download, ChevronDown, ChevronUp, RefreshCw, Printer } from 'lucide-react'
+import { ArrowUpDown, Search, Download, ChevronDown, ChevronUp, RefreshCw, Printer, ClipboardList, X } from 'lucide-react'
 import { useThresholds } from '../hooks/useThresholds'
+import { logActivity } from '../hooks/useActivityLog'
 import TierBadge from '../components/scores/TierBadge'
 import TrendSparkline from '../components/scores/TrendSparkline'
 import VendorReportCard from '../components/scores/VendorReportCard'
+
+const VENDOR_ACTION_TYPES = [
+  'Notice Sent', 'Meeting Scheduled', 'Meeting Held',
+  'Placed on Hold', 'Removed from Bid List', 'Reinstated',
+  'Performance Improvement Plan', 'Other',
+]
 
 function scoreColor(score) {
   if (score == null) return 'text-gray-400'
@@ -33,6 +40,7 @@ export default function ScoresPage() {
   const [expandedId, setExpandedId] = useState(null)
   const [drillDown, setDrillDown] = useState(null)
   const [reportCard, setReportCard] = useState(null)
+  const [logActionTarget, setLogActionTarget] = useState(null)
   const { getTier, hasEnoughData } = useThresholds()
 
   useEffect(() => { loadScores() }, [])
@@ -155,6 +163,13 @@ export default function ScoresPage() {
           onClose={() => setReportCard(null)}
         />
       )}
+      {logActionTarget && (
+        <LogActionModal
+          vendorName={logActionTarget.vendors?.name}
+          vendorId={logActionTarget.vendor_id}
+          onClose={() => setLogActionTarget(null)}
+        />
+      )}
 
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Scores</h1>
@@ -256,7 +271,11 @@ export default function ScoresPage() {
                 {expandedId === s.id && drillDown && (
                   <tr key={`${s.id}-detail`}>
                     <td colSpan={10} className="px-4 py-4 bg-blue-50">
-                      <DrillDownPanel data={drillDown} vendorName={s.vendors?.name} />
+                      <DrillDownPanel
+                        data={drillDown}
+                        vendorName={s.vendors?.name}
+                        onLogAction={() => setLogActionTarget(s)}
+                      />
                     </td>
                   </tr>
                 )}
@@ -276,10 +295,18 @@ export default function ScoresPage() {
   )
 }
 
-function DrillDownPanel({ data, vendorName }) {
+function DrillDownPanel({ data, vendorName, onLogAction }) {
   return (
     <div className="space-y-4">
-      <h3 className="font-semibold text-gray-900">Score Details — {vendorName}</h3>
+      <div className="flex items-center justify-between">
+        <h3 className="font-semibold text-gray-900">Score Details — {vendorName}</h3>
+        <button
+          onClick={onLogAction}
+          className="flex items-center gap-1 px-3 py-1.5 text-xs bg-white border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700"
+        >
+          <ClipboardList className="w-3.5 h-3.5" /> Log Action
+        </button>
+      </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <h4 className="text-xs font-medium text-gray-600 uppercase mb-2">Schedule Records ({data.schedule.length})</h4>
@@ -332,6 +359,75 @@ function DrillDownPanel({ data, vendorName }) {
               ))}
             </div>
           )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function LogActionModal({ vendorName, vendorId, onClose }) {
+  const [action, setAction] = useState(VENDOR_ACTION_TYPES[0])
+  const [note, setNote] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  async function handleSave() {
+    setSaving(true)
+    try {
+      await logActivity('vendor_action', `${action} — ${vendorName}`, {
+        vendor_id: vendorId,
+        vendor_name: vendorName,
+        action,
+        note: note.trim(),
+      })
+      setSaved(true)
+      setTimeout(onClose, 1200)
+    } catch {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+            <ClipboardList className="w-4 h-4 text-blue-600" />
+            Log Action — {vendorName}
+          </h3>
+          <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-700"><X className="w-4 h-4" /></button>
+        </div>
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Action Type</label>
+            <select
+              value={action}
+              onChange={e => setAction(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+            >
+              {VENDOR_ACTION_TYPES.map(a => <option key={a} value={a}>{a}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Notes (optional)</label>
+            <textarea
+              value={note}
+              onChange={e => setNote(e.target.value)}
+              placeholder="Add details about this action..."
+              rows={3}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm resize-none"
+            />
+          </div>
+        </div>
+        <div className="flex items-center gap-2 pt-2">
+          <button
+            onClick={handleSave}
+            disabled={saving || saved}
+            className="flex-1 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+          >
+            {saved ? '✓ Saved' : saving ? 'Saving...' : 'Save Action'}
+          </button>
+          <button onClick={onClose} className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
         </div>
       </div>
     </div>

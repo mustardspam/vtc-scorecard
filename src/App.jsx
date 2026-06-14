@@ -15,6 +15,8 @@ import SnapshotsPage from './pages/SnapshotsPage'
 import ActivityPage from './pages/ActivityPage'
 import AdminPage from './pages/AdminPage'
 import DataPage from './pages/DataPage'
+import CommunityPage from './pages/CommunityPage'
+import DigestPage from './pages/DigestPage'
 
 export default function App() {
   const { initialize, loading } = useAuth()
@@ -67,6 +69,8 @@ export default function App() {
         } />
         <Route path="/snapshots" element={<SnapshotsPage />} />
         <Route path="/activity" element={<ActivityPage />} />
+        <Route path="/community" element={<CommunityPage />} />
+        <Route path="/digest" element={<DigestPage />} />
         <Route path="/admin" element={
           <ProtectedRoute allowedRoles={['admin']}>
             <AdminPage />

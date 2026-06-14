@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
-import { ChevronDown, ChevronUp, Users, Activity, Filter, X } from 'lucide-react'
+import { ChevronDown, ChevronUp, Users, Activity, Filter, X, AlertTriangle, ClipboardList } from 'lucide-react'
 
 const ACTION_COLORS = {
   file_upload: 'bg-blue-100 text-blue-700',
@@ -25,6 +25,13 @@ const SEVERITY_STYLES = {
   minor: 'bg-yellow-100 text-yellow-700',
 }
 
+const TABS = [
+  { id: 'feedback', label: 'Feedback Submissions', icon: Users },
+  { id: 'outliers', label: 'CM Outlier Tracking', icon: AlertTriangle },
+  { id: 'vendor-actions', label: 'Vendor Actions', icon: ClipboardList },
+  { id: 'log', label: 'System Log', icon: Activity },
+]
+
 export default function ActivityPage() {
   const [tab, setTab] = useState('feedback')
 
@@ -32,28 +39,25 @@ export default function ActivityPage() {
     <div className="space-y-4">
       <h1 className="text-2xl font-bold text-gray-900">Activity</h1>
 
-      <div className="flex gap-2 border-b border-gray-200 pb-px">
-        <button
-          onClick={() => setTab('feedback')}
-          className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-            tab === 'feedback' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          <Users className="w-4 h-4" />
-          Feedback Submissions
-        </button>
-        <button
-          onClick={() => setTab('log')}
-          className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-            tab === 'log' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          <Activity className="w-4 h-4" />
-          System Log
-        </button>
+      <div className="flex gap-1 border-b border-gray-200 pb-px overflow-x-auto">
+        {TABS.map(t => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+              tab === t.id ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <t.icon className="w-4 h-4" />
+            {t.label}
+          </button>
+        ))}
       </div>
 
-      {tab === 'feedback' ? <FeedbackSubmissionsTab /> : <SystemLogTab />}
+      {tab === 'feedback' && <FeedbackSubmissionsTab />}
+      {tab === 'outliers' && <CMOutlierTab />}
+      {tab === 'vendor-actions' && <VendorActionsTab />}
+      {tab === 'log' && <SystemLogTab />}
     </div>
   )
 }
@@ -382,6 +386,229 @@ function SystemLogTab() {
           Next
         </button>
       </div>
+    </div>
+  )
+}
+
+// ── CM Outlier Tracking ──────────────────────────────────────────────────────
+
+function CMOutlierTab() {
+  const [rows, setRows] = useState([])
+  const [loading, setLoading] = useState(true)
+  const OUTLIER_THRESHOLD = 1.5
+
+  useEffect(() => { loadData() }, [])
+
+  async function loadData() {
+    setLoading(true)
+    const { data } = await supabase
+      .from('builder_feedback')
+      .select('submitted_by, category, points, is_approved, submitter:profiles!builder_feedback_submitted_by_fkey(full_name, email)')
+      .not('submitted_by', 'is', null)
+    setLoading(false)
+
+    if (!data?.length) { setRows([]); return }
+
+    const byUser = {}
+    for (const f of data) {
+      const uid = f.submitted_by
+      if (!byUser[uid]) byUser[uid] = {
+        uid,
+        name: f.submitter?.full_name || f.submitter?.email || uid,
+        total: 0, kudos: 0, complaints: 0, totalPoints: 0,
+      }
+      byUser[uid].total++
+      byUser[uid].totalPoints += Number(f.points || 0)
+      if (f.category === 'kudos') byUser[uid].kudos++
+      else if (f.category === 'complaint') byUser[uid].complaints++
+    }
+
+    const users = Object.values(byUser).map(u => ({
+      ...u,
+      avgPoints: u.total > 0 ? u.totalPoints / u.total : 0,
+      kudosPct: u.total > 0 ? (u.kudos / u.total) * 100 : 0,
+    }))
+
+    // Z-score on avgPoints
+    const avg = users.reduce((s, u) => s + u.avgPoints, 0) / users.length
+    const stdDev = Math.sqrt(users.reduce((s, u) => s + Math.pow(u.avgPoints - avg, 2), 0) / users.length) || 1
+    for (const u of users) {
+      u.zScore = (u.avgPoints - avg) / stdDev
+      u.fleetAvg = avg
+    }
+
+    setRows(users.filter(u => u.total >= 3).sort((a, b) => Math.abs(b.zScore) - Math.abs(a.zScore)))
+  }
+
+  if (loading) return <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>
+
+  const outliers = rows.filter(r => Math.abs(r.zScore) >= 1.5)
+  const normal = rows.filter(r => Math.abs(r.zScore) < 1.5)
+  const fleetAvg = rows[0]?.fleetAvg
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
+        <p className="font-medium mb-1">How outlier detection works</p>
+        <p className="text-xs text-blue-700">
+          CMs are flagged when their average feedback points deviate more than 1.5 standard deviations from the fleet mean.
+          High outliers give consistently generous feedback; low outliers give consistently harsh feedback.
+          Minimum 3 submissions required. Fleet average: <strong>{fleetAvg != null ? fleetAvg.toFixed(1) : '—'} pts</strong>.
+        </p>
+      </div>
+
+      {outliers.length > 0 && (
+        <div>
+          <h3 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-1">
+            <AlertTriangle className="w-4 h-4 text-amber-500" /> Outlier CMs ({outliers.length})
+          </h3>
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <CMTable rows={outliers} highlight />
+          </div>
+        </div>
+      )}
+
+      <div>
+        <h3 className="text-sm font-semibold text-gray-700 mb-2">All CMs — Feedback Patterns</h3>
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <CMTable rows={normal} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function CMTable({ rows, highlight }) {
+  if (rows.length === 0) return <p className="text-sm text-gray-400 p-6 text-center">No data.</p>
+  return (
+    <table className="w-full text-sm">
+      <thead className="bg-gray-50 border-b border-gray-100">
+        <tr>
+          <th className="text-left px-4 py-2 text-xs font-medium text-gray-500">CM / Submitter</th>
+          <th className="text-right px-4 py-2 text-xs font-medium text-gray-500">Total</th>
+          <th className="text-right px-4 py-2 text-xs font-medium text-gray-500">Kudos</th>
+          <th className="text-right px-4 py-2 text-xs font-medium text-gray-500">Complaints</th>
+          <th className="text-right px-4 py-2 text-xs font-medium text-gray-500">Avg Pts</th>
+          <th className="text-right px-4 py-2 text-xs font-medium text-gray-500">Kudos %</th>
+          <th className="text-right px-4 py-2 text-xs font-medium text-gray-500">Deviation</th>
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-gray-100">
+        {rows.map(r => {
+          const isHigh = r.zScore > 1.5
+          const isLow = r.zScore < -1.5
+          return (
+            <tr key={r.uid} className={highlight ? (isHigh ? 'bg-green-50' : isLow ? 'bg-red-50' : '') : ''}>
+              <td className="px-4 py-2 font-medium text-gray-900">{r.name}</td>
+              <td className="px-4 py-2 text-right text-gray-600">{r.total}</td>
+              <td className="px-4 py-2 text-right text-green-700">{r.kudos}</td>
+              <td className="px-4 py-2 text-right text-red-600">{r.complaints}</td>
+              <td className="px-4 py-2 text-right font-mono">{r.avgPoints.toFixed(1)}</td>
+              <td className="px-4 py-2 text-right">{r.kudosPct.toFixed(0)}%</td>
+              <td className="px-4 py-2 text-right">
+                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                  isHigh ? 'bg-green-100 text-green-700' :
+                  isLow ? 'bg-red-100 text-red-700' :
+                  'bg-gray-100 text-gray-500'
+                }`}>
+                  {r.zScore > 0 ? '+' : ''}{r.zScore.toFixed(2)}σ
+                </span>
+              </td>
+            </tr>
+          )
+        })}
+      </tbody>
+    </table>
+  )
+}
+
+// ── Vendor Actions Tab ───────────────────────────────────────────────────────
+
+const VENDOR_ACTION_TYPES = [
+  'Notice Sent',
+  'Meeting Scheduled',
+  'Meeting Held',
+  'Placed on Hold',
+  'Removed from Bid List',
+  'Reinstated',
+  'Performance Improvement Plan',
+  'Other',
+]
+
+function VendorActionsTab() {
+  const [actions, setActions] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [filterVendor, setFilterVendor] = useState('')
+  const vendorNames = [...new Set(actions.map(a => a.metadata?.vendor_name).filter(Boolean))].sort()
+
+  useEffect(() => { loadActions() }, [])
+
+  async function loadActions() {
+    setLoading(true)
+    const { data } = await supabase
+      .from('activity_log')
+      .select('id, metadata, created_at, profiles!activity_log_user_id_fkey(full_name, email)')
+      .eq('action_type', 'vendor_action')
+      .order('created_at', { ascending: false })
+      .limit(200)
+    setActions(data || [])
+    setLoading(false)
+  }
+
+  const filtered = filterVendor
+    ? actions.filter(a => a.metadata?.vendor_name === filterVendor)
+    : actions
+
+  if (loading) return <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <select
+          value={filterVendor}
+          onChange={e => setFilterVendor(e.target.value)}
+          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm bg-white"
+        >
+          <option value="">All Vendors</option>
+          {vendorNames.map(n => <option key={n} value={n}>{n}</option>)}
+        </select>
+        {filterVendor && (
+          <button onClick={() => setFilterVendor('')} className="text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1">
+            <X className="w-3.5 h-3.5" /> Clear
+          </button>
+        )}
+        <span className="text-xs text-gray-400 ml-auto">{filtered.length} action{filtered.length !== 1 ? 's' : ''}</span>
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="text-center py-16 text-gray-400 bg-white rounded-xl border border-gray-200">
+          <ClipboardList className="w-8 h-8 mx-auto mb-2 opacity-30" />
+          <p className="text-sm">No vendor actions logged yet.</p>
+          <p className="text-xs mt-1">Use the "Log Action" button on the Scores page to record actions taken on vendors.</p>
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
+          {filtered.map(a => {
+            const meta = a.metadata || {}
+            const user = a.profiles?.full_name || a.profiles?.email || 'Unknown'
+            return (
+              <div key={a.id} className="px-4 py-3">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="space-y-0.5 flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-medium text-gray-900 text-sm">{meta.vendor_name || '—'}</span>
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-medium">{meta.action || 'Action'}</span>
+                    </div>
+                    {meta.note && <p className="text-xs text-gray-600 mt-1">{meta.note}</p>}
+                    <p className="text-xs text-gray-400">by {user}</p>
+                  </div>
+                  <span className="text-xs text-gray-400 shrink-0">{new Date(a.created_at).toLocaleString()}</span>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
