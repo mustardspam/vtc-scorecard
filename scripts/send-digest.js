@@ -6,13 +6,14 @@ const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
 
 // ── Recipients ─────────────────────────────────────────────────────────────
 // Add or remove email addresses here
+// Until a domain is verified at resend.com/domains, Resend only allows sending
+// to the account owner email (mustardsubs@proton.me). After domain verification,
+// replace FROM_ADDRESS below and add any recipients here.
 const RECIPIENTS = [
   'mustardsubs@proton.me',
-  // 'name@ashtonwoods.com',
-  // 'name@starlighthomes.com',
 ]
 
-const FROM_ADDRESS = 'VTC Scorecard <onboarding@resend.dev>' // change to your verified domain later
+const FROM_ADDRESS = 'VTC Scorecard <onboarding@resend.dev>'
 
 // ───────────────────────────────────────────────────────────────────────────
 
