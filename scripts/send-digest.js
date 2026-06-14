@@ -110,8 +110,9 @@ function buildExecutiveSummary({ scores, feedback, priorScores, priorSnapshotNam
   lines.push('-'.repeat(40))
 
   // Week-over-week
-  if (priorScores.length > 0) {
-    const priorAvg = priorScores.filter(s => s.weighted_total != null).reduce((a, s) => a + Number(s.weighted_total), 0) / priorScores.length
+  const priorValid = priorScores.filter(s => s.weighted_total != null)
+  if (priorValid.length > 0) {
+    const priorAvg = priorValid.reduce((a, s) => a + Number(s.weighted_total), 0) / priorValid.length
     const avgDiff = avg - priorAvg
     const sign = avgDiff >= 0 ? '+' : ''
 

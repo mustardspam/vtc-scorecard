@@ -99,10 +99,17 @@ export default function DataPage() {
     )
     if (!confirmed) return
     setDeleting(true)
-    await supabase.from('vendors').delete().in('id', ids)
+    const { error } = await supabase.from('vendors').delete().in('id', ids)
+    setDeleting(false)
+    if (error) {
+      alert(
+        'Could not delete the selected vendors:\n\n' + error.message +
+        '\n\nVendors with existing scores, assignments, or feedback may need those records removed first.'
+      )
+      return
+    }
     setVendors(prev => prev.filter(v => !ids.includes(v.id)))
     setSelectedVendorIds(new Set())
-    setDeleting(false)
   }
 
   async function updateVendorCategory(vendorId, categoryId, categoryName) {
@@ -111,7 +118,11 @@ export default function DataPage() {
       ? { ...v, category_id: categoryId, vendor_categories: { id: categoryId, name: categoryName } }
       : v
     ))
-    await supabase.from('vendors').update({ category_id: categoryId }).eq('id', vendorId)
+    const { error } = await supabase.from('vendors').update({ category_id: categoryId }).eq('id', vendorId)
+    if (error) {
+      alert('Could not update category: ' + error.message)
+      loadData() // revert optimistic update
+    }
   }
 
   const filteredVendors = vendors.filter(v => {

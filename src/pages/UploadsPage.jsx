@@ -208,7 +208,9 @@ export default function UploadsPage() {
       return m
     }))
     if (remember && vendorId) {
-      supabase.from('vendor_aliases').upsert({ alias_name: rawName, vendor_id: vendorId, created_by: user?.id })
+      supabase.from('vendor_aliases')
+        .upsert({ alias_name: rawName, vendor_id: vendorId, created_by: user?.id })
+        .then(({ error }) => { if (error) console.warn('Alias save failed (non-fatal):', error.message) })
     }
   }
 
@@ -449,7 +451,10 @@ export default function UploadsPage() {
         total_jobs: totalJobs, no_shows: noShows, adherence_pct: adherence,
       }
     })
-    if (records.length > 0) await supabase.from('schedule_records').insert(records)
+    if (records.length > 0) {
+      const { error } = await supabase.from('schedule_records').insert(records)
+      if (error) throw new Error('Schedule records insert failed: ' + error.message)
+    }
   }
 
   async function insertSafetyRecords(batchId, rows, vendorMap) {
@@ -467,7 +472,10 @@ export default function UploadsPage() {
         record_date: r.incident_date || new Date().toISOString().slice(0, 10),
       }
     })
-    if (records.length > 0) await supabase.from('safety_records').insert(records)
+    if (records.length > 0) {
+      const { error } = await supabase.from('safety_records').insert(records)
+      if (error) throw new Error('Safety records insert failed: ' + error.message)
+    }
   }
 
   async function insertReworkRecords(batchId, rows, vendorMap) {
@@ -488,7 +496,10 @@ export default function UploadsPage() {
         record_date: r.rework_date || new Date().toISOString().slice(0, 10),
       }
     })
-    if (records.length > 0) await supabase.from('rework_records').insert(records)
+    if (records.length > 0) {
+      const { error } = await supabase.from('rework_records').insert(records)
+      if (error) throw new Error('Rework records insert failed: ' + error.message)
+    }
   }
 
   async function insertVendorMaster(rows) {

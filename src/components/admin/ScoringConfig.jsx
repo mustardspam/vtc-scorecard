@@ -93,16 +93,28 @@ export default function ScoringConfig() {
 
   async function handleSave() {
     setSaving(true)
-    for (const [key, value] of Object.entries(config)) {
-      await supabase
-        .from('system_config')
-        .update({ value: JSON.stringify(value), updated_by: user.id, updated_at: new Date().toISOString() })
-        .eq('key', key)
+    setMessage('')
+    try {
+      // Only persist the multiplier keys — iterating the whole config map would
+      // re-encode unrelated rows (digest_recipients, github_pat) and corrupt them.
+      const multipliers = {
+        safety_multiplier: config.safety_multiplier ?? 10,
+        rework_multiplier: config.rework_multiplier ?? 5,
+      }
+      for (const [key, value] of Object.entries(multipliers)) {
+        const { error } = await supabase
+          .from('system_config')
+          .upsert({ key, value: String(value), updated_by: user.id, updated_at: new Date().toISOString() }, { onConflict: 'key' })
+        if (error) throw error
+      }
+      await logActivity('rules_updated', 'Updated scoring multipliers', { multipliers })
+      setMessage('Configuration saved')
+      setTimeout(() => setMessage(''), 3000)
+    } catch (err) {
+      setMessage('Error: ' + (err.message || 'Save failed'))
+    } finally {
+      setSaving(false)
     }
-    await logActivity('rules_updated', 'Updated scoring configuration', { config })
-    setMessage('Configuration saved')
-    setSaving(false)
-    setTimeout(() => setMessage(''), 3000)
   }
 
   async function handleSaveThresholds() {

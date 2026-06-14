@@ -84,8 +84,9 @@ export default function DigestPage() {
   const complaints = recentFeedback.filter(f => f.category === 'complaint')
 
   // Week-over-week calcs
-  const priorAvg = priorScores.length
-    ? priorScores.filter(s => s.weighted_total != null).reduce((a, s) => a + Number(s.weighted_total), 0) / priorScores.length
+  const priorValid = priorScores.filter(s => s.weighted_total != null)
+  const priorAvg = priorValid.length
+    ? priorValid.reduce((a, s) => a + Number(s.weighted_total), 0) / priorValid.length
     : null
   const avgDiff = avgScore != null && priorAvg != null ? avgScore - priorAvg : null
 
