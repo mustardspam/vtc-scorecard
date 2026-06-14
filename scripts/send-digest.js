@@ -10,7 +10,7 @@ const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
 // to the account owner email (mustardsubs@proton.me). After domain verification,
 // replace FROM_ADDRESS below and add any recipients here.
 const RECIPIENTS = [
-  'mustardsubs@proton.me',
+  'mustardspam@proton.me',
 ]
 
 const FROM_ADDRESS = 'VTC Scorecard <onboarding@resend.dev>'
