@@ -85,7 +85,7 @@ function buildEmail({ scores, feedback, weights }) {
   lines.push(`VTC SCORECARD DIGEST — ${date}`)
   lines.push('='.repeat(60))
   lines.push('')
-  lines.push('FLEET SUMMARY')
+  lines.push('VENDOR/TRADE SUMMARY')
   lines.push('-'.repeat(40))
   lines.push(`Total vendors scored: ${valid.length}`)
   lines.push(`Average score: ${avg}`)
