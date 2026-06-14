@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useThresholds } from '../hooks/useThresholds'
-import { Mail, Copy, Check, Printer, RefreshCw } from 'lucide-react'
+import { Mail, Copy, Check, Printer, RefreshCw, TrendingUp, TrendingDown, Minus } from 'lucide-react'
 
 export default function DigestPage() {
   const [scores, setScores] = useState([])
   const [snapshots, setSnapshots] = useState([])
+  const [priorScores, setPriorScores] = useState([])
   const [recentFeedback, setRecentFeedback] = useState([])
   const [weights, setWeights] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -21,24 +22,22 @@ export default function DigestPage() {
     since.setDate(since.getDate() - 30)
 
     const [scoresRes, snapshotsRes, feedbackRes, weightsRes] = await Promise.all([
-      supabase.from('score_results')
-        .select('*, vendors(name, vendor_categories(name))')
-        .order('weighted_total', { ascending: false, nullsFirst: false }),
-      supabase.from('snapshots')
-        .select('id, name, created_at')
-        .order('created_at', { ascending: false })
-        .limit(2),
-      supabase.from('builder_feedback')
-        .select('category, severity, points, vendors(name), submitter:profiles!builder_feedback_submitted_by_fkey(full_name)')
-        .eq('is_approved', true)
-        .gte('submitted_at', since.toISOString())
-        .order('submitted_at', { ascending: false })
-        .limit(50),
+      supabase.from('score_results').select('*, vendors(name, vendor_categories(name))').order('weighted_total', { ascending: false, nullsFirst: false }),
+      supabase.from('snapshots').select('id, name, created_at').order('created_at', { ascending: false }).limit(2),
+      supabase.from('builder_feedback').select('category, severity, points, vendors(name), submitter:profiles!builder_feedback_submitted_by_fkey(full_name)').eq('is_approved', true).gte('submitted_at', since.toISOString()).order('submitted_at', { ascending: false }).limit(50),
       supabase.from('score_weights').select('*').eq('is_current', true).single(),
     ])
 
+    const snaps = snapshotsRes.data || []
+    let prior = []
+    if (snaps.length >= 1) {
+      const { data: priorData } = await supabase.from('snapshot_score_results').select('vendor_name, weighted_total, vendor_category').eq('snapshot_id', snaps[0].id)
+      prior = priorData || []
+    }
+
     setScores(scoresRes.data || [])
-    setSnapshots(snapshotsRes.data || [])
+    setSnapshots(snaps)
+    setPriorScores(prior)
     setRecentFeedback(feedbackRes.data || [])
     setWeights(weightsRes.data)
     setLoading(false)
@@ -52,15 +51,83 @@ export default function DigestPage() {
   }
 
   const avgScore = valid.length
-    ? (valid.reduce((s, r) => s + Number(r.weighted_total), 0) / valid.length).toFixed(1)
-    : '—'
+    ? valid.reduce((s, r) => s + Number(r.weighted_total), 0) / valid.length
+    : null
 
   const critical = valid.filter(s => getTier(s.weighted_total)?.label === 'Critical')
   const probation = valid.filter(s => getTier(s.weighted_total)?.label === 'Probation')
   const top5 = valid.slice(0, 5)
   const bottom5 = [...valid].reverse().slice(0, 5)
-  const kudos = recentFeedback.filter(f => f.category === 'kudos').slice(0, 5)
-  const complaints = recentFeedback.filter(f => f.category === 'complaint').slice(0, 5)
+  const kudos = recentFeedback.filter(f => f.category === 'kudos')
+  const complaints = recentFeedback.filter(f => f.category === 'complaint')
+
+  // Week-over-week calcs
+  const priorAvg = priorScores.length
+    ? priorScores.filter(s => s.weighted_total != null).reduce((a, s) => a + Number(s.weighted_total), 0) / priorScores.length
+    : null
+  const avgDiff = avgScore != null && priorAvg != null ? avgScore - priorAvg : null
+
+  const priorTierMap = {}
+  for (const s of priorScores) priorTierMap[s.vendor_name] = s.weighted_total != null ? getTierLabel(Number(s.weighted_total)) : null
+
+  function getTierLabel(score) {
+    if (score >= 85) return 'Good'
+    if (score >= 70) return 'Watch'
+    if (score >= 50) return 'Probation'
+    return 'Critical'
+  }
+
+  const movedIntoCritical = valid.filter(s => {
+    const name = s.vendors?.name
+    return getTier(s.weighted_total)?.label === 'Critical' && priorTierMap[name] && priorTierMap[name] !== 'Critical'
+  })
+  const movedOutOfCritical = valid.filter(s => {
+    const name = s.vendors?.name
+    return getTier(s.weighted_total)?.label !== 'Critical' && priorTierMap[name] === 'Critical'
+  })
+
+  // Category averages
+  const catMap = {}
+  for (const s of valid) {
+    const cat = s.vendors?.vendor_categories?.name
+    if (!cat) continue
+    if (!catMap[cat]) catMap[cat] = { total: 0, count: 0 }
+    catMap[cat].total += Number(s.weighted_total)
+    catMap[cat].count++
+  }
+  const catAvgs = Object.entries(catMap).map(([name, { total, count }]) => ({ name, avg: total / count, count })).filter(c => c.count >= 2)
+  catAvgs.sort((a, b) => b.avg - a.avg)
+  const topCat = catAvgs[0]
+  const bottomCat = catAvgs[catAvgs.length - 1]
+  const priorSnapshotName = snapshots[0]?.name || null
+
+  function buildSummaryText() {
+    const lines = []
+    lines.push('EXECUTIVE SUMMARY')
+    lines.push('-'.repeat(40))
+
+    if (avgScore != null) {
+      let weekLine = priorAvg != null
+        ? `Week over week (vs snapshot "${priorSnapshotName}"): Overall average ${avgDiff >= 0 ? 'rose' : 'fell'} ${avgDiff >= 0 ? '+' : ''}${avgDiff.toFixed(1)} pts to ${avgScore.toFixed(1)}.`
+        : `This week: Overall average is ${avgScore.toFixed(1)} across ${valid.length} scored vendors.`
+      if (movedIntoCritical.length > 0) weekLine += ` ${movedIntoCritical.map(s => s.vendors?.name).join(', ')} moved into Critical.`
+      if (movedOutOfCritical.length > 0) weekLine += ` ${movedOutOfCritical.map(s => s.vendors?.name).join(', ')} improved out of Critical.`
+      if (priorAvg != null && movedIntoCritical.length === 0 && movedOutOfCritical.length === 0) weekLine += ' No vendors changed Critical status.'
+      lines.push(weekLine)
+    }
+
+    let thirtyLine = `Last 30 days: ${kudos.length + complaints.length} feedback submissions — ${kudos.length} kudos, ${complaints.length} complaints`
+    thirtyLine += kudos.length > complaints.length ? ' (kudos outpacing complaints).' : complaints.length > kudos.length ? ' (complaints outpacing kudos — worth reviewing).' : ' (even split).'
+    if (topCat && bottomCat && topCat.name !== bottomCat.name) {
+      thirtyLine += ` ${topCat.name} leads all categories at ${topCat.avg.toFixed(1)}; ${bottomCat.name} is the lowest at ${bottomCat.avg.toFixed(1)}.`
+    }
+    if (tierCounts.Critical + tierCounts.Probation > 0) {
+      thirtyLine += ` ${tierCounts.Critical + tierCounts.Probation} vendor${tierCounts.Critical + tierCounts.Probation > 1 ? 's' : ''} currently in Critical or Probation.`
+    }
+    lines.push(thirtyLine)
+    lines.push('')
+    return lines.join('\n')
+  }
 
   function buildEmailText() {
     const date = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
@@ -68,67 +135,46 @@ export default function DigestPage() {
     lines.push(`VTC SCORECARD DIGEST — ${date}`)
     lines.push('='.repeat(60))
     lines.push('')
-
+    lines.push(buildSummaryText())
     lines.push('VENDOR/TRADE SUMMARY')
     lines.push('-'.repeat(40))
     lines.push(`Total vendors scored: ${valid.length}`)
-    lines.push(`Average score: ${avgScore}`)
+    lines.push(`Average score: ${avgScore?.toFixed(1) ?? '—'}`)
     lines.push(`Good: ${tierCounts.Good}  |  Watch: ${tierCounts.Watch}  |  Probation: ${tierCounts.Probation}  |  Critical: ${tierCounts.Critical}`)
-    if (weights) {
-      lines.push(`Weights: Safety ${(weights.safety_weight*100).toFixed(0)}% · Schedule ${(weights.schedule_weight*100).toFixed(0)}% · Rework ${(weights.rework_weight*100).toFixed(0)}% · Feedback ${(weights.feedback_weight*100).toFixed(0)}%`)
-    }
+    if (weights) lines.push(`Weights: Safety ${(weights.safety_weight*100).toFixed(0)}% · Schedule ${(weights.schedule_weight*100).toFixed(0)}% · Rework ${(weights.rework_weight*100).toFixed(0)}% · Feedback ${(weights.feedback_weight*100).toFixed(0)}%`)
     lines.push('')
-
     if (critical.length > 0) {
       lines.push('🚨 CRITICAL VENDORS (immediate attention required)')
       lines.push('-'.repeat(40))
-      for (const s of critical) {
-        lines.push(`  • ${s.vendors?.name} (${s.vendors?.vendor_categories?.name}) — Score: ${Number(s.weighted_total).toFixed(1)}`)
-      }
+      for (const s of critical) lines.push(`  • ${s.vendors?.name} (${s.vendors?.vendor_categories?.name}) — Score: ${Number(s.weighted_total).toFixed(1)}`)
       lines.push('')
     }
-
     if (probation.length > 0) {
       lines.push('⚠️  PROBATION VENDORS')
       lines.push('-'.repeat(40))
-      for (const s of probation) {
-        lines.push(`  • ${s.vendors?.name} (${s.vendors?.vendor_categories?.name}) — Score: ${Number(s.weighted_total).toFixed(1)}`)
-      }
+      for (const s of probation) lines.push(`  • ${s.vendors?.name} (${s.vendors?.vendor_categories?.name}) — Score: ${Number(s.weighted_total).toFixed(1)}`)
       lines.push('')
     }
-
     lines.push('TOP 5 PERFORMERS')
     lines.push('-'.repeat(40))
-    top5.forEach((s, i) => {
-      lines.push(`  ${i + 1}. ${s.vendors?.name} — ${Number(s.weighted_total).toFixed(1)}`)
-    })
+    top5.forEach((s, i) => lines.push(`  ${i + 1}. ${s.vendors?.name} — ${Number(s.weighted_total).toFixed(1)}`))
     lines.push('')
-
     lines.push('BOTTOM 5 PERFORMERS')
     lines.push('-'.repeat(40))
-    bottom5.forEach((s, i) => {
-      lines.push(`  ${i + 1}. ${s.vendors?.name} — ${Number(s.weighted_total).toFixed(1)}`)
-    })
+    bottom5.forEach((s, i) => lines.push(`  ${i + 1}. ${s.vendors?.name} — ${Number(s.weighted_total).toFixed(1)}`))
     lines.push('')
-
     if (kudos.length > 0) {
       lines.push('👍 RECENT KUDOS (last 30 days, approved)')
       lines.push('-'.repeat(40))
-      for (const f of kudos) {
-        lines.push(`  • ${f.vendors?.name} — submitted by ${f.submitter?.full_name || 'Unknown'}`)
-      }
+      for (const f of kudos.slice(0, 5)) lines.push(`  • ${f.vendors?.name} — submitted by ${f.submitter?.full_name || 'Unknown'}`)
       lines.push('')
     }
-
     if (complaints.length > 0) {
       lines.push('👎 RECENT COMPLAINTS (last 30 days, approved)')
       lines.push('-'.repeat(40))
-      for (const f of complaints) {
-        lines.push(`  • ${f.vendors?.name} (${f.severity || 'unspecified'}) — submitted by ${f.submitter?.full_name || 'Unknown'}`)
-      }
+      for (const f of complaints.slice(0, 5)) lines.push(`  • ${f.vendors?.name} (${f.severity || 'unspecified'}) — submitted by ${f.submitter?.full_name || 'Unknown'}`)
       lines.push('')
     }
-
     lines.push('='.repeat(60))
     lines.push(`Generated from VTC Scorecard · ${date}`)
     return lines.join('\n')
@@ -148,7 +194,19 @@ export default function DigestPage() {
     )
   }
 
-  const emailText = buildEmailText()
+  const DiffBadge = ({ diff }) => {
+    if (diff == null) return null
+    const up = diff > 0
+    const neutral = diff === 0
+    const Icon = neutral ? Minus : up ? TrendingUp : TrendingDown
+    const color = neutral ? 'text-gray-500' : up ? 'text-green-600' : 'text-red-600'
+    return (
+      <span className={`flex items-center gap-1 text-xs font-medium ${color}`}>
+        <Icon className="w-3 h-3" />
+        {up ? '+' : ''}{diff.toFixed(1)} vs prior snapshot
+      </span>
+    )
+  }
 
   return (
     <div className="space-y-6">
@@ -158,28 +216,75 @@ export default function DigestPage() {
             <Mail className="w-6 h-6 text-teal-600" />
             Digest Email
           </h1>
-          <p className="text-sm text-gray-500 mt-1">Generate a performance summary to share with your team</p>
+          <p className="text-sm text-gray-500 mt-1">Performance summary — sent automatically every Monday at 8am ET</p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={loadData} className="flex items-center gap-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">
             <RefreshCw className="w-4 h-4" /> Refresh
           </button>
-          <button
-            onClick={handleCopy}
-            className="flex items-center gap-1 px-3 py-1.5 text-sm bg-teal-600 text-white rounded-lg hover:bg-teal-700"
-          >
+          <button onClick={handleCopy} className="flex items-center gap-1 px-3 py-1.5 text-sm bg-teal-600 text-white rounded-lg hover:bg-teal-700">
             {copied ? <><Check className="w-4 h-4" /> Copied!</> : <><Copy className="w-4 h-4" /> Copy Text</>}
           </button>
-          <button
-            onClick={() => window.print()}
-            className="flex items-center gap-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 no-print"
-          >
+          <button onClick={() => window.print()} className="flex items-center gap-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 no-print">
             <Printer className="w-4 h-4" /> Print
           </button>
         </div>
       </div>
 
-      {/* Visual preview */}
+      {/* Executive Summary */}
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden no-print">
+        <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
+          <span className="text-sm font-medium text-gray-700">Executive summary</span>
+          {priorSnapshotName && <span className="ml-2 text-xs text-gray-400">vs snapshot "{priorSnapshotName}"</span>}
+        </div>
+        <div className="p-4 grid grid-cols-2 lg:grid-cols-4 gap-3 border-b border-gray-100">
+          <div className="bg-gray-50 rounded-lg p-3">
+            <p className="text-xs text-gray-500 mb-1">Avg score</p>
+            <p className="text-xl font-bold text-gray-900">{avgScore?.toFixed(1) ?? '—'}</p>
+            <DiffBadge diff={avgDiff} />
+          </div>
+          <div className="bg-red-50 rounded-lg p-3">
+            <p className="text-xs text-red-500 mb-1">Critical</p>
+            <p className="text-xl font-bold text-red-700">{tierCounts.Critical}</p>
+            {movedIntoCritical.length > 0 && <span className="text-xs text-red-600">+{movedIntoCritical.length} this week</span>}
+            {movedOutOfCritical.length > 0 && <span className="text-xs text-green-600">-{movedOutOfCritical.length} this week</span>}
+          </div>
+          <div className="bg-green-50 rounded-lg p-3">
+            <p className="text-xs text-green-600 mb-1">Good standing</p>
+            <p className="text-xl font-bold text-green-700">{tierCounts.Good}</p>
+          </div>
+          <div className="bg-blue-50 rounded-lg p-3">
+            <p className="text-xs text-blue-500 mb-1">Feedback (30d)</p>
+            <p className="text-xl font-bold text-blue-700">{kudos.length + complaints.length}</p>
+            <span className="text-xs text-blue-600">{kudos.length} kudos · {complaints.length} complaints</span>
+          </div>
+        </div>
+        <div className="p-4 space-y-3">
+          <div className="border-l-4 border-teal-500 pl-3">
+            <p className="text-xs font-semibold text-gray-500 mb-1">This week</p>
+            <p className="text-sm text-gray-700 leading-relaxed">
+              {avgScore != null && priorAvg != null
+                ? <>Overall average {avgDiff >= 0 ? 'rose' : 'fell'} {avgDiff >= 0 ? '+' : ''}{avgDiff.toFixed(1)} pts to {avgScore.toFixed(1)} compared to the prior snapshot.{' '}
+                  {movedIntoCritical.length > 0 && <><strong>{movedIntoCritical.map(s => s.vendors?.name).join(', ')}</strong> moved into Critical.{' '}</>}
+                  {movedOutOfCritical.length > 0 && <><strong>{movedOutOfCritical.map(s => s.vendors?.name).join(', ')}</strong> improved out of Critical.{' '}</>}
+                  {movedIntoCritical.length === 0 && movedOutOfCritical.length === 0 && 'No vendors changed Critical status.'}</>
+                : <>Overall average is {avgScore?.toFixed(1) ?? '—'} across {valid.length} scored vendors. {tierCounts.Critical} critical, {tierCounts.Probation} on probation, {tierCounts.Good} in good standing.</>
+              }
+            </p>
+          </div>
+          <div className="border-l-4 border-gray-300 pl-3">
+            <p className="text-xs font-semibold text-gray-500 mb-1">Last 30 days</p>
+            <p className="text-sm text-gray-700 leading-relaxed">
+              {kudos.length + complaints.length} feedback submissions received — {kudos.length} kudos, {complaints.length} complaints
+              {kudos.length > complaints.length ? ' (kudos outpacing complaints)' : complaints.length > kudos.length ? ' (complaints outpacing kudos — worth reviewing)' : ' (even split)'}.
+              {topCat && bottomCat && topCat.name !== bottomCat.name && <> {topCat.name} leads all categories at {topCat.avg.toFixed(1)}; {bottomCat.name} is the lowest at {bottomCat.avg.toFixed(1)}.</>}
+              {tierCounts.Critical + tierCounts.Probation > 0 && <> {tierCounts.Critical + tierCounts.Probation} vendor{tierCounts.Critical + tierCounts.Probation > 1 ? 's' : ''} currently in Critical or Probation status.</>}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Stat cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 no-print">
         <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
           <p className="text-2xl font-bold text-gray-900">{valid.length}</p>
@@ -216,21 +321,12 @@ export default function DigestPage() {
       {/* Plain-text email preview */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50 no-print">
-          <span className="text-sm font-medium text-gray-700">Email Preview (plain text)</span>
-          <span className="text-xs text-gray-400">Paste into Outlook, Gmail, or Teams</span>
+          <span className="text-sm font-medium text-gray-700">Email preview (plain text)</span>
+          <span className="text-xs text-gray-400">This is what recipients receive every Monday</span>
         </div>
-        <pre
-          ref={textRef}
-          className="p-6 text-xs text-gray-700 font-mono whitespace-pre-wrap leading-relaxed overflow-auto max-h-[600px]"
-          style={{ fontFamily: 'Consolas, "Courier New", monospace' }}
-        >
-          {emailText}
+        <pre ref={textRef} className="p-6 text-xs text-gray-700 font-mono whitespace-pre-wrap leading-relaxed overflow-auto max-h-[600px]" style={{ fontFamily: 'Consolas, "Courier New", monospace' }}>
+          {buildEmailText()}
         </pre>
-      </div>
-
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800 no-print">
-        <p className="font-medium mb-1">Automating this digest</p>
-        <p className="text-xs text-blue-700">To send this automatically on a schedule, ask your IT team to set up a Supabase Edge Function + pg_cron that emails this data weekly. Alternatively, bookmark this page and copy/paste the text into an email each week.</p>
       </div>
     </div>
   )
