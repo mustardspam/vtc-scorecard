@@ -283,8 +283,18 @@ export default function ScoresPage() {
             ))}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={10} className="px-4 py-8 text-center text-gray-500">
-                  No scores found. Upload data to get started.
+                <td colSpan={10} className="px-4 py-12 text-center">
+                  {search ? (
+                    <>
+                      <p className="text-sm font-medium text-gray-700">No results for "{search}"</p>
+                      <p className="text-xs text-gray-400 mt-1">Try a different vendor name or clear the search.</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-sm font-medium text-gray-700">No scores yet</p>
+                      <p className="text-xs text-gray-400 mt-1">Upload schedule, safety, or rework data to calculate vendor scores.</p>
+                    </>
+                  )}
                 </td>
               </tr>
             )}

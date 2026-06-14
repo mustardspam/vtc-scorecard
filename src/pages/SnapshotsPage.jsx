@@ -242,7 +242,12 @@ export default function SnapshotsPage() {
                   <input type="checkbox" checked={compareIds.includes(snap.id)} onChange={() => toggleCompare(snap.id)}
                     className="accent-purple-600" />
                   <div>
-                    <p className="text-sm font-semibold text-gray-900">{snap.name}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-semibold text-gray-900">{snap.name}</p>
+                      {snap.name?.startsWith('Week ending') && (
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 font-medium border border-teal-200">Auto</span>
+                      )}
+                    </div>
                     {snap.description && <p className="text-xs text-gray-500">{snap.description}</p>}
                     <p className="text-xs text-gray-400 mt-0.5">
                       {new Date(snap.created_at).toLocaleString()} · by {snap.profiles?.full_name || snap.profiles?.email}

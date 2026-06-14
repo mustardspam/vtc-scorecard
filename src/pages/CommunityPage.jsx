@@ -128,9 +128,10 @@ export default function CommunityPage() {
       </div>
 
       {!selectedId && (
-        <div className="text-center py-16 text-gray-400">
-          <Building2 className="w-12 h-12 mx-auto mb-3 opacity-30" />
-          <p className="text-sm">Select a community above to see vendor assignments and performance.</p>
+        <div className="bg-white rounded-xl border border-gray-200 p-16 text-center">
+          <Building2 className="w-12 h-12 mx-auto mb-3 text-teal-200" />
+          <p className="text-sm font-medium text-gray-700">No community selected</p>
+          <p className="text-xs text-gray-400 mt-1">Choose a community from the dropdown above to view vendor assignments and performance scores.</p>
         </div>
       )}
 

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useThresholds } from '../hooks/useThresholds'
-import { Mail, Copy, Check, Printer, RefreshCw, TrendingUp, TrendingDown, Minus } from 'lucide-react'
+import { Mail, Copy, Check, Printer, RefreshCw, TrendingUp, TrendingDown, Minus, Send } from 'lucide-react'
 
 export default function DigestPage() {
   const [scores, setScores] = useState([])
@@ -12,6 +12,8 @@ export default function DigestPage() {
   const [minConfig, setMinConfig] = useState({ min_schedule_jobs: 5, min_feedback_count: 3, min_safety_records: 1, min_rework_records: 1 })
   const [loading, setLoading] = useState(true)
   const [copied, setCopied] = useState(false)
+  const [sending, setSending] = useState(false)
+  const [sendStatus, setSendStatus] = useState(null)
   const textRef = useRef(null)
   const { getTier } = useThresholds()
 
@@ -201,6 +203,35 @@ export default function DigestPage() {
     setTimeout(() => setCopied(false), 2000)
   }
 
+  async function handleSendNow() {
+    setSending(true)
+    setSendStatus(null)
+    try {
+      const { data: patRow } = await supabase.from('system_config').select('value').eq('key', 'github_pat').single()
+      const pat = patRow?.value
+      if (!pat) {
+        setSendStatus({ error: 'No GitHub PAT configured. Add key "github_pat" in system_config via the Admin panel.' })
+        return
+      }
+      const res = await fetch('https://api.github.com/repos/mustardspam/vtc-scorecard/actions/workflows/digest-email.yml/dispatches', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${pat}`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ref: 'main' }),
+      })
+      if (res.status === 204) {
+        setSendStatus({ success: true })
+        setTimeout(() => setSendStatus(null), 4000)
+      } else {
+        const body = await res.json().catch(() => ({}))
+        setSendStatus({ error: body.message || `GitHub API error ${res.status}` })
+      }
+    } catch (err) {
+      setSendStatus({ error: err.message })
+    } finally {
+      setSending(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -233,16 +264,31 @@ export default function DigestPage() {
           </h1>
           <p className="text-sm text-gray-500 mt-1">Performance summary — sent automatically every Monday at 8am ET</p>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={loadData} className="flex items-center gap-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">
-            <RefreshCw className="w-4 h-4" /> Refresh
-          </button>
-          <button onClick={handleCopy} className="flex items-center gap-1 px-3 py-1.5 text-sm bg-teal-600 text-white rounded-lg hover:bg-teal-700">
-            {copied ? <><Check className="w-4 h-4" /> Copied!</> : <><Copy className="w-4 h-4" /> Copy Text</>}
-          </button>
-          <button onClick={() => window.print()} className="flex items-center gap-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 no-print">
-            <Printer className="w-4 h-4" /> Print
-          </button>
+        <div className="flex flex-col items-end gap-2">
+          <div className="flex items-center gap-2">
+            <button onClick={loadData} className="flex items-center gap-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">
+              <RefreshCw className="w-4 h-4" /> Refresh
+            </button>
+            <button onClick={handleCopy} className="flex items-center gap-1 px-3 py-1.5 text-sm bg-teal-600 text-white rounded-lg hover:bg-teal-700">
+              {copied ? <><Check className="w-4 h-4" /> Copied!</> : <><Copy className="w-4 h-4" /> Copy Text</>}
+            </button>
+            <button onClick={() => window.print()} className="flex items-center gap-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 no-print">
+              <Printer className="w-4 h-4" /> Print
+            </button>
+            <button
+              onClick={handleSendNow}
+              disabled={sending}
+              className="flex items-center gap-1 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60 no-print"
+            >
+              <Send className="w-4 h-4" /> {sending ? 'Sending…' : 'Send Now'}
+            </button>
+          </div>
+          {sendStatus?.success && (
+            <p className="text-xs text-green-600 flex items-center gap-1"><Check className="w-3.5 h-3.5" /> Digest triggered — email will arrive within a minute.</p>
+          )}
+          {sendStatus?.error && (
+            <p className="text-xs text-red-600">{sendStatus.error}</p>
+          )}
         </div>
       </div>
 

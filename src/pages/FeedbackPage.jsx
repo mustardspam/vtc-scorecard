@@ -9,6 +9,8 @@ export default function FeedbackPage() {
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('pending')
   const [search, setSearch] = useState('')
+  const [rejectTarget, setRejectTarget] = useState(null)
+  const [rejectReason, setRejectReason] = useState('')
   const { user } = useAuth()
 
   useEffect(() => { loadFeedback() }, [filter])
@@ -38,12 +40,18 @@ export default function FeedbackPage() {
     loadFeedback()
   }
 
-  async function handleReject(id) {
-    const reason = prompt('Reason for rejection (optional):')
+  function handleReject(id) {
+    setRejectTarget(id)
+    setRejectReason('')
+  }
+
+  async function confirmReject() {
+    const id = rejectTarget
+    setRejectTarget(null)
     await supabase.from('builder_feedback').update({
-      is_approved: false, reviewed_by: user.id, reviewed_at: new Date().toISOString(), review_notes: reason || 'Rejected'
+      is_approved: false, reviewed_by: user.id, reviewed_at: new Date().toISOString(), review_notes: rejectReason || 'Rejected'
     }).eq('id', id)
-    await logActivity('feedback_rejected', 'Rejected builder feedback', { feedback_id: id, reason })
+    await logActivity('feedback_rejected', 'Rejected builder feedback', { feedback_id: id, reason: rejectReason })
     loadFeedback()
   }
 
@@ -56,6 +64,31 @@ export default function FeedbackPage() {
 
   return (
     <div className="space-y-4">
+      {rejectTarget && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 space-y-4">
+            <h2 className="text-base font-semibold text-gray-900">Reject Feedback</h2>
+            <p className="text-sm text-gray-500">Optionally provide a reason for rejection. This will be saved to the review notes.</p>
+            <textarea
+              value={rejectReason}
+              onChange={e => setRejectReason(e.target.value)}
+              placeholder="Reason for rejection (optional)"
+              rows={3}
+              autoFocus
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-red-500 outline-none resize-none"
+            />
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setRejectTarget(null)} className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">
+                Cancel
+              </button>
+              <button onClick={confirmReject} className="flex items-center gap-1 px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700">
+                <XCircle className="w-4 h-4" /> Confirm Reject
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Feedback Review</h1>
         <div className="flex items-center gap-3">

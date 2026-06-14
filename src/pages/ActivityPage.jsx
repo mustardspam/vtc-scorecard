@@ -451,9 +451,9 @@ function CMOutlierTab() {
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
         <p className="font-medium mb-1">How outlier detection works</p>
         <p className="text-xs text-blue-700">
-          CMs are flagged when their average feedback points deviate more than 1.5 standard deviations from the fleet mean.
+          CMs are flagged when their average feedback points deviate more than 1.5 standard deviations from the overall mean.
           High outliers give consistently generous feedback; low outliers give consistently harsh feedback.
-          Minimum 3 submissions required. Fleet average: <strong>{fleetAvg != null ? fleetAvg.toFixed(1) : '—'} pts</strong>.
+          Minimum 3 submissions required. Overall average: <strong>{fleetAvg != null ? fleetAvg.toFixed(1) : '—'} pts</strong>.
         </p>
       </div>
 
@@ -539,6 +539,7 @@ function VendorActionsTab() {
   const [actions, setActions] = useState([])
   const [loading, setLoading] = useState(true)
   const [filterVendor, setFilterVendor] = useState('')
+  const [filterAction, setFilterAction] = useState('')
   const vendorNames = [...new Set(actions.map(a => a.metadata?.vendor_name).filter(Boolean))].sort()
 
   useEffect(() => { loadActions() }, [])
@@ -555,15 +556,17 @@ function VendorActionsTab() {
     setLoading(false)
   }
 
-  const filtered = filterVendor
-    ? actions.filter(a => a.metadata?.vendor_name === filterVendor)
-    : actions
+  const filtered = actions.filter(a => {
+    if (filterVendor && a.metadata?.vendor_name !== filterVendor) return false
+    if (filterAction && a.metadata?.action !== filterAction) return false
+    return true
+  })
 
   if (loading) return <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         <select
           value={filterVendor}
           onChange={e => setFilterVendor(e.target.value)}
@@ -572,8 +575,16 @@ function VendorActionsTab() {
           <option value="">All Vendors</option>
           {vendorNames.map(n => <option key={n} value={n}>{n}</option>)}
         </select>
-        {filterVendor && (
-          <button onClick={() => setFilterVendor('')} className="text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1">
+        <select
+          value={filterAction}
+          onChange={e => setFilterAction(e.target.value)}
+          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm bg-white"
+        >
+          <option value="">All Action Types</option>
+          {VENDOR_ACTION_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+        </select>
+        {(filterVendor || filterAction) && (
+          <button onClick={() => { setFilterVendor(''); setFilterAction('') }} className="text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1">
             <X className="w-3.5 h-3.5" /> Clear
           </button>
         )}
