@@ -1,6 +1,10 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
-import { ArrowUpDown, Search, Download, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react'
+import { ArrowUpDown, Search, Download, ChevronDown, ChevronUp, RefreshCw, Printer } from 'lucide-react'
+import { useThresholds } from '../hooks/useThresholds'
+import TierBadge from '../components/scores/TierBadge'
+import TrendSparkline from '../components/scores/TrendSparkline'
+import VendorReportCard from '../components/scores/VendorReportCard'
 
 function scoreColor(score) {
   if (score == null) return 'text-gray-400'
@@ -20,6 +24,7 @@ function scoreBg(score) {
 
 export default function ScoresPage() {
   const [scores, setScores] = useState([])
+  const [trendMap, setTrendMap] = useState({})
   const [loading, setLoading] = useState(true)
   const [recalculating, setRecalculating] = useState(false)
   const [search, setSearch] = useState('')
@@ -27,18 +32,36 @@ export default function ScoresPage() {
   const [sortDir, setSortDir] = useState('desc')
   const [expandedId, setExpandedId] = useState(null)
   const [drillDown, setDrillDown] = useState(null)
+  const [reportCard, setReportCard] = useState(null)
+  const { getTier } = useThresholds()
 
-  useEffect(() => {
-    loadScores()
-  }, [])
+  useEffect(() => { loadScores() }, [])
 
   async function loadScores() {
     setLoading(true)
-    const { data } = await supabase
-      .from('score_results')
-      .select('*, vendors(name, category_id, vendor_categories(name))')
-      .order('weighted_total', { ascending: false, nullsFirst: false })
-    setScores(data || [])
+    const [scoresRes, trendRes] = await Promise.all([
+      supabase
+        .from('score_results')
+        .select('*, vendors(name, category_id, vendor_categories(name))')
+        .order('weighted_total', { ascending: false, nullsFirst: false }),
+      supabase
+        .from('snapshot_score_results')
+        .select('vendor_id, weighted_total, snapshots(created_at)')
+        .not('vendor_id', 'is', null),
+    ])
+
+    setScores(scoresRes.data || [])
+
+    const map = {}
+    for (const row of (trendRes.data || [])) {
+      if (!row.snapshots?.created_at || row.weighted_total == null) continue
+      if (!map[row.vendor_id]) map[row.vendor_id] = []
+      map[row.vendor_id].push({ score: Number(row.weighted_total), date: row.snapshots.created_at })
+    }
+    for (const id of Object.keys(map)) {
+      map[id].sort((a, b) => new Date(a.date) - new Date(b.date))
+    }
+    setTrendMap(map)
     setLoading(false)
   }
 
@@ -98,7 +121,7 @@ export default function ScoresPage() {
     const rows = filtered.map((s, i) => [
       i + 1, s.vendors?.name, s.vendors?.vendor_categories?.name,
       s.safety_score ?? '', s.schedule_score ?? '', s.rework_score ?? '',
-      s.feedback_score ?? '', s.weighted_total ?? ''
+      s.feedback_score ?? '', s.weighted_total ?? '',
     ])
     const csv = [headers, ...rows].map(r => r.join(',')).join('\n')
     const blob = new Blob([csv], { type: 'text/csv' })
@@ -116,11 +139,23 @@ export default function ScoresPage() {
   }
 
   if (loading) {
-    return <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+      </div>
+    )
   }
 
   return (
     <div className="space-y-4">
+      {reportCard && (
+        <VendorReportCard
+          scoreRow={reportCard}
+          getTier={getTier}
+          onClose={() => setReportCard(null)}
+        />
+      )}
+
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Scores</h1>
         <div className="flex items-center gap-3">
@@ -142,7 +177,10 @@ export default function ScoresPage() {
             <RefreshCw className={`w-4 h-4 ${recalculating ? 'animate-spin' : ''}`} />
             {recalculating ? 'Recalculating...' : 'Recalculate'}
           </button>
-          <button onClick={exportCSV} className="flex items-center gap-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">
+          <button
+            onClick={exportCSV}
+            className="flex items-center gap-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50"
+          >
             <Download className="w-4 h-4" /> Export CSV
           </button>
         </div>
@@ -152,37 +190,65 @@ export default function ScoresPage() {
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-200">
             <tr>
-              <th className="text-left px-4 py-3 font-medium text-gray-600">#</th>
+              <th className="text-left px-4 py-3 font-medium text-gray-600 w-10">#</th>
               <th className="text-left px-4 py-3 font-medium text-gray-600">Vendor / Trade</th>
               <th className="text-left px-4 py-3 font-medium text-gray-600">Category</th>
               {['safety_score', 'schedule_score', 'rework_score', 'feedback_score', 'weighted_total'].map(field => (
-                <th key={field} className="px-4 py-3 font-medium text-gray-600 text-right cursor-pointer hover:text-gray-900" onClick={() => handleSort(field)}>
+                <th
+                  key={field}
+                  className="px-4 py-3 font-medium text-gray-600 text-right cursor-pointer hover:text-gray-900"
+                  onClick={() => handleSort(field)}
+                >
                   <span className="flex items-center justify-end gap-1">
-                    {field.replace('_score', '').replace('weighted_', 'Weighted ').replace(/^\w/, c => c.toUpperCase())}
+                    {field === 'weighted_total' ? 'Total' : field.replace('_score', '').charAt(0).toUpperCase() + field.replace('_score', '').slice(1)}
                     <SortIcon field={field} />
                   </span>
                 </th>
               ))}
+              <th className="px-4 py-3 font-medium text-gray-600 text-center">Trend</th>
+              <th className="px-2 py-3 w-10 no-print" />
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {filtered.map((s, i) => (
               <>
-                <tr key={s.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => loadDrillDown(s)}>
+                <tr
+                  key={s.id}
+                  className="hover:bg-gray-50 cursor-pointer"
+                  onClick={() => loadDrillDown(s)}
+                >
                   <td className="px-4 py-3 text-gray-500">{i + 1}</td>
-                  <td className="px-4 py-3 font-medium text-gray-900">{s.vendors?.name || '—'}</td>
+                  <td className="px-4 py-3">
+                    <div className="font-medium text-gray-900">{s.vendors?.name || '—'}</div>
+                    <TierBadge score={s.weighted_total} getTier={getTier} />
+                  </td>
                   <td className="px-4 py-3 text-gray-500">{s.vendors?.vendor_categories?.name || '—'}</td>
                   {['safety_score', 'schedule_score', 'rework_score', 'feedback_score', 'weighted_total'].map(field => (
-                    <td key={field} className={`px-4 py-3 text-right font-mono ${scoreColor(s[field])} ${field === 'weighted_total' ? 'font-bold' : ''}`}>
+                    <td
+                      key={field}
+                      className={`px-4 py-3 text-right font-mono ${scoreColor(s[field])} ${field === 'weighted_total' ? 'font-bold' : ''}`}
+                    >
                       <span className={`px-2 py-0.5 rounded ${scoreBg(s[field])}`}>
                         {s[field] != null ? Number(s[field]).toFixed(1) : '—'}
                       </span>
                     </td>
                   ))}
+                  <td className="px-4 py-3 text-center">
+                    <TrendSparkline history={(trendMap[s.vendor_id] || []).map(h => h.score)} />
+                  </td>
+                  <td className="px-2 py-3 no-print">
+                    <button
+                      onClick={e => { e.stopPropagation(); setReportCard(s) }}
+                      className="p-1.5 rounded hover:bg-gray-200 text-gray-400 hover:text-gray-700"
+                      title="Open Report Card"
+                    >
+                      <Printer className="w-3.5 h-3.5" />
+                    </button>
+                  </td>
                 </tr>
                 {expandedId === s.id && drillDown && (
                   <tr key={`${s.id}-detail`}>
-                    <td colSpan={8} className="px-4 py-4 bg-blue-50">
+                    <td colSpan={10} className="px-4 py-4 bg-blue-50">
                       <DrillDownPanel data={drillDown} vendorName={s.vendors?.name} />
                     </td>
                   </tr>
@@ -190,7 +256,11 @@ export default function ScoresPage() {
               </>
             ))}
             {filtered.length === 0 && (
-              <tr><td colSpan={8} className="px-4 py-8 text-center text-gray-500">No scores found. Upload data to get started.</td></tr>
+              <tr>
+                <td colSpan={10} className="px-4 py-8 text-center text-gray-500">
+                  No scores found. Upload data to get started.
+                </td>
+              </tr>
             )}
           </tbody>
         </table>
@@ -202,8 +272,7 @@ export default function ScoresPage() {
 function DrillDownPanel({ data, vendorName }) {
   return (
     <div className="space-y-4">
-      <h3 className="font-semibold text-gray-900">Score Details for {vendorName}</h3>
-
+      <h3 className="font-semibold text-gray-900">Score Details — {vendorName}</h3>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <h4 className="text-xs font-medium text-gray-600 uppercase mb-2">Schedule Records ({data.schedule.length})</h4>
@@ -218,7 +287,6 @@ function DrillDownPanel({ data, vendorName }) {
             </div>
           )}
         </div>
-
         <div>
           <h4 className="text-xs font-medium text-gray-600 uppercase mb-2">Safety Incidents ({data.safety.length})</h4>
           {data.safety.length === 0 ? <p className="text-xs text-gray-400">No safety incidents</p> : (
@@ -232,7 +300,6 @@ function DrillDownPanel({ data, vendorName }) {
             </div>
           )}
         </div>
-
         <div>
           <h4 className="text-xs font-medium text-gray-600 uppercase mb-2">Rework / Backcharges ({data.rework.length})</h4>
           {data.rework.length === 0 ? <p className="text-xs text-gray-400">No rework records</p> : (
@@ -246,7 +313,6 @@ function DrillDownPanel({ data, vendorName }) {
             </div>
           )}
         </div>
-
         <div>
           <h4 className="text-xs font-medium text-gray-600 uppercase mb-2">Feedback ({data.feedback.length})</h4>
           {data.feedback.length === 0 ? <p className="text-xs text-gray-400">No feedback records</p> : (

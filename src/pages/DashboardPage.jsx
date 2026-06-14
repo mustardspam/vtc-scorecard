@@ -5,6 +5,7 @@ import ParameterBreakdown from '../components/dashboard/ParameterBreakdown'
 import PerformerCard from '../components/dashboard/PerformerCard'
 import DashboardFilters from '../components/dashboard/DashboardFilters'
 import WeightSliders from '../components/weights/WeightSliders'
+import { useThresholds } from '../hooks/useThresholds'
 import { TrendingUp, TrendingDown, Award, AlertTriangle } from 'lucide-react'
 
 export default function DashboardPage() {
@@ -12,6 +13,7 @@ export default function DashboardPage() {
   const [weights, setWeights] = useState(null)
   const [loading, setLoading] = useState(true)
   const [filters, setFilters] = useState({ community: '', category: '' })
+  const { getTier } = useThresholds()
 
   useEffect(() => {
     loadData()
@@ -100,6 +102,7 @@ export default function DashboardPage() {
                 name={s.vendors?.name || 'Unknown'}
                 category={s.vendors?.vendor_categories?.name || ''}
                 score={s.weighted_total}
+                tier={getTier(s.weighted_total)}
                 safetyCount={s.safety_incident_count}
                 scheduleJobs={s.schedule_total_jobs}
                 reworkCount={s.rework_count}
@@ -126,6 +129,7 @@ export default function DashboardPage() {
                 name={s.vendors?.name || 'Unknown'}
                 category={s.vendors?.vendor_categories?.name || ''}
                 score={s.weighted_total}
+                tier={getTier(s.weighted_total)}
                 safetyCount={s.safety_incident_count}
                 scheduleJobs={s.schedule_total_jobs}
                 reworkCount={s.rework_count}

@@ -59,3 +59,28 @@
 /* Divide lines */
 .dark .divide-gray-100 > * + * { border-color: #333330 !important; }
 .dark .divide-gray-200 > * + * { border-color: #3a3a36 !important; }
+
+/* ── Print styles (report card) ── */
+@media print {
+  .no-print { display: none !important; }
+
+  /* Hide everything, then reveal only the report card content */
+  body * { visibility: hidden; }
+  .report-card-content,
+  .report-card-content * { visibility: visible; }
+
+  /* Break the report card out of its scroll container and fill the page */
+  .report-card-scroll {
+    overflow: visible !important;
+    max-height: none !important;
+  }
+  .report-card-content {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    background: white;
+    padding: 2rem;
+    box-sizing: border-box;
+  }
+}
