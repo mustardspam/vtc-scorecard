@@ -30,14 +30,18 @@ export default function DashboardPage() {
       query = query.eq('category_id', filters.category)
     }
 
-    const [scoresRes, weightsRes] = await Promise.all([
-      query,
-      supabase.from('score_weights').select('*').eq('is_current', true).single()
-    ])
-
-    setScores(scoresRes.data || [])
-    setWeights(weightsRes.data)
-    setLoading(false)
+    try {
+      const [scoresRes, weightsRes] = await Promise.all([
+        query,
+        supabase.from('score_weights').select('*').eq('is_current', true).single()
+      ])
+      setScores(scoresRes.data || [])
+      setWeights(weightsRes.data)
+    } catch (err) {
+      console.error('loadData error:', err)
+    } finally {
+      setLoading(false)
+    }
   }
 
   const validScores = scores.filter(s => s.weighted_total != null)

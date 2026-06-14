@@ -26,23 +26,30 @@ export const useAuth = create((set, get) => ({
     }
 
     supabase.auth.onAuthStateChange(async (event, session) => {
+      // INITIAL_SESSION fires immediately after registration — already handled above
+      if (event === 'INITIAL_SESSION') return
       if (session?.user) {
         const profile = await get().fetchProfile(session.user.id)
-        set({ user: session.user, profile })
+        set({ user: session.user, profile, loading: false })
       } else {
-        set({ user: null, profile: null })
+        set({ user: null, profile: null, loading: false })
       }
     })
   },
 
   fetchProfile: async (userId) => {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .single()
-    if (error) console.error('Profile fetch error:', error)
-    return data
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single()
+      if (error) console.error('Profile fetch error:', error)
+      return data
+    } catch (err) {
+      console.error('Profile fetch exception:', err)
+      return null
+    }
   },
 
   login: async (email, password) => {

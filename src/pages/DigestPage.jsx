@@ -21,6 +21,7 @@ export default function DigestPage() {
 
   async function loadData() {
     setLoading(true)
+    try {
     const since = new Date()
     since.setDate(since.getDate() - 30)
 
@@ -57,7 +58,11 @@ export default function DigestPage() {
     setPriorScores(prior)
     setRecentFeedback(feedbackRes.data || [])
     setWeights(weightsRes.data)
-    setLoading(false)
+    } catch (err) {
+      console.error('loadData error:', err)
+    } finally {
+      setLoading(false)
+    }
   }
 
   const valid = scores.filter(s => s.weighted_total != null)

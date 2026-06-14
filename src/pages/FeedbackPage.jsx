@@ -26,10 +26,15 @@ export default function FeedbackPage() {
     else if (filter === 'approved') query = query.eq('is_approved', true)
     else if (filter === 'rejected') query = query.eq('is_approved', false).not('reviewed_at', 'is', null)
 
-    const { data, error } = await query
-    if (error) console.error('Feedback load error:', error)
-    setFeedback(data || [])
-    setLoading(false)
+    try {
+      const { data, error } = await query
+      if (error) console.error('Feedback load error:', error)
+      setFeedback(data || [])
+    } catch (err) {
+      console.error('loadFeedback error:', err)
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function handleApprove(id) {

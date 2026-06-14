@@ -118,9 +118,14 @@ function FeedbackSubmissionsTab() {
     if (filters.approved === 'rejected') query = query.eq('is_approved', false).not('reviewed_at', 'is', null)
     if (filters.approved === 'pending') query = query.is('reviewed_at', null)
 
-    const { data } = await query
-    setSubmissions(data || [])
-    setLoading(false)
+    try {
+      const { data } = await query
+      setSubmissions(data || [])
+    } catch (err) {
+      console.error('loadSubmissions error:', err)
+    } finally {
+      setLoading(false)
+    }
   }
 
   function clearFilters() {
@@ -332,13 +337,18 @@ function SystemLogTab() {
 
   async function loadLogs() {
     setLoading(true)
-    const { data } = await supabase
-      .from('activity_log')
-      .select('*, profiles!activity_log_user_id_fkey(full_name, email)')
-      .order('created_at', { ascending: false })
-      .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
-    setLogs(data || [])
-    setLoading(false)
+    try {
+      const { data } = await supabase
+        .from('activity_log')
+        .select('*, profiles!activity_log_user_id_fkey(full_name, email)')
+        .order('created_at', { ascending: false })
+        .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
+      setLogs(data || [])
+    } catch (err) {
+      console.error('loadLogs error:', err)
+    } finally {
+      setLoading(false)
+    }
   }
 
   return loading ? (
@@ -401,11 +411,11 @@ function CMOutlierTab() {
 
   async function loadData() {
     setLoading(true)
+    try {
     const { data } = await supabase
       .from('builder_feedback')
       .select('submitted_by, category, points, is_approved, submitter:profiles!builder_feedback_submitted_by_fkey(full_name, email)')
       .not('submitted_by', 'is', null)
-    setLoading(false)
 
     if (!data?.length) { setRows([]); return }
 
@@ -438,6 +448,11 @@ function CMOutlierTab() {
     }
 
     setRows(users.filter(u => u.total >= 3).sort((a, b) => Math.abs(b.zScore) - Math.abs(a.zScore)))
+    } catch (err) {
+      console.error('CMOutlier loadData error:', err)
+    } finally {
+      setLoading(false)
+    }
   }
 
   if (loading) return <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>
@@ -546,14 +561,19 @@ function VendorActionsTab() {
 
   async function loadActions() {
     setLoading(true)
-    const { data } = await supabase
-      .from('activity_log')
-      .select('id, metadata, created_at, profiles!activity_log_user_id_fkey(full_name, email)')
-      .eq('action_type', 'vendor_action')
-      .order('created_at', { ascending: false })
-      .limit(200)
-    setActions(data || [])
-    setLoading(false)
+    try {
+      const { data } = await supabase
+        .from('activity_log')
+        .select('id, metadata, created_at, profiles!activity_log_user_id_fkey(full_name, email)')
+        .eq('action_type', 'vendor_action')
+        .order('created_at', { ascending: false })
+        .limit(200)
+      setActions(data || [])
+    } catch (err) {
+      console.error('loadActions error:', err)
+    } finally {
+      setLoading(false)
+    }
   }
 
   const filtered = actions.filter(a => {

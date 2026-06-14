@@ -47,6 +47,7 @@ export default function ScoresPage() {
 
   async function loadScores() {
     setLoading(true)
+    try {
     const [scoresRes, trendRes] = await Promise.all([
       supabase
         .from('score_results')
@@ -70,7 +71,11 @@ export default function ScoresPage() {
       map[id].sort((a, b) => new Date(a.date) - new Date(b.date))
     }
     setTrendMap(map)
-    setLoading(false)
+    } catch (err) {
+      console.error('loadScores error:', err)
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function handleRecalculate() {
