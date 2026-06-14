@@ -6,7 +6,8 @@ import SeverityRulesEditor from '../components/admin/SeverityRulesEditor'
 import UserManager from '../components/admin/UserManager'
 import ScoringConfig from '../components/admin/ScoringConfig'
 import WeightHistory from '../components/admin/WeightHistory'
-import { Settings, Users, Building2, MessageSquare, Shield, Calculator, History } from 'lucide-react'
+import DigestRecipients from '../components/admin/DigestRecipients'
+import { Settings, Users, Building2, MessageSquare, Shield, Calculator, History, Mail } from 'lucide-react'
 
 const TABS = [
   { id: 'vendors', label: 'Vendors / Trades', icon: Building2 },
@@ -16,6 +17,7 @@ const TABS = [
   { id: 'scoring', label: 'Scoring Config', icon: Calculator },
   { id: 'weight-history', label: 'Weight History', icon: History },
   { id: 'users', label: 'User Management', icon: Users },
+  { id: 'digest', label: 'Digest Recipients', icon: Mail },
 ]
 
 export default function AdminPage() {
@@ -53,6 +55,7 @@ export default function AdminPage() {
         {tab === 'scoring' && <ScoringConfig />}
         {tab === 'weight-history' && <WeightHistory />}
         {tab === 'users' && <UserManager />}
+        {tab === 'digest' && <DigestRecipients />}
       </div>
     </div>
   )

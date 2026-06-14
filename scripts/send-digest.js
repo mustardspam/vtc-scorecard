@@ -4,18 +4,6 @@ const RESEND_API_KEY = process.env.RESEND_API_KEY
 const SUPABASE_URL = process.env.SUPABASE_URL
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
 
-// ── Recipients ─────────────────────────────────────────────────────────────
-// Add or remove email addresses here
-// Until a domain is verified at resend.com/domains, Resend only allows sending
-// to the account owner email (mustardsubs@proton.me). After domain verification,
-// replace FROM_ADDRESS below and add any recipients here.
-const RECIPIENTS = [
-  'mustardspam@proton.me',
-  // Add coworker emails below:
-  // 'name@ashtonwoods.com',
-  // 'name@starlighthomes.com',
-]
-
 const FROM_ADDRESS = 'VTC Scorecard <digest@vtcouncil.online>'
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -35,6 +23,16 @@ function getTier(score) {
   if (score >= TIER_THRESHOLDS.watch) return 'Watch'
   if (score >= TIER_THRESHOLDS.probation) return 'Probation'
   return 'Critical'
+}
+
+async function loadRecipients() {
+  const { data } = await supabase
+    .from('system_config')
+    .select('value')
+    .eq('key', 'digest_recipients')
+    .single()
+  if (!data?.value) return []
+  try { return JSON.parse(data.value) } catch { return [] }
 }
 
 async function loadData() {
@@ -171,6 +169,13 @@ async function sendEmail(subject, text, recipients) {
 }
 
 async function main() {
+  console.log('Loading recipients from Supabase...')
+  const recipients = await loadRecipients()
+  if (recipients.length === 0) {
+    console.log('No recipients configured. Add emails in Admin → Digest Recipients.')
+    process.exit(0)
+  }
+
   console.log('Loading data from Supabase...')
   const data = await loadData()
   console.log(`Loaded ${data.scores.length} scores, ${data.feedback.length} feedback entries`)
@@ -179,8 +184,8 @@ async function main() {
   const date = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
   const subject = `VTC Scorecard Weekly Digest — ${date}`
 
-  console.log(`Sending to ${RECIPIENTS.length} recipients...`)
-  const result = await sendEmail(subject, text, RECIPIENTS)
+  console.log(`Sending to ${recipients.length} recipients: ${recipients.join(', ')}`)
+  const result = await sendEmail(subject, text, recipients)
   console.log('Sent successfully:', result.id)
 }
 
