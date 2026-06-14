@@ -9,6 +9,7 @@ export default function DigestPage() {
   const [priorScores, setPriorScores] = useState([])
   const [recentFeedback, setRecentFeedback] = useState([])
   const [weights, setWeights] = useState(null)
+  const [minConfig, setMinConfig] = useState({ min_schedule_jobs: 5, min_feedback_count: 3, min_safety_records: 1, min_rework_records: 1 })
   const [loading, setLoading] = useState(true)
   const [copied, setCopied] = useState(false)
   const textRef = useRef(null)
@@ -21,12 +22,16 @@ export default function DigestPage() {
     const since = new Date()
     since.setDate(since.getDate() - 30)
 
-    const [scoresRes, snapshotsRes, feedbackRes, weightsRes] = await Promise.all([
+    const [scoresRes, snapshotsRes, feedbackRes, weightsRes, minConfigRes] = await Promise.all([
       supabase.from('score_results').select('*, vendors(name, vendor_categories(name))').order('weighted_total', { ascending: false, nullsFirst: false }),
       supabase.from('snapshots').select('id, name, created_at').ilike('name', 'Week ending%').order('created_at', { ascending: false }).limit(1),
       supabase.from('builder_feedback').select('category, severity, points, vendors(name), submitter:profiles!builder_feedback_submitted_by_fkey(full_name)').eq('is_approved', true).gte('submitted_at', since.toISOString()).order('submitted_at', { ascending: false }).limit(50),
       supabase.from('score_weights').select('*').eq('is_current', true).single(),
+      supabase.from('system_config').select('key, value').in('key', ['min_schedule_jobs', 'min_feedback_count', 'min_safety_records', 'min_rework_records']),
     ])
+
+    const parsedMin = { min_schedule_jobs: 5, min_feedback_count: 3, min_safety_records: 1, min_rework_records: 1 }
+    for (const row of (minConfigRes.data || [])) parsedMin[row.key] = Number(row.value)
 
     const snaps = snapshotsRes.data || []
     let prior = []
@@ -35,7 +40,17 @@ export default function DigestPage() {
       prior = priorData || []
     }
 
-    setScores(scoresRes.data || [])
+    const allScores = scoresRes.data || []
+    const filtered = allScores.filter(s => {
+      if (s.schedule_score != null && (s.schedule_total_jobs ?? 0) < parsedMin.min_schedule_jobs) return false
+      if (s.feedback_score != null && (s.feedback_count ?? 0) < parsedMin.min_feedback_count) return false
+      if (s.safety_score != null && parsedMin.min_safety_records > 0 && (s.safety_incident_count ?? 0) < parsedMin.min_safety_records) return false
+      if (s.rework_score != null && parsedMin.min_rework_records > 0 && (s.rework_count ?? 0) < parsedMin.min_rework_records) return false
+      return true
+    })
+
+    setScores(filtered)
+    setMinConfig(parsedMin)
     setSnapshots(snaps)
     setPriorScores(prior)
     setRecentFeedback(feedbackRes.data || [])

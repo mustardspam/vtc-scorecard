@@ -34,7 +34,7 @@ async function loadData() {
   since.setDate(since.getDate() - 30)
 
   const [scoresRes, feedbackRes, weightsRes, snapshotsRes, minConfigRes] = await Promise.all([
-    supabase.from('score_results').select('weighted_total, vendors(name, vendor_categories(name))').order('weighted_total', { ascending: false, nullsFirst: false }),
+    supabase.from('score_results').select('weighted_total, safety_score, schedule_score, rework_score, feedback_score, schedule_total_jobs, feedback_count, safety_incident_count, rework_count, vendors(name, vendor_categories(name))').order('weighted_total', { ascending: false, nullsFirst: false }),
     supabase.from('builder_feedback').select('category, severity, vendors(name), submitter:profiles!builder_feedback_submitted_by_fkey(full_name)').eq('is_approved', true).gte('submitted_at', since.toISOString()).order('submitted_at', { ascending: false }).limit(50),
     supabase.from('score_weights').select('*').eq('is_current', true).single(),
     supabase.from('snapshots').select('id, name, created_at').ilike('name', 'Week ending%').order('created_at', { ascending: false }).limit(1),
