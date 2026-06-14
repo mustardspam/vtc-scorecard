@@ -11,9 +11,12 @@ const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
 // replace FROM_ADDRESS below and add any recipients here.
 const RECIPIENTS = [
   'mustardspam@proton.me',
+  // Add coworker emails below:
+  // 'name@ashtonwoods.com',
+  // 'name@starlighthomes.com',
 ]
 
-const FROM_ADDRESS = 'VTC Scorecard <onboarding@resend.dev>'
+const FROM_ADDRESS = 'VTC Scorecard <digest@vtcouncil.online>'
 
 // ───────────────────────────────────────────────────────────────────────────
 
