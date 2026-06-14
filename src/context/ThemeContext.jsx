@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 
-const ThemeContext = createContext()
+const ThemeContext = createContext({ dark: false, toggle: () => {} })
 
 export function ThemeProvider({ children }) {
   const [dark, setDark] = useState(() => localStorage.getItem('theme') === 'dark')

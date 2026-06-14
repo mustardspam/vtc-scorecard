@@ -56,10 +56,6 @@
 .dark td    { border-color: #333330 !important; }
 .dark tr:hover td { background-color: #323230 !important; }
 
-/* Hover states */
-.dark .hover\:bg-gray-50:hover  { background-color: #323230 !important; }
-.dark .hover\:bg-gray-100:hover { background-color: #3a3a36 !important; }
-
 /* Divide lines */
 .dark .divide-gray-100 > * + * { border-color: #333330 !important; }
 .dark .divide-gray-200 > * + * { border-color: #3a3a36 !important; }
