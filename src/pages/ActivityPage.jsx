@@ -65,11 +65,26 @@ function FeedbackSubmissionsTab() {
   const [expandedId, setExpandedId] = useState(null)
   const [filters, setFilters] = useState({ user_id: '', category: '', severity: '', approved: '' })
   const [page, setPage] = useState(0)
+  const [last30Stats, setLast30Stats] = useState({ total: 0, complaints: 0, kudos: 0 })
   const PAGE_SIZE = 30
 
-  useEffect(() => { loadUsers() }, [])
+  useEffect(() => { loadUsers(); loadLast30Stats() }, [])
   useEffect(() => { setPage(0); loadSubmissions(0) }, [filters])
   useEffect(() => { loadSubmissions(page) }, [page])
+
+  async function loadLast30Stats() {
+    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+    const { data } = await supabase
+      .from('builder_feedback')
+      .select('category')
+      .gte('submitted_at', since)
+    if (!data) return
+    setLast30Stats({
+      total: data.length,
+      complaints: data.filter(s => s.category === 'complaint').length,
+      kudos: data.filter(s => s.category === 'kudos').length,
+    })
+  }
 
   async function loadUsers() {
     const { data } = await supabase.from('profiles').select('id, full_name, email').order('full_name')
@@ -107,9 +122,6 @@ function FeedbackSubmissionsTab() {
   }
 
   const hasFilters = Object.values(filters).some(Boolean)
-  const totalComplaints = submissions.filter(s => s.category === 'complaint').length
-  const totalKudos = submissions.filter(s => s.category === 'kudos').length
-  const totalPoints = submissions.reduce((sum, s) => sum + (s.points || 0), 0)
 
   return (
     <div className="space-y-4">
@@ -171,23 +183,21 @@ function FeedbackSubmissionsTab() {
         </div>
       </div>
 
-      {/* Summary bar */}
-      {!loading && submissions.length > 0 && (
-        <div className="grid grid-cols-3 gap-3">
-          <div className="bg-white rounded-lg border border-gray-200 px-4 py-3 text-center">
-            <p className="text-xl font-bold text-red-600">{totalComplaints}</p>
-            <p className="text-xs text-gray-500 mt-0.5">Complaints</p>
-          </div>
-          <div className="bg-white rounded-lg border border-gray-200 px-4 py-3 text-center">
-            <p className="text-xl font-bold text-green-600">{totalKudos}</p>
-            <p className="text-xs text-gray-500 mt-0.5">Kudos</p>
-          </div>
-          <div className="bg-white rounded-lg border border-gray-200 px-4 py-3 text-center">
-            <p className="text-xl font-bold text-gray-700">{totalPoints}</p>
-            <p className="text-xs text-gray-500 mt-0.5">Total Points</p>
-          </div>
+      {/* Summary bar — last 30 days */}
+      <div className="grid grid-cols-3 gap-3">
+        <div className="bg-white rounded-lg border border-gray-200 px-4 py-3 text-center">
+          <p className="text-xl font-bold text-red-600">{last30Stats.complaints}</p>
+          <p className="text-xs text-gray-500 mt-0.5">Complaints</p>
         </div>
-      )}
+        <div className="bg-white rounded-lg border border-gray-200 px-4 py-3 text-center">
+          <p className="text-xl font-bold text-green-600">{last30Stats.kudos}</p>
+          <p className="text-xs text-gray-500 mt-0.5">Kudos</p>
+        </div>
+        <div className="bg-white rounded-lg border border-gray-200 px-4 py-3 text-center">
+          <p className="text-xl font-bold text-blue-600">{last30Stats.total}</p>
+          <p className="text-xs text-gray-500 mt-0.5">Submissions — last 30 days</p>
+        </div>
+      </div>
 
       {/* Table */}
       {loading ? (
