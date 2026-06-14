@@ -33,7 +33,7 @@ export default function ScoresPage() {
   const [expandedId, setExpandedId] = useState(null)
   const [drillDown, setDrillDown] = useState(null)
   const [reportCard, setReportCard] = useState(null)
-  const { getTier } = useThresholds()
+  const { getTier, hasEnoughData } = useThresholds()
 
   useEffect(() => { loadScores() }, [])
 
@@ -223,16 +223,23 @@ export default function ScoresPage() {
                     <TierBadge score={s.weighted_total} getTier={getTier} />
                   </td>
                   <td className="px-4 py-3 text-gray-500">{s.vendors?.vendor_categories?.name || '—'}</td>
-                  {['safety_score', 'schedule_score', 'rework_score', 'feedback_score', 'weighted_total'].map(field => (
-                    <td
-                      key={field}
-                      className={`px-4 py-3 text-right font-mono ${scoreColor(s[field])} ${field === 'weighted_total' ? 'font-bold' : ''}`}
-                    >
-                      <span className={`px-2 py-0.5 rounded ${scoreBg(s[field])}`}>
-                        {s[field] != null ? Number(s[field]).toFixed(1) : '—'}
-                      </span>
-                    </td>
-                  ))}
+                  {['safety_score', 'schedule_score', 'rework_score', 'feedback_score', 'weighted_total'].map(field => {
+                    const lowData = field !== 'weighted_total' && !hasEnoughData(s, field)
+                    return (
+                      <td
+                        key={field}
+                        className={`px-4 py-3 text-right font-mono ${lowData ? 'opacity-50' : scoreColor(s[field])} ${field === 'weighted_total' ? 'font-bold' : ''}`}
+                      >
+                        <span
+                          className={`px-2 py-0.5 rounded ${lowData ? 'bg-gray-100 text-gray-400' : scoreBg(s[field])}`}
+                          title={lowData ? 'Low data — fewer records than the minimum threshold' : undefined}
+                        >
+                          {s[field] != null ? Number(s[field]).toFixed(1) : '—'}
+                          {lowData && ' ⚠'}
+                        </span>
+                      </td>
+                    )
+                  })}
                   <td className="px-4 py-3 text-center">
                     <TrendSparkline history={(trendMap[s.vendor_id] || []).map(h => h.score)} />
                   </td>

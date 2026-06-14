@@ -5,7 +5,8 @@ import FeedbackRulesEditor from '../components/admin/FeedbackRulesEditor'
 import SeverityRulesEditor from '../components/admin/SeverityRulesEditor'
 import UserManager from '../components/admin/UserManager'
 import ScoringConfig from '../components/admin/ScoringConfig'
-import { Settings, Users, Building2, MessageSquare, Shield, Calculator } from 'lucide-react'
+import WeightHistory from '../components/admin/WeightHistory'
+import { Settings, Users, Building2, MessageSquare, Shield, Calculator, History } from 'lucide-react'
 
 const TABS = [
   { id: 'vendors', label: 'Vendors / Trades', icon: Building2 },
@@ -13,6 +14,7 @@ const TABS = [
   { id: 'feedback-rules', label: 'Feedback Rules', icon: MessageSquare },
   { id: 'severity-rules', label: 'Severity Rules', icon: Shield },
   { id: 'scoring', label: 'Scoring Config', icon: Calculator },
+  { id: 'weight-history', label: 'Weight History', icon: History },
   { id: 'users', label: 'User Management', icon: Users },
 ]
 
@@ -49,6 +51,7 @@ export default function AdminPage() {
         {tab === 'feedback-rules' && <FeedbackRulesEditor />}
         {tab === 'severity-rules' && <SeverityRulesEditor />}
         {tab === 'scoring' && <ScoringConfig />}
+        {tab === 'weight-history' && <WeightHistory />}
         {tab === 'users' && <UserManager />}
       </div>
     </div>

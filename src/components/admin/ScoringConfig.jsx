@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { logActivity } from '../../hooks/useActivityLog'
 import { useAuth } from '../../hooks/useAuth'
-import { Save, Calculator, Play } from 'lucide-react'
+import { Save, Calculator, AlertCircle } from 'lucide-react'
 
 const TIER_FIELDS = [
   {
@@ -31,14 +31,24 @@ const TIER_FIELDS = [
   },
 ]
 
+const MIN_FIELDS = [
+  { key: 'min_schedule_jobs', label: 'Minimum Schedule Jobs', description: 'Jobs needed before a schedule score is shown. Set 0 to disable.', icon: '📅' },
+  { key: 'min_feedback_count', label: 'Minimum Feedback Entries', description: 'Approved feedback entries needed before a feedback score is shown. Set 0 to disable.', icon: '💬' },
+  { key: 'min_safety_records', label: 'Minimum Safety Records', description: 'Safety incidents logged before a safety score is flagged. Set 0 to disable.', icon: '🦺' },
+  { key: 'min_rework_records', label: 'Minimum Rework Records', description: 'Rework/backcharge entries needed before a rework score is flagged. Set 0 to disable.', icon: '🔧' },
+]
+
 export default function ScoringConfig() {
   const [config, setConfig] = useState({})
   const [thresholds, setThresholds] = useState({ threshold_good: 85, threshold_watch: 70, threshold_probation: 50 })
+  const [minData, setMinData] = useState({ min_schedule_jobs: 5, min_feedback_count: 3, min_safety_records: 1, min_rework_records: 1 })
   const [saving, setSaving] = useState(false)
   const [savingThresholds, setSavingThresholds] = useState(false)
+  const [savingMin, setSavingMin] = useState(false)
   const [calculating, setCalculating] = useState(false)
   const [message, setMessage] = useState('')
   const [thresholdMsg, setThresholdMsg] = useState('')
+  const [minMsg, setMinMsg] = useState('')
   const { user } = useAuth()
 
   useEffect(() => { loadConfig() }, [])
@@ -53,6 +63,25 @@ export default function ScoringConfig() {
       threshold_watch: Number(map.threshold_watch) || 70,
       threshold_probation: Number(map.threshold_probation) || 50,
     })
+    setMinData({
+      min_schedule_jobs: map.min_schedule_jobs != null ? Number(map.min_schedule_jobs) : 5,
+      min_feedback_count: map.min_feedback_count != null ? Number(map.min_feedback_count) : 3,
+      min_safety_records: map.min_safety_records != null ? Number(map.min_safety_records) : 1,
+      min_rework_records: map.min_rework_records != null ? Number(map.min_rework_records) : 1,
+    })
+  }
+
+  async function handleSaveMin() {
+    setSavingMin(true)
+    for (const [key, value] of Object.entries(minData)) {
+      await supabase
+        .from('system_config')
+        .upsert({ key, value: String(value), updated_by: user.id, updated_at: new Date().toISOString() }, { onConflict: 'key' })
+    }
+    await logActivity('rules_updated', 'Updated minimum data thresholds', { minData })
+    setMinMsg('Minimums saved')
+    setSavingMin(false)
+    setTimeout(() => setMinMsg(''), 3000)
   }
 
   async function handleSave() {
@@ -213,6 +242,45 @@ export default function ScoringConfig() {
               {thresholdMsg}
             </span>
           )}
+        </div>
+      </div>
+
+      {/* Minimum data thresholds */}
+      <div>
+        <h2 className="text-lg font-semibold mb-1">Minimum Data Requirements</h2>
+        <p className="text-sm text-gray-500 mb-4">
+          Scores with insufficient data are flagged with a warning on the Scores page. Set to 0 to disable a threshold.
+        </p>
+        <div className="grid grid-cols-2 gap-4 mb-4">
+          {MIN_FIELDS.map(({ key, label, description, icon }) => (
+            <div key={key} className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+              <label className="block text-sm font-semibold text-gray-700 mb-0.5">{icon} {label}</label>
+              <p className="text-xs text-gray-400 mb-2">{description}</p>
+              <input
+                type="number"
+                min={0}
+                value={minData[key]}
+                onChange={e => setMinData(m => ({ ...m, [key]: Number(e.target.value) }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+              />
+            </div>
+          ))}
+        </div>
+        <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg mb-4">
+          <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+          <p className="text-xs text-amber-700">
+            These thresholds only affect visual warnings — scores are still calculated by the database. Vendors flagged with ⚠ have fewer data points than the minimum and their score may not be representative.
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleSaveMin}
+            disabled={savingMin}
+            className="flex items-center gap-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+          >
+            <Save className="w-4 h-4" /> {savingMin ? 'Saving...' : 'Save Minimums'}
+          </button>
+          {minMsg && <span className="text-xs text-green-600">{minMsg}</span>}
         </div>
       </div>
 
