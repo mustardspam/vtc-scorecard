@@ -33,12 +33,12 @@ async function loadData() {
   const since = new Date()
   since.setDate(since.getDate() - 30)
 
-  const [scoresRes, feedbackRes, weightsRes, snapshotsRes] = await Promise.all([
+  const [scoresRes, feedbackRes, weightsRes, snapshotsRes, minConfigRes] = await Promise.all([
     supabase.from('score_results').select('weighted_total, vendors(name, vendor_categories(name))').order('weighted_total', { ascending: false, nullsFirst: false }),
     supabase.from('builder_feedback').select('category, severity, vendors(name), submitter:profiles!builder_feedback_submitted_by_fkey(full_name)').eq('is_approved', true).gte('submitted_at', since.toISOString()).order('submitted_at', { ascending: false }).limit(50),
     supabase.from('score_weights').select('*').eq('is_current', true).single(),
-    // Prefer the most recent auto-generated "Week ending" snapshot for comparison
     supabase.from('snapshots').select('id, name, created_at').ilike('name', 'Week ending%').order('created_at', { ascending: false }).limit(1),
+    supabase.from('system_config').select('key, value').in('key', ['min_schedule_jobs', 'min_feedback_count', 'min_safety_records', 'min_rework_records']),
   ])
 
   let priorScores = []
@@ -51,8 +51,28 @@ async function loadData() {
     priorScores = priorData || []
   }
 
+  // Parse minimum thresholds from system_config
+  const minConfig = {}
+  for (const row of (minConfigRes.data || [])) minConfig[row.key] = Number(row.value)
+  const minScheduleJobs = minConfig.min_schedule_jobs ?? 5
+  const minFeedbackCount = minConfig.min_feedback_count ?? 3
+  const minSafetyRecords = minConfig.min_safety_records ?? 1
+  const minReworkRecords = minConfig.min_rework_records ?? 1
+
+  // Filter out vendors that don't meet minimum data requirements
+  const allScores = scoresRes.data || []
+  const filteredScores = allScores.filter(s => {
+    if (s.schedule_score != null && (s.schedule_total_jobs ?? 0) < minScheduleJobs) return false
+    if (s.feedback_score != null && (s.feedback_count ?? 0) < minFeedbackCount) return false
+    if (s.safety_score != null && minSafetyRecords > 0 && (s.safety_incident_count ?? 0) < minSafetyRecords) return false
+    if (s.rework_score != null && minReworkRecords > 0 && (s.rework_count ?? 0) < minReworkRecords) return false
+    return true
+  })
+
+  console.log(`${allScores.length} total vendors, ${filteredScores.length} meet minimum data requirements`)
+
   return {
-    scores: scoresRes.data || [],
+    scores: filteredScores,
     feedback: feedbackRes.data || [],
     weights: weightsRes.data,
     priorScores,
