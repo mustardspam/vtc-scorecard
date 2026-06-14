@@ -65,7 +65,7 @@ export default function LoginPage() {
         {/* Logo */}
         <div className="text-center mb-7">
           <img
-            src="/vtc-scorecard/aw-stl-logo.jpg"
+            src="/aw-stl-logo.jpg"
             alt="Ashton Woods / Starlight Homes"
             className="h-12 mx-auto object-contain"
           />

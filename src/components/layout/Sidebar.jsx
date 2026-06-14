@@ -62,7 +62,7 @@ export default function Sidebar() {
       {/* Logo */}
       <div className="px-5 pt-6 pb-5 border-b" style={{ borderColor: borderCol }}>
         <img
-          src="/vtc-scorecard/aw-stl-logo.jpg"
+          src="/aw-stl-logo.jpg"
           alt="Ashton Woods / Starlight Homes"
           className="w-full max-w-[172px]"
         />
