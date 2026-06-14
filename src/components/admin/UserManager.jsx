@@ -76,7 +76,7 @@ export default function UserManager() {
         <div className="text-sm text-blue-800">
           <p className="font-medium mb-1">How to add users (no email required)</p>
           <ol className="list-decimal list-inside space-y-1 text-blue-700 text-xs">
-            <li>Send the user to <span className="font-mono bg-blue-100 px-1 rounded">mustardspam.github.io/vtc-scorecard/login</span></li>
+            <li>Send the user to <span className="font-mono bg-blue-100 px-1 rounded">vtcouncil.online/login</span></li>
             <li>They click <strong>Create Account</strong>, enter their name, email and choose a password</li>
             <li>Their account appears below — set their role and they're in</li>
           </ol>
