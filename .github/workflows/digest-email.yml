@@ -1,0 +1,30 @@
+name: Weekly Digest Email
+
+on:
+  schedule:
+    # Every Monday at 8:00 AM Eastern (12:00 UTC)
+    - cron: '0 12 * * 1'
+  workflow_dispatch: # Allow manual trigger from GitHub Actions UI
+
+jobs:
+  send-digest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install @supabase/supabase-js
+
+        working-directory: scripts
+
+      - name: Send digest email
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          SUPABASE_URL: https://jwsajxjpaapcpieutrdi.supabase.co
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node send-digest.js
+        working-directory: scripts
