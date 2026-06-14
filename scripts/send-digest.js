@@ -37,18 +37,17 @@ async function loadData() {
     supabase.from('score_results').select('weighted_total, vendors(name, vendor_categories(name))').order('weighted_total', { ascending: false, nullsFirst: false }),
     supabase.from('builder_feedback').select('category, severity, vendors(name), submitter:profiles!builder_feedback_submitted_by_fkey(full_name)').eq('is_approved', true).gte('submitted_at', since.toISOString()).order('submitted_at', { ascending: false }).limit(50),
     supabase.from('score_weights').select('*').eq('is_current', true).single(),
-    supabase.from('snapshots').select('id, name, created_at').order('created_at', { ascending: false }).limit(2),
+    // Prefer the most recent auto-generated "Week ending" snapshot for comparison
+    supabase.from('snapshots').select('id, name, created_at').ilike('name', 'Week ending%').order('created_at', { ascending: false }).limit(1),
   ])
 
-  // Fetch prior snapshot scores for week-over-week comparison
   let priorScores = []
   const snapshots = snapshotsRes.data || []
   if (snapshots.length >= 1) {
-    const priorSnapshotId = snapshots[0].id
     const { data: priorData } = await supabase
       .from('snapshot_score_results')
       .select('vendor_name, weighted_total, vendor_category')
-      .eq('snapshot_id', priorSnapshotId)
+      .eq('snapshot_id', snapshots[0].id)
     priorScores = priorData || []
   }
 

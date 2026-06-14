@@ -23,7 +23,7 @@ export default function DigestPage() {
 
     const [scoresRes, snapshotsRes, feedbackRes, weightsRes] = await Promise.all([
       supabase.from('score_results').select('*, vendors(name, vendor_categories(name))').order('weighted_total', { ascending: false, nullsFirst: false }),
-      supabase.from('snapshots').select('id, name, created_at').order('created_at', { ascending: false }).limit(2),
+      supabase.from('snapshots').select('id, name, created_at').ilike('name', 'Week ending%').order('created_at', { ascending: false }).limit(1),
       supabase.from('builder_feedback').select('category, severity, points, vendors(name), submitter:profiles!builder_feedback_submitted_by_fkey(full_name)').eq('is_approved', true).gte('submitted_at', since.toISOString()).order('submitted_at', { ascending: false }).limit(50),
       supabase.from('score_weights').select('*').eq('is_current', true).single(),
     ])

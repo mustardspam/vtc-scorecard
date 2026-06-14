@@ -1,0 +1,29 @@
+name: Weekly Snapshot
+
+on:
+  schedule:
+    # Every Friday at 6:00 PM Eastern (22:00 UTC)
+    - cron: '0 22 * * 5'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  take-snapshot:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: scripts
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Take weekly snapshot
+        env:
+          SUPABASE_URL: https://jwsajxjpaapcpieutrdi.supabase.co
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node take-snapshot.js
