@@ -73,15 +73,22 @@ export default function ScoringConfig() {
 
   async function handleSaveMin() {
     setSavingMin(true)
-    for (const [key, value] of Object.entries(minData)) {
-      await supabase
-        .from('system_config')
-        .upsert({ key, value: String(value), updated_by: user.id, updated_at: new Date().toISOString() }, { onConflict: 'key' })
+    setMinMsg('')
+    try {
+      for (const [key, value] of Object.entries(minData)) {
+        const { error } = await supabase
+          .from('system_config')
+          .upsert({ key, value: String(value), updated_by: user.id, updated_at: new Date().toISOString() }, { onConflict: 'key' })
+        if (error) throw error
+      }
+      await logActivity('rules_updated', 'Updated minimum data thresholds', { minData })
+      setMinMsg('Minimums saved')
+      setTimeout(() => setMinMsg(''), 3000)
+    } catch (err) {
+      setMinMsg('Error: ' + (err.message || 'Save failed'))
+    } finally {
+      setSavingMin(false)
     }
-    await logActivity('rules_updated', 'Updated minimum data thresholds', { minData })
-    setMinMsg('Minimums saved')
-    setSavingMin(false)
-    setTimeout(() => setMinMsg(''), 3000)
   }
 
   async function handleSave() {
@@ -105,18 +112,25 @@ export default function ScoringConfig() {
       return
     }
     setSavingThresholds(true)
-    for (const [key, value] of Object.entries(thresholds)) {
-      await supabase
-        .from('system_config')
-        .upsert(
-          { key, value: String(value), updated_by: user.id, updated_at: new Date().toISOString() },
-          { onConflict: 'key' }
-        )
+    setThresholdMsg('')
+    try {
+      for (const [key, value] of Object.entries(thresholds)) {
+        const { error } = await supabase
+          .from('system_config')
+          .upsert(
+            { key, value: String(value), updated_by: user.id, updated_at: new Date().toISOString() },
+            { onConflict: 'key' }
+          )
+        if (error) throw error
+      }
+      await logActivity('rules_updated', 'Updated performance tier thresholds', { thresholds })
+      setThresholdMsg('Thresholds saved')
+      setTimeout(() => setThresholdMsg(''), 3000)
+    } catch (err) {
+      setThresholdMsg('Error: ' + (err.message || 'Save failed'))
+    } finally {
+      setSavingThresholds(false)
     }
-    await logActivity('rules_updated', 'Updated performance tier thresholds', { thresholds })
-    setThresholdMsg('Thresholds saved')
-    setSavingThresholds(false)
-    setTimeout(() => setThresholdMsg(''), 3000)
   }
 
   async function handleRecalculate() {
