@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
-import { logActivity } from '../../lib/logActivity'
+import { logActivity } from '../../hooks/useActivityLog'
 import { Mail, Plus, Trash2 } from 'lucide-react'
 
 export default function DigestRecipients() {
