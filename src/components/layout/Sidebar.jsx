@@ -12,7 +12,7 @@ const navItems = [
   { to: '/scores', icon: Table2, label: 'Scores', roles: ['admin', 'manager', 'viewer'] },
   { to: '/data', icon: Database, label: 'Data', roles: ['admin', 'manager', 'viewer'] },
   { to: '/feedback/submit', icon: Send, label: 'Submit Feedback', roles: ['admin', 'manager', 'viewer'] },
-  { to: '/feedback', icon: MessageSquare, label: 'Feedback Review', roles: ['admin', 'manager'] },
+  { to: '/feedback', icon: MessageSquare, label: 'Feedback Review', roles: ['admin', 'manager'], end: true },
   { to: '/uploads', icon: Upload, label: 'Uploads', roles: ['admin', 'manager'] },
   { to: '/snapshots', icon: Camera, label: 'Snapshots', roles: ['admin', 'manager', 'viewer'] },
   { to: '/activity', icon: Activity, label: 'Activity', roles: ['admin', 'manager', 'viewer'] },
@@ -74,6 +74,7 @@ export default function Sidebar() {
           <NavLink
             key={item.to}
             to={item.to}
+            end={item.end}
             className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors"
             style={({ isActive }) => isActive
               ? { backgroundColor: '#087482', color: '#fff' }
