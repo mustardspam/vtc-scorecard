@@ -54,7 +54,8 @@ export default function UploadsPage() {
   const [importError, setImportError] = useState(null)
   const [importProgress, setImportProgress] = useState('')
   const [selectedUnmatched, setSelectedUnmatched] = useState(new Set())
-  const { user } = useAuth()
+  const { user, isManager } = useAuth()
+  const canUpload = isManager()
 
   useEffect(() => {
     loadVendors()
@@ -552,7 +553,17 @@ export default function UploadsPage() {
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-gray-900">Upload Center</h1>
 
-      {step === 'upload' && (
+      {!canUpload && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3">
+          <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
+          <div className="text-sm text-amber-800">
+            <p className="font-medium">View-only access</p>
+            <p className="text-xs text-amber-700 mt-0.5">You can review the import history below. Uploading and importing data requires a manager or admin role.</p>
+          </div>
+        </div>
+      )}
+
+      {canUpload && step === 'upload' && (
         <div className="space-y-4">
           <div
             onDrop={handleFileDrop}
@@ -608,30 +619,31 @@ export default function UploadsPage() {
           >
             Parse File <ArrowRight className="w-4 h-4" />
           </button>
+        </div>
+      )}
 
-          {history.length > 0 && (
-            <div className="bg-white rounded-xl border border-gray-200 p-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-3">Import History</h2>
-              <div className="space-y-2">
-                {history.map(h => (
-                  <div key={h.id} className="flex items-center justify-between text-sm py-2 border-b border-gray-100">
-                    <div className="flex items-center gap-2">
-                      <FileText className="w-4 h-4 text-gray-400" />
-                      <span className="font-medium">{h.uploaded_files?.original_filename}</span>
-                      <span className="text-xs px-2 py-0.5 bg-gray-100 rounded">{h.file_type}</span>
-                    </div>
-                    <div className="flex items-center gap-3 text-gray-500">
-                      <span>{h.row_count} rows</span>
-                      <span className={`px-2 py-0.5 rounded text-xs ${h.status === 'approved' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                        {h.status}
-                      </span>
-                      <span>{new Date(h.created_at).toLocaleDateString()}</span>
-                    </div>
-                  </div>
-                ))}
+      {/* Import history — visible to everyone (read-only for viewers) */}
+      {step === 'upload' && history.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-3">Import History</h2>
+          <div className="space-y-2">
+            {history.map(h => (
+              <div key={h.id} className="flex items-center justify-between text-sm py-2 border-b border-gray-100">
+                <div className="flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-gray-400" />
+                  <span className="font-medium">{h.uploaded_files?.original_filename}</span>
+                  <span className="text-xs px-2 py-0.5 bg-gray-100 rounded">{h.file_type}</span>
+                </div>
+                <div className="flex items-center gap-3 text-gray-500">
+                  <span>{h.row_count} rows</span>
+                  <span className={`px-2 py-0.5 rounded text-xs ${h.status === 'approved' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                    {h.status}
+                  </span>
+                  <span>{new Date(h.created_at).toLocaleDateString()}</span>
+                </div>
               </div>
-            </div>
-          )}
+            ))}
+          </div>
         </div>
       )}
 

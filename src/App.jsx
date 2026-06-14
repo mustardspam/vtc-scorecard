@@ -8,7 +8,6 @@ import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
 import ScoresPage from './pages/ScoresPage'
 import FeedbackPage from './pages/FeedbackPage'
-import BuilderFeedbackPage from './pages/BuilderFeedbackPage'
 import SubmitFeedbackPage from './pages/SubmitFeedbackPage'
 import UploadsPage from './pages/UploadsPage'
 import SnapshotsPage from './pages/SnapshotsPage'
@@ -41,13 +40,6 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
 
-      {/* Standalone builder portal (no sidebar) */}
-      <Route path="/builder/feedback" element={
-        <ProtectedRoute allowedRoles={['builder']}>
-          <BuilderFeedbackPage />
-        </ProtectedRoute>
-      } />
-
       <Route element={
         <ProtectedRoute allowedRoles={['admin', 'manager', 'viewer']}>
           <AppLayout />
@@ -57,16 +49,8 @@ export default function App() {
         <Route path="/scores" element={<ScoresPage />} />
         <Route path="/data" element={<DataPage />} />
         <Route path="/feedback/submit" element={<SubmitFeedbackPage />} />
-        <Route path="/feedback" element={
-          <ProtectedRoute allowedRoles={['admin', 'manager']}>
-            <FeedbackPage />
-          </ProtectedRoute>
-        } />
-        <Route path="/uploads" element={
-          <ProtectedRoute allowedRoles={['admin', 'manager']}>
-            <UploadsPage />
-          </ProtectedRoute>
-        } />
+        <Route path="/feedback" element={<FeedbackPage />} />
+        <Route path="/uploads" element={<UploadsPage />} />
         <Route path="/snapshots" element={<SnapshotsPage />} />
         <Route path="/activity" element={<ActivityPage />} />
         <Route path="/community" element={<CommunityPage />} />

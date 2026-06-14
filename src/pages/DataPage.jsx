@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
+import { useAuth } from '../hooks/useAuth'
 import { Search, ChevronDown, ChevronUp, Database, Trash2 } from 'lucide-react'
 
 const CATEGORY_COLORS = {
@@ -40,6 +41,8 @@ export default function DataPage() {
   const [filterBrand, setFilterBrand] = useState('')
   const [selectedVendorIds, setSelectedVendorIds] = useState(new Set())
   const [deleting, setDeleting] = useState(false)
+  const { isManager } = useAuth()
+  const canEdit = isManager()
 
   useEffect(() => { loadData() }, [])
 
@@ -231,6 +234,7 @@ export default function DataPage() {
           onToggleSelectAll={toggleSelectAll}
           onDeleteSelected={deleteSelectedVendors}
           deleting={deleting}
+          canEdit={canEdit}
         />
       ) : (
         <CommunityList communities={filteredCommunities} />
@@ -239,12 +243,21 @@ export default function DataPage() {
   )
 }
 
-function CategoryBadge({ vendorId, categoryName, categories, onCategoryChange }) {
+function CategoryBadge({ vendorId, categoryName, categories, onCategoryChange, canEdit = true }) {
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
   const selectRef = useRef(null)
 
   const colorClass = CATEGORY_COLORS[categoryName] || 'bg-gray-100 text-gray-600'
+
+  // Viewers see a static badge — no editing.
+  if (!canEdit) {
+    return (
+      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${colorClass}`}>
+        {categoryName || 'No category'}
+      </span>
+    )
+  }
 
   async function handleChange(e) {
     const cat = categories.find(c => c.name === e.target.value)
@@ -286,7 +299,7 @@ function CategoryBadge({ vendorId, categoryName, categories, onCategoryChange })
   )
 }
 
-function VendorList({ vendors, categories, onCategoryChange, selectedIds, onToggleSelect, onToggleSelectAll, onDeleteSelected, deleting }) {
+function VendorList({ vendors, categories, onCategoryChange, selectedIds, onToggleSelect, onToggleSelectAll, onDeleteSelected, deleting, canEdit }) {
   const [expandedId, setExpandedId] = useState(null)
 
   const visibleIds = vendors.map(v => v.id)
@@ -306,32 +319,34 @@ function VendorList({ vendors, categories, onCategoryChange, selectedIds, onTogg
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
 
-      {/* Bulk action bar */}
-      <div className={`flex items-center gap-3 px-4 py-2 border-b transition-colors ${someSelected ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-100'}`}>
-        <input
-          type="checkbox"
-          checked={allSelected}
-          ref={el => { if (el) el.indeterminate = someSelected && !allSelected }}
-          onChange={() => onToggleSelectAll(visibleIds)}
-          className="w-4 h-4 rounded border-gray-300 accent-red-600 cursor-pointer"
-          title={allSelected ? 'Deselect all' : 'Select all'}
-        />
-        {someSelected ? (
-          <>
-            <span className="text-sm font-medium text-red-700">{selectedCount} selected</span>
-            <button
-              onClick={onDeleteSelected}
-              disabled={deleting}
-              className="flex items-center gap-1.5 px-3 py-1 text-sm font-medium bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              {deleting ? 'Deleting…' : `Delete ${selectedCount}`}
-            </button>
-          </>
-        ) : (
-          <span className="text-xs text-gray-400">Select vendors to delete</span>
-        )}
-      </div>
+      {/* Bulk action bar — admins/managers only */}
+      {canEdit && (
+        <div className={`flex items-center gap-3 px-4 py-2 border-b transition-colors ${someSelected ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-100'}`}>
+          <input
+            type="checkbox"
+            checked={allSelected}
+            ref={el => { if (el) el.indeterminate = someSelected && !allSelected }}
+            onChange={() => onToggleSelectAll(visibleIds)}
+            className="w-4 h-4 rounded border-gray-300 accent-red-600 cursor-pointer"
+            title={allSelected ? 'Deselect all' : 'Select all'}
+          />
+          {someSelected ? (
+            <>
+              <span className="text-sm font-medium text-red-700">{selectedCount} selected</span>
+              <button
+                onClick={onDeleteSelected}
+                disabled={deleting}
+                className="flex items-center gap-1.5 px-3 py-1 text-sm font-medium bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                {deleting ? 'Deleting…' : `Delete ${selectedCount}`}
+              </button>
+            </>
+          ) : (
+            <span className="text-xs text-gray-400">Select vendors to delete</span>
+          )}
+        </div>
+      )}
 
       <div className="divide-y divide-gray-100">
         {vendors.map(v => {
@@ -359,13 +374,15 @@ function VendorList({ vendors, categories, onCategoryChange, selectedIds, onTogg
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex items-start gap-3 flex-1 min-w-0">
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={() => onToggleSelect(v.id)}
-                      onClick={e => e.stopPropagation()}
-                      className="mt-0.5 w-4 h-4 rounded border-gray-300 accent-red-600 cursor-pointer flex-shrink-0"
-                    />
+                    {canEdit && (
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => onToggleSelect(v.id)}
+                        onClick={e => e.stopPropagation()}
+                        className="mt-0.5 w-4 h-4 rounded border-gray-300 accent-red-600 cursor-pointer flex-shrink-0"
+                      />
+                    )}
                     <div className="flex-1 min-w-0 space-y-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm font-semibold text-gray-900">{v.name}</span>
@@ -375,6 +392,7 @@ function VendorList({ vendors, categories, onCategoryChange, selectedIds, onTogg
                           categoryName={v.vendor_categories?.name}
                           categories={categories}
                           onCategoryChange={onCategoryChange}
+                          canEdit={canEdit}
                         />
 
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${

@@ -8,22 +8,20 @@ import {
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 
-const navItems = [
-  { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', roles: ['admin', 'manager', 'viewer'] },
-  { to: '/scores', icon: Table2, label: 'Scores', roles: ['admin', 'manager', 'viewer'] },
-  { to: '/data', icon: Database, label: 'Data', roles: ['admin', 'manager', 'viewer'] },
-  { to: '/feedback/submit', icon: Send, label: 'Submit Feedback', roles: ['admin', 'manager', 'viewer'] },
-  { to: '/feedback', icon: MessageSquare, label: 'Feedback Review', roles: ['admin', 'manager'], end: true },
-  { to: '/uploads', icon: Upload, label: 'Uploads', roles: ['admin', 'manager'] },
-  { to: '/community', icon: MapPin, label: 'Communities', roles: ['admin', 'manager', 'viewer'] },
-  { to: '/snapshots', icon: Camera, label: 'Snapshots', roles: ['admin', 'manager', 'viewer'] },
-  { to: '/activity', icon: Activity, label: 'Activity', roles: ['admin', 'manager', 'viewer'] },
-  { to: '/digest', icon: Mail, label: 'Digest Email', roles: ['admin', 'manager'] },
-  { to: '/admin', icon: Settings, label: 'Admin', roles: ['admin'] },
-]
+const ALL_STAFF = ['admin', 'manager', 'viewer']
 
-const builderNav = [
-  { to: '/feedback/submit', icon: MessageSquare, label: 'Submit Feedback', roles: ['builder'] },
+const navItems = [
+  { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', roles: ALL_STAFF },
+  { to: '/scores', icon: Table2, label: 'Scores', roles: ALL_STAFF },
+  { to: '/data', icon: Database, label: 'Data', roles: ALL_STAFF },
+  { to: '/feedback/submit', icon: Send, label: 'Submit Feedback', roles: ALL_STAFF },
+  { to: '/feedback', icon: MessageSquare, label: 'Feedback Review', roles: ALL_STAFF, end: true },
+  { to: '/uploads', icon: Upload, label: 'Uploads', roles: ALL_STAFF },
+  { to: '/community', icon: MapPin, label: 'Communities', roles: ALL_STAFF },
+  { to: '/snapshots', icon: Camera, label: 'Snapshots', roles: ALL_STAFF },
+  { to: '/activity', icon: Activity, label: 'Activity', roles: ALL_STAFF },
+  { to: '/digest', icon: Mail, label: 'Digest Email', roles: ALL_STAFF },
+  { to: '/admin', icon: Settings, label: 'Admin', roles: ['admin'] },
 ]
 
 export default function Sidebar() {
@@ -35,7 +33,7 @@ export default function Sidebar() {
   const [pwMsg, setPwMsg] = useState('')
   const [pwError, setPwError] = useState('')
   const [pwLoading, setPwLoading] = useState(false)
-  const items = profile?.role === 'builder' ? builderNav : navItems
+  const items = navItems
 
   async function handleChangePassword(e) {
     e.preventDefault()

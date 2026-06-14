@@ -4,13 +4,12 @@ import { logActivity } from '../../hooks/useActivityLog'
 import { useAuth } from '../../hooks/useAuth'
 import { RefreshCw, UserCheck, UserX, Info } from 'lucide-react'
 
-const ROLES = ['admin', 'manager', 'viewer', 'builder']
+const ROLES = ['admin', 'manager', 'viewer']
 
 const ROLE_DESCRIPTIONS = {
   admin: 'Full access — manage users, uploads, settings',
   manager: 'Upload data, review feedback, view all reports',
-  viewer: 'Submit feedback, view scores (Construction Managers)',
-  builder: 'Submit feedback only — standalone portal',
+  viewer: 'Read-only access to everything except Admin; can submit their own feedback (Construction Managers)',
 }
 
 export default function UserManager() {

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useThresholds } from '../hooks/useThresholds'
+import { useAuth } from '../hooks/useAuth'
 import { Mail, Copy, Check, Printer, RefreshCw, TrendingUp, TrendingDown, Minus, Send } from 'lucide-react'
 
 export default function DigestPage() {
@@ -16,6 +17,8 @@ export default function DigestPage() {
   const [sendStatus, setSendStatus] = useState(null)
   const textRef = useRef(null)
   const { getTier } = useThresholds()
+  const { isManager } = useAuth()
+  const canSend = isManager()
 
   useEffect(() => { loadData() }, [])
 
@@ -281,13 +284,15 @@ export default function DigestPage() {
             <button onClick={() => window.print()} className="flex items-center gap-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 no-print">
               <Printer className="w-4 h-4" /> Print
             </button>
-            <button
-              onClick={handleSendNow}
-              disabled={sending}
-              className="flex items-center gap-1 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60 no-print"
-            >
-              <Send className="w-4 h-4" /> {sending ? 'Sending…' : 'Send Now'}
-            </button>
+            {canSend && (
+              <button
+                onClick={handleSendNow}
+                disabled={sending}
+                className="flex items-center gap-1 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60 no-print"
+              >
+                <Send className="w-4 h-4" /> {sending ? 'Sending…' : 'Send Now'}
+              </button>
+            )}
           </div>
           {sendStatus?.success && (
             <p className="text-xs text-green-600 flex items-center gap-1"><Check className="w-3.5 h-3.5" /> Digest triggered — email will arrive within a minute.</p>

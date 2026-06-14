@@ -26,7 +26,6 @@ export default function ProtectedRoute({ children, allowedRoles }) {
   }
 
   if (allowedRoles && !allowedRoles.includes(profile.role)) {
-    if (profile.role === 'builder') return <Navigate to="/feedback/submit" replace />
     return <Navigate to="/dashboard" replace />
   }
 

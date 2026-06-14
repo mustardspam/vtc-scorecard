@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { ArrowUpDown, Search, Download, ChevronDown, ChevronUp, RefreshCw, Printer, ClipboardList, X } from 'lucide-react'
 import { useThresholds } from '../hooks/useThresholds'
+import { useAuth } from '../hooks/useAuth'
 import { logActivity } from '../hooks/useActivityLog'
 import TierBadge from '../components/scores/TierBadge'
 import TrendSparkline from '../components/scores/TrendSparkline'
@@ -42,6 +43,8 @@ export default function ScoresPage() {
   const [reportCard, setReportCard] = useState(null)
   const [logActionTarget, setLogActionTarget] = useState(null)
   const { getTier, hasEnoughData } = useThresholds()
+  const { isManager } = useAuth()
+  const canEdit = isManager()
 
   useEffect(() => { loadScores() }, [])
 
@@ -189,14 +192,16 @@ export default function ScoresPage() {
               className="pl-9 pr-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
             />
           </div>
-          <button
-            onClick={handleRecalculate}
-            disabled={recalculating}
-            className="flex items-center gap-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
-          >
-            <RefreshCw className={`w-4 h-4 ${recalculating ? 'animate-spin' : ''}`} />
-            {recalculating ? 'Recalculating...' : 'Recalculate'}
-          </button>
+          {canEdit && (
+            <button
+              onClick={handleRecalculate}
+              disabled={recalculating}
+              className="flex items-center gap-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+            >
+              <RefreshCw className={`w-4 h-4 ${recalculating ? 'animate-spin' : ''}`} />
+              {recalculating ? 'Recalculating...' : 'Recalculate'}
+            </button>
+          )}
           <button
             onClick={exportCSV}
             className="flex items-center gap-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50"
@@ -280,6 +285,7 @@ export default function ScoresPage() {
                         data={drillDown}
                         vendorName={s.vendors?.name}
                         onLogAction={() => setLogActionTarget(s)}
+                        canLogAction={canEdit}
                       />
                     </td>
                   </tr>
@@ -310,17 +316,19 @@ export default function ScoresPage() {
   )
 }
 
-function DrillDownPanel({ data, vendorName, onLogAction }) {
+function DrillDownPanel({ data, vendorName, onLogAction, canLogAction }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="font-semibold text-gray-900">Score Details — {vendorName}</h3>
-        <button
-          onClick={onLogAction}
-          className="flex items-center gap-1 px-3 py-1.5 text-xs bg-white border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700"
-        >
-          <ClipboardList className="w-3.5 h-3.5" /> Log Action
-        </button>
+        {canLogAction && (
+          <button
+            onClick={onLogAction}
+            className="flex items-center gap-1 px-3 py-1.5 text-xs bg-white border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-700"
+          >
+            <ClipboardList className="w-3.5 h-3.5" /> Log Action
+          </button>
+        )}
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>

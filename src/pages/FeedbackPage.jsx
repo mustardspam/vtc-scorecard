@@ -11,7 +11,8 @@ export default function FeedbackPage() {
   const [search, setSearch] = useState('')
   const [rejectTarget, setRejectTarget] = useState(null)
   const [rejectReason, setRejectReason] = useState('')
-  const { user } = useAuth()
+  const { user, isManager } = useAuth()
+  const canReview = isManager()
 
   useEffect(() => { loadFeedback() }, [filter])
 
@@ -159,7 +160,7 @@ export default function FeedbackPage() {
                   )}
                 </div>
 
-                {!f.reviewed_at && (
+                {!f.reviewed_at && canReview && (
                   <div className="flex items-center gap-2 ml-4">
                     <button
                       onClick={() => handleApprove(f.id)}
@@ -174,6 +175,10 @@ export default function FeedbackPage() {
                       <XCircle className="w-3.5 h-3.5" /> Reject
                     </button>
                   </div>
+                )}
+
+                {!f.reviewed_at && !canReview && (
+                  <span className="text-xs px-2 py-1 rounded bg-yellow-50 text-yellow-700 ml-4">Pending</span>
                 )}
 
                 {f.reviewed_at && (

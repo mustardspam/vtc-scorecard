@@ -65,6 +65,5 @@ export const useAuth = create((set, get) => ({
 
   isAdmin: () => get().profile?.role === 'admin',
   isManager: () => ['admin', 'manager'].includes(get().profile?.role),
-  isBuilder: () => get().profile?.role === 'builder',
   isViewer: () => get().profile?.role === 'viewer',
 }))
