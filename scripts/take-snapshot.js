@@ -17,11 +17,15 @@ async function main() {
 
   console.log(`Creating snapshot: "${snapshotName}"`)
 
-  const [scoresRes, weightsRes, filesRes] = await Promise.all([
+  const [scoresRes, weightsRes, filesRes, adminRes] = await Promise.all([
     supabase.from('score_results').select('*, vendors(name, vendor_categories(name))'),
     supabase.from('score_weights').select('*').eq('is_current', true).single(),
     supabase.from('uploaded_files').select('id, original_filename, file_type'),
+    supabase.from('profiles').select('id').eq('role', 'admin').limit(1).single(),
   ])
+
+  const adminId = adminRes.data?.id
+  if (!adminId) throw new Error('No admin user found to attribute snapshot to')
 
   const scores = scoresRes.data || []
   const weights = weightsRes.data
@@ -35,7 +39,7 @@ async function main() {
       name: snapshotName,
       description: 'Auto-generated weekly snapshot',
       notes: `Automatically taken every Friday at 6pm ET by GitHub Actions.`,
-      created_by: null,
+      created_by: adminId,
     })
     .select()
     .single()
