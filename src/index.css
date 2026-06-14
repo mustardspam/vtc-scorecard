@@ -13,3 +13,53 @@
   --color-brand-dark: #1c1c1a;
   --color-brand-dark-muted: #2e2e2b;
 }
+
+/* ── Dark mode overrides ── */
+.dark body {
+  background-color: #1c1c1a;
+  color: #f3f1ea;
+}
+
+/* Surfaces */
+.dark .bg-white          { background-color: #2e2e2b !important; }
+.dark .bg-gray-50        { background-color: #252522 !important; }
+.dark .bg-gray-100       { background-color: #323230 !important; }
+.dark .bg-gray-200       { background-color: #3a3a36 !important; }
+
+/* Borders */
+.dark .border-gray-100   { border-color: #333330 !important; }
+.dark .border-gray-200   { border-color: #3a3a36 !important; }
+.dark .border-gray-300   { border-color: #444440 !important; }
+
+/* Text */
+.dark .text-gray-900     { color: #f3f1ea !important; }
+.dark .text-gray-800     { color: #e8e5db !important; }
+.dark .text-gray-700     { color: #c8c5bc !important; }
+.dark .text-gray-600     { color: #a8a59c !important; }
+.dark .text-gray-500     { color: #888880 !important; }
+.dark .text-gray-400     { color: #6b6b65 !important; }
+
+/* Inputs */
+.dark input, .dark select, .dark textarea {
+  background-color: #252522 !important;
+  border-color: #444440 !important;
+  color: #f3f1ea !important;
+}
+.dark input::placeholder, .dark textarea::placeholder {
+  color: #6b6b65 !important;
+}
+
+/* Tables */
+.dark table { color: #c8c5bc; }
+.dark thead { background-color: #252522 !important; }
+.dark th    { color: #888880 !important; border-color: #3a3a36 !important; }
+.dark td    { border-color: #333330 !important; }
+.dark tr:hover td { background-color: #323230 !important; }
+
+/* Hover states */
+.dark .hover\:bg-gray-50:hover  { background-color: #323230 !important; }
+.dark .hover\:bg-gray-100:hover { background-color: #3a3a36 !important; }
+
+/* Divide lines */
+.dark .divide-gray-100 > * + * { border-color: #333330 !important; }
+.dark .divide-gray-200 > * + * { border-color: #3a3a36 !important; }

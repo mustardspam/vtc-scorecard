@@ -1,9 +1,10 @@
 import { NavLink } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
+import { useTheme } from '../../context/ThemeContext'
 import { useState } from 'react'
 import {
   LayoutDashboard, Table2, MessageSquare, Upload, Camera,
-  Activity, Settings, LogOut, Send, KeyRound, X, Database
+  Activity, Settings, LogOut, Send, KeyRound, X, Database, Sun, Moon
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 
@@ -25,6 +26,7 @@ const builderNav = [
 
 export default function Sidebar() {
   const { profile, logout } = useAuth()
+  const { dark, toggle } = useTheme()
   const [showChangePassword, setShowChangePassword] = useState(false)
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -49,10 +51,14 @@ export default function Sidebar() {
     setTimeout(() => { setShowChangePassword(false); setPwMsg('') }, 2000)
   }
 
+  const sidebarBg = dark ? '#252522' : '#ffffff'
+  const borderCol = dark ? '#3a3a36' : '#e8e5db'
+  const textCol   = dark ? '#c8c5bc' : '#525249'
+
   return (
-    <aside className="w-64 flex flex-col h-screen fixed left-0 top-0 bg-white border-r" style={{ borderColor: '#e8e5db' }}>
+    <aside className="w-64 flex flex-col h-screen fixed left-0 top-0 border-r" style={{ backgroundColor: sidebarBg, borderColor: borderCol }}>
       {/* Logo */}
-      <div className="px-5 pt-6 pb-5 border-b" style={{ borderColor: '#e8e5db' }}>
+      <div className="px-5 pt-6 pb-5 border-b" style={{ borderColor: borderCol }}>
         <img
           src="/vtc-scorecard/aw-stl-logo.jpg"
           alt="Ashton Woods / Starlight Homes"
@@ -78,11 +84,11 @@ export default function Sidebar() {
             className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors"
             style={({ isActive }) => isActive
               ? { backgroundColor: '#087482', color: '#fff' }
-              : { color: '#525249' }
+              : { color: textCol }
             }
             onMouseEnter={e => {
               if (!e.currentTarget.style.backgroundColor.includes('8, 116')) {
-                e.currentTarget.style.backgroundColor = '#f3f1ea'
+                e.currentTarget.style.backgroundColor = dark ? '#323230' : '#f3f1ea'
               }
             }}
             onMouseLeave={e => {
@@ -97,11 +103,11 @@ export default function Sidebar() {
         ))}
       </nav>
 
-      <div className="p-3 border-t space-y-0.5" style={{ borderColor: '#e8e5db' }}>
+      <div className="p-3 border-t space-y-0.5" style={{ borderColor: borderCol }}>
         {showChangePassword && (
-          <div className="mb-3 p-3 rounded-lg border" style={{ backgroundColor: '#f9f8f5', borderColor: '#e8e5db' }}>
+          <div className="mb-3 p-3 rounded-lg border" style={{ backgroundColor: dark ? '#323230' : '#f9f8f5', borderColor: borderCol }}>
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-medium" style={{ color: '#525249' }}>Change Password</span>
+              <span className="text-xs font-medium" style={{ color: textCol }}>Change Password</span>
               <button onClick={() => { setShowChangePassword(false); setPwError(''); setPwMsg('') }}>
                 <X className="w-3.5 h-3.5 text-gray-400 hover:text-gray-600" />
               </button>
@@ -137,10 +143,32 @@ export default function Sidebar() {
           </div>
         )}
 
+        {/* Dark mode toggle */}
+        <button
+          onClick={toggle}
+          className="flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium w-full transition-colors hover:bg-gray-50"
+          style={{ color: textCol }}
+        >
+          <span className="flex items-center gap-3">
+            {dark ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+            {dark ? 'Dark Mode' : 'Light Mode'}
+          </span>
+          {/* pill toggle */}
+          <span
+            className="relative inline-flex h-5 w-9 flex-shrink-0 rounded-full transition-colors duration-200"
+            style={{ backgroundColor: dark ? '#087482' : '#d1d5db' }}
+          >
+            <span
+              className="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform duration-200 mt-0.5"
+              style={{ transform: dark ? 'translateX(18px)' : 'translateX(2px)' }}
+            />
+          </span>
+        </button>
+
         <button
           onClick={() => setShowChangePassword(v => !v)}
           className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium w-full transition-colors hover:bg-gray-50"
-          style={{ color: '#525249' }}
+          style={{ color: textCol }}
         >
           <KeyRound className="w-4 h-4" />
           Change Password
@@ -148,7 +176,7 @@ export default function Sidebar() {
         <button
           onClick={logout}
           className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium w-full transition-colors hover:bg-gray-50"
-          style={{ color: '#525249' }}
+          style={{ color: textCol }}
         >
           <LogOut className="w-4 h-4" />
           Sign Out
