@@ -27,7 +27,7 @@ BEGIN
          WHEN s.total_severity = 0 THEN 100
          ELSE GREATEST(0, 100 - (s.total_severity * v_safety_mult))
     END,
-    CASE WHEN sc.avg_adherence IS NULL THEN 100
+    CASE WHEN sc.vendor_id IS NULL THEN NULL
          ELSE ROUND(sc.avg_adherence * 100, 2)
     END,
     CASE WHEN r.total_penalty IS NULL THEN NULL
