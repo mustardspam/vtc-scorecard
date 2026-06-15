@@ -522,7 +522,8 @@ BEGIN
   )
   SELECT
     v.id, v.category_id, p_period_start, p_period_end,
-    CASE WHEN COALESCE(s.total_severity, 0) = 0 THEN 100
+    CASE WHEN s.vendor_id IS NULL THEN NULL
+         WHEN s.total_severity = 0 THEN 100
          ELSE GREATEST(0, 100 - (s.total_severity * v_safety_mult))
     END,
     CASE WHEN sc.avg_adherence IS NULL THEN 100
