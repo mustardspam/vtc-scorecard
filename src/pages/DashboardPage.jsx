@@ -16,10 +16,12 @@ export default function DashboardPage() {
   const { getTier } = useThresholds()
 
   useEffect(() => {
-    loadData()
+    let mounted = true
+    loadData(mounted)
+    return () => { mounted = false }
   }, [filters])
 
-  async function loadData() {
+  async function loadData(mounted = true) {
     setLoading(true)
     let query = supabase
       .from('score_results')
@@ -35,12 +37,14 @@ export default function DashboardPage() {
         query,
         supabase.from('score_weights').select('*').eq('is_current', true).single()
       ])
-      setScores(scoresRes.data || [])
-      setWeights(weightsRes.data)
+      if (mounted) {
+        setScores(scoresRes.data || [])
+        setWeights(weightsRes.data)
+      }
     } catch (err) {
       console.error('loadData error:', err)
     } finally {
-      setLoading(false)
+      if (mounted) setLoading(false)
     }
   }
 

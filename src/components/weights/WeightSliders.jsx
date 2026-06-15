@@ -27,19 +27,25 @@ export default function WeightSliders() {
   const canEdit = isManager() || isAdmin()
 
   useEffect(() => {
-    loadWeights()
+    let mounted = true
+    loadWeights(mounted)
+    return () => { mounted = false }
   }, [])
 
-  async function loadWeights() {
-    const { data } = await supabase.from('score_weights').select('*').eq('is_current', true).single()
-    if (data) {
-      setWeightId(data.id)
-      setWeights({
-        safety_weight: Number(data.safety_weight),
-        schedule_weight: Number(data.schedule_weight),
-        rework_weight: Number(data.rework_weight),
-        feedback_weight: Number(data.feedback_weight),
-      })
+  async function loadWeights(mounted = true) {
+    try {
+      const { data } = await supabase.from('score_weights').select('*').eq('is_current', true).single()
+      if (mounted && data) {
+        setWeightId(data.id)
+        setWeights({
+          safety_weight: Number(data.safety_weight),
+          schedule_weight: Number(data.schedule_weight),
+          rework_weight: Number(data.rework_weight),
+          feedback_weight: Number(data.feedback_weight),
+        })
+      }
+    } catch (err) {
+      console.error('loadWeights error:', err)
     }
   }
 

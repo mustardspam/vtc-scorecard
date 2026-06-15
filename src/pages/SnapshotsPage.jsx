@@ -16,16 +16,25 @@ export default function SnapshotsPage() {
   const [comparison, setComparison] = useState(null)
   const { user, isAdmin, isManager } = useAuth()
 
-  useEffect(() => { loadSnapshots() }, [])
+  useEffect(() => {
+    let mounted = true
+    loadSnapshots(mounted)
+    return () => { mounted = false }
+  }, [])
 
-  async function loadSnapshots() {
+  async function loadSnapshots(mounted = true) {
     setLoading(true)
-    const { data } = await supabase
-      .from('snapshots')
-      .select('*, profiles!snapshots_created_by_fkey(full_name, email)')
-      .order('created_at', { ascending: false })
-    setSnapshots(data || [])
-    setLoading(false)
+    try {
+      const { data } = await supabase
+        .from('snapshots')
+        .select('*, profiles!snapshots_created_by_fkey(full_name, email)')
+        .order('created_at', { ascending: false })
+      if (mounted) setSnapshots(data || [])
+    } catch (err) {
+      console.error('loadSnapshots error:', err)
+    } finally {
+      if (mounted) setLoading(false)
+    }
   }
 
   async function handleCreate() {
@@ -97,7 +106,7 @@ export default function SnapshotsPage() {
       await logActivity('snapshot_created', `Created snapshot: ${createForm.name}`, { snapshot_id: snapshot.id })
       setShowCreate(false)
       setCreateForm({ name: '', description: '', notes: '' })
-      loadSnapshots()
+      loadSnapshots(true)
     } catch (err) {
       alert('Error creating snapshot: ' + err.message)
     } finally {
@@ -154,7 +163,7 @@ export default function SnapshotsPage() {
     if (!confirm('Are you sure you want to delete this snapshot? This cannot be undone.')) return
     await supabase.from('snapshots').delete().eq('id', id)
     await logActivity('snapshot_deleted', 'Deleted snapshot', { snapshot_id: id })
-    loadSnapshots()
+    loadSnapshots(true)
   }
 
   return (

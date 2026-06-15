@@ -14,9 +14,13 @@ export default function FeedbackPage() {
   const { user, isManager } = useAuth()
   const canReview = isManager()
 
-  useEffect(() => { loadFeedback() }, [filter])
+  useEffect(() => {
+    let mounted = true
+    loadFeedback(mounted)
+    return () => { mounted = false }
+  }, [filter])
 
-  async function loadFeedback() {
+  async function loadFeedback(mounted = true) {
     setLoading(true)
     let query = supabase
       .from('builder_feedback')
@@ -30,11 +34,11 @@ export default function FeedbackPage() {
     try {
       const { data, error } = await query
       if (error) console.error('Feedback load error:', error)
-      setFeedback(data || [])
+      if (mounted) setFeedback(data || [])
     } catch (err) {
       console.error('loadFeedback error:', err)
     } finally {
-      setLoading(false)
+      if (mounted) setLoading(false)
     }
   }
 

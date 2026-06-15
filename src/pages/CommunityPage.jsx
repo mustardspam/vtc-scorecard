@@ -14,24 +14,32 @@ export default function CommunityPage() {
   const { getTier } = useThresholds()
 
   useEffect(() => {
+    let mounted = true
     supabase
       .from('communities')
       .select('id, name, code, brand')
       .eq('is_active', true)
       .order('name')
       .then(({ data }) => {
-        setCommunities(data || [])
-        setLoadingCommunities(false)
+        if (mounted) {
+          setCommunities(data || [])
+          setLoadingCommunities(false)
+        }
       })
+      .catch(() => { if (mounted) setLoadingCommunities(false) })
+    return () => { mounted = false }
   }, [])
 
   useEffect(() => {
     if (!selectedId) return
-    loadCommunityData(selectedId)
+    let mounted = true
+    loadCommunityData(selectedId, mounted)
+    return () => { mounted = false }
   }, [selectedId])
 
-  async function loadCommunityData(communityId) {
+  async function loadCommunityData(communityId, mounted = true) {
     setLoading(true)
+    try {
     const [assignRes, scoreRes, feedbackRes] = await Promise.all([
       // Vendors assigned to this community
       supabase
@@ -76,8 +84,12 @@ export default function CommunityPage() {
         return bScore - aScore
       })
 
-    setVendorRows(rows)
-    setLoading(false)
+    if (mounted) setVendorRows(rows)
+    } catch (err) {
+      console.error('loadCommunityData error:', err)
+    } finally {
+      if (mounted) setLoading(false)
+    }
   }
 
   const community = communities.find(c => c.id === selectedId)

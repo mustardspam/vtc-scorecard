@@ -46,38 +46,44 @@ export default function ScoresPage() {
   const { isManager } = useAuth()
   const canEdit = isManager()
 
-  useEffect(() => { loadScores() }, [])
+  useEffect(() => {
+    let mounted = true
+    loadScores(mounted)
+    return () => { mounted = false }
+  }, [])
 
-  async function loadScores() {
+  async function loadScores(mounted = true) {
     setLoading(true)
     try {
-    const [scoresRes, trendRes] = await Promise.all([
-      supabase
-        .from('score_results')
-        .select('*, vendors(name, category_id, vendor_categories(name))')
-        .order('weighted_total', { ascending: false, nullsFirst: false }),
-      supabase
-        .from('snapshot_score_results')
-        .select('vendor_id, weighted_total, snapshots(created_at)')
-        .not('vendor_id', 'is', null),
-    ])
+      const [scoresRes, trendRes] = await Promise.all([
+        supabase
+          .from('score_results')
+          .select('*, vendors(name, category_id, vendor_categories(name))')
+          .order('weighted_total', { ascending: false, nullsFirst: false }),
+        supabase
+          .from('snapshot_score_results')
+          .select('vendor_id, weighted_total, snapshots(created_at)')
+          .not('vendor_id', 'is', null),
+      ])
 
-    setScores(scoresRes.data || [])
+      if (!mounted) return
 
-    const map = {}
-    for (const row of (trendRes.data || [])) {
-      if (!row.snapshots?.created_at || row.weighted_total == null) continue
-      if (!map[row.vendor_id]) map[row.vendor_id] = []
-      map[row.vendor_id].push({ score: Number(row.weighted_total), date: row.snapshots.created_at })
-    }
-    for (const id of Object.keys(map)) {
-      map[id].sort((a, b) => new Date(a.date) - new Date(b.date))
-    }
-    setTrendMap(map)
+      setScores(scoresRes.data || [])
+
+      const map = {}
+      for (const row of (trendRes.data || [])) {
+        if (!row.snapshots?.created_at || row.weighted_total == null) continue
+        if (!map[row.vendor_id]) map[row.vendor_id] = []
+        map[row.vendor_id].push({ score: Number(row.weighted_total), date: row.snapshots.created_at })
+      }
+      for (const id of Object.keys(map)) {
+        map[id].sort((a, b) => new Date(a.date) - new Date(b.date))
+      }
+      setTrendMap(map)
     } catch (err) {
       console.error('loadScores error:', err)
     } finally {
-      setLoading(false)
+      if (mounted) setLoading(false)
     }
   }
 

@@ -23,25 +23,35 @@ export default function SubmitFeedbackPage() {
   const [success, setSuccess] = useState(false)
   const [error, setError] = useState('')
 
-  useEffect(() => { loadData() }, [])
+  useEffect(() => {
+    let mounted = true
+    loadData(mounted)
+    return () => { mounted = false }
+  }, [])
 
-  async function loadData() {
-    const [vRes, cRes, mRes, rRes, sRes] = await Promise.all([
-      supabase.from('vendors').select('id, name, vendor_categories(name)').eq('is_active', true).order('name'),
-      supabase.from('communities').select('id, name, code').eq('is_active', true).order('name'),
-      supabase.from('profiles').select('id, full_name, email').eq('role', 'viewer').eq('is_active', true).order('full_name'),
-      supabase.from('feedback_point_rules').select('*').order('sort_order'),
-      supabase.from('builder_feedback')
-        .select('*, vendors(name), communities(name)')
-        .eq('submitted_by', user.id)
-        .order('submitted_at', { ascending: false })
-        .limit(20),
-    ])
-    setVendors(vRes.data || [])
-    setCommunities(cRes.data || [])
-    setManagers(mRes.data || [])
-    setRules(rRes.data || [])
-    setSubmissions(sRes.data || [])
+  async function loadData(mounted = true) {
+    try {
+      const [vRes, cRes, mRes, rRes, sRes] = await Promise.all([
+        supabase.from('vendors').select('id, name, vendor_categories(name)').eq('is_active', true).order('name'),
+        supabase.from('communities').select('id, name, code').eq('is_active', true).order('name'),
+        supabase.from('profiles').select('id, full_name, email').eq('role', 'viewer').eq('is_active', true).order('full_name'),
+        supabase.from('feedback_point_rules').select('*').order('sort_order'),
+        supabase.from('builder_feedback')
+          .select('*, vendors(name), communities(name)')
+          .eq('submitted_by', user.id)
+          .order('submitted_at', { ascending: false })
+          .limit(20),
+      ])
+      if (mounted) {
+        setVendors(vRes.data || [])
+        setCommunities(cRes.data || [])
+        setManagers(mRes.data || [])
+        setRules(rRes.data || [])
+        setSubmissions(sRes.data || [])
+      }
+    } catch (err) {
+      console.error('loadData error:', err)
+    }
   }
 
   function getPoints() {
@@ -83,7 +93,7 @@ export default function SubmitFeedbackPage() {
 
       setSuccess(true)
       setForm({ construction_manager_id: '', vendor_id: '', community_id: '', category: '', severity: '', description: '' })
-      loadData()
+      loadData(true)
       setTimeout(() => setSuccess(false), 4000)
     } catch (err) {
       setError(err.message)
