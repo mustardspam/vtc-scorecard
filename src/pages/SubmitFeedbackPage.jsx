@@ -17,6 +17,7 @@ export default function SubmitFeedbackPage() {
     community_id: '',
     category: '',
     severity: '',
+    lot_or_address: '',
     description: '',
   })
   const [submitting, setSubmitting] = useState(false)
@@ -66,6 +67,7 @@ export default function SubmitFeedbackPage() {
   const points = getPoints()
   const isValid = form.vendor_id && form.category &&
     (form.category === 'kudos' || (form.category === 'complaint' && form.severity)) &&
+    form.lot_or_address.trim() &&
     form.description.trim()
 
   async function handleSubmit(e) {
@@ -82,6 +84,7 @@ export default function SubmitFeedbackPage() {
         category: form.category,
         severity: form.category === 'complaint' ? form.severity : null,
         points: points ?? 0,
+        lot_or_address: form.lot_or_address.trim(),
         description: form.description.trim(),
       })
       if (insertError) throw insertError
@@ -92,7 +95,7 @@ export default function SubmitFeedbackPage() {
       )
 
       setSuccess(true)
-      setForm({ construction_manager_id: '', vendor_id: '', community_id: '', category: '', severity: '', description: '' })
+      setForm({ construction_manager_id: '', vendor_id: '', community_id: '', category: '', severity: '', lot_or_address: '', description: '' })
       loadData(true)
       setTimeout(() => setSuccess(false), 4000)
     } catch (err) {
@@ -184,6 +187,22 @@ export default function SubmitFeedbackPage() {
                 <option key={c.id} value={c.id}>{c.name} ({c.code})</option>
               ))}
             </select>
+          </div>
+
+          {/* Address(es) */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Address(es) / Lot(s) <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={form.lot_or_address}
+              onChange={e => setForm(f => ({ ...f, lot_or_address: e.target.value }))}
+              placeholder="e.g. 123 Oak St, Lot 47, 456 Maple Ave"
+              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+              required
+            />
+            <p className="text-xs text-gray-400 mt-1">Separate multiple addresses or lot numbers with commas.</p>
           </div>
 
           {/* Feedback type */}
