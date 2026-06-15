@@ -527,6 +527,7 @@ BEGIN
          ELSE GREATEST(0, 100 - (s.total_severity * v_safety_mult))
     END,
     CASE WHEN sc.vendor_id IS NULL THEN NULL
+         WHEN sc.total_jobs = 0 THEN NULL
          ELSE ROUND(sc.avg_adherence * 100, 2)
     END,
     CASE WHEN r.total_penalty IS NULL THEN NULL
