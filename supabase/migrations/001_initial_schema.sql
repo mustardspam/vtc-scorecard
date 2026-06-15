@@ -593,7 +593,7 @@ BEGIN
   FROM ranked WHERE sr.id = ranked.id;
 
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 -- ============================================================
 -- STORAGE BUCKET
