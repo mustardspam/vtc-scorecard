@@ -12,17 +12,38 @@ export default function ResetPasswordPage() {
   const navigate = useNavigate()
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+    const hashParams = new URLSearchParams(window.location.hash.slice(1))
+    const searchParams = new URLSearchParams(window.location.search)
+    const hasRecoveryToken = hashParams.get('access_token') || searchParams.get('code')
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'PASSWORD_RECOVERY') {
+        setStatus('ready')
+      } else if (event === 'SIGNED_IN' && hasRecoveryToken) {
+        // Implicit flow may fire SIGNED_IN instead of PASSWORD_RECOVERY
         setStatus('ready')
       }
     })
 
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setStatus(prev => prev !== 'loading' ? prev : session ? 'ready' : 'invalid')
+      if (session) {
+        setStatus('ready')
+      } else if (!hasRecoveryToken) {
+        // No token in URL at all — definitely not a valid reset link
+        setStatus('invalid')
+      }
+      // If hasRecoveryToken but no session yet, stay loading — wait for the auth event
     })
 
-    return () => subscription.unsubscribe()
+    // Safety valve: give up after 8s if Supabase never processes the token
+    const timeout = setTimeout(() => {
+      setStatus(prev => prev === 'loading' ? 'invalid' : prev)
+    }, 8000)
+
+    return () => {
+      subscription.unsubscribe()
+      clearTimeout(timeout)
+    }
   }, [])
 
   async function handleReset(e) {
