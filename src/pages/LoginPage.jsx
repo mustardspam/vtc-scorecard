@@ -99,27 +99,7 @@ export default function LoginPage() {
           </p>
         </div>
 
-        {/* Tabs */}
-        {tab !== 'forgot' ? (
-          <div className="flex bg-gray-100 rounded-lg p-1 mb-6">
-            <button
-              onClick={() => switchTab('signin')}
-              className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${
-                tab === 'signin' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              Sign In
-            </button>
-            <button
-              onClick={() => switchTab('signup')}
-              className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${
-                tab === 'signup' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              Create Account
-            </button>
-          </div>
-        ) : (
+        {tab === 'forgot' && (
           <button
             onClick={() => switchTab('signin')}
             className="flex items-center gap-1 text-sm mb-6 transition-colors"
@@ -286,6 +266,18 @@ export default function LoginPage() {
               </button>
               <p className="text-xs text-center text-gray-400">
                 After creating your account, an admin will set your access level before you can log in.
+              </p>
+              <p className="text-xs text-center">
+                <button
+                  type="button"
+                  onClick={() => switchTab('signin')}
+                  className="transition-colors"
+                  style={{ color: '#087482' }}
+                  onMouseEnter={e => { e.currentTarget.style.color = '#076570' }}
+                  onMouseLeave={e => { e.currentTarget.style.color = '#087482' }}
+                >
+                  ← Back to sign in
+                </button>
               </p>
             </form>
           )
