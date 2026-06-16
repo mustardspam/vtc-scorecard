@@ -12,6 +12,7 @@ export default function LoginPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [signupSuccess, setSignupSuccess] = useState(false)
+  const [forgotSent, setForgotSent] = useState(false)
   const { login } = useAuth()
   const navigate = useNavigate()
 
@@ -27,6 +28,30 @@ export default function LoginPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  async function handleForgotPassword(e) {
+    e.preventDefault()
+    setError('')
+    setLoading(true)
+    try {
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      })
+      if (resetError) throw resetError
+      setForgotSent(true)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function switchTab(newTab) {
+    setTab(newTab)
+    setError('')
+    setSignupSuccess(false)
+    setForgotSent(false)
   }
 
   async function handleSignUp(e) {
@@ -75,24 +100,36 @@ export default function LoginPage() {
         </div>
 
         {/* Tabs */}
-        <div className="flex bg-gray-100 rounded-lg p-1 mb-6">
+        {tab !== 'forgot' ? (
+          <div className="flex bg-gray-100 rounded-lg p-1 mb-6">
+            <button
+              onClick={() => switchTab('signin')}
+              className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${
+                tab === 'signin' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Sign In
+            </button>
+            <button
+              onClick={() => switchTab('signup')}
+              className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${
+                tab === 'signup' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Create Account
+            </button>
+          </div>
+        ) : (
           <button
-            onClick={() => { setTab('signin'); setError(''); setSignupSuccess(false) }}
-            className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${
-              tab === 'signin' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-            }`}
+            onClick={() => switchTab('signin')}
+            className="flex items-center gap-1 text-sm mb-6 transition-colors"
+            style={{ color: '#087482' }}
+            onMouseEnter={e => { e.currentTarget.style.color = '#076570' }}
+            onMouseLeave={e => { e.currentTarget.style.color = '#087482' }}
           >
-            Sign In
+            ← Back to sign in
           </button>
-          <button
-            onClick={() => { setTab('signup'); setError(''); setSignupSuccess(false) }}
-            className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${
-              tab === 'signup' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            Create Account
-          </button>
-        </div>
+        )}
 
         {error && (
           <div className="mb-4 p-3 bg-red-50 text-red-700 text-sm rounded-lg border border-red-200">
@@ -115,7 +152,19 @@ export default function LoginPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-sm font-medium text-gray-700">Password</label>
+                <button
+                  type="button"
+                  onClick={() => switchTab('forgot')}
+                  className="text-xs transition-colors"
+                  style={{ color: '#087482' }}
+                  onMouseEnter={e => { e.currentTarget.style.color = '#076570' }}
+                  onMouseLeave={e => { e.currentTarget.style.color = '#087482' }}
+                >
+                  Forgot password?
+                </button>
+              </div>
               <input
                 type="password"
                 value={password}
@@ -135,6 +184,22 @@ export default function LoginPage() {
             >
               {loading ? 'Signing in...' : 'Sign In'}
             </button>
+
+            <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
+              <p className="text-xs text-amber-800 mb-2">
+                <span className="font-semibold">First time here?</span> Your Okta login will not work on this portal — you need to create a separate account.
+              </p>
+              <button
+                type="button"
+                onClick={() => switchTab('signup')}
+                className="w-full py-2 text-sm font-medium rounded-lg border transition-colors"
+                style={{ borderColor: '#087482', color: '#087482', backgroundColor: 'transparent' }}
+                onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#087482'; e.currentTarget.style.color = '#fff' }}
+                onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = '#087482' }}
+              >
+                Create an Account
+              </button>
+            </div>
           </form>
         )}
 
@@ -152,7 +217,7 @@ export default function LoginPage() {
                 Your account is pending approval. An admin will assign your access level shortly.
               </p>
               <button
-                onClick={() => { setTab('signin'); setSignupSuccess(false); setPassword(''); setConfirmPassword('') }}
+                onClick={() => { switchTab('signin'); setPassword(''); setConfirmPassword('') }}
                 className="mt-4 text-sm font-medium transition-colors"
                 style={{ color: '#087482' }}
                 onMouseEnter={e => { e.currentTarget.style.color = '#076570' }}
@@ -222,6 +287,57 @@ export default function LoginPage() {
               <p className="text-xs text-center text-gray-400">
                 After creating your account, an admin will set your access level before you can log in.
               </p>
+            </form>
+          )
+        )}
+        {/* Forgot Password */}
+        {tab === 'forgot' && (
+          forgotSent ? (
+            <div className="text-center py-4">
+              <div className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3" style={{ backgroundColor: '#e6f3f4' }}>
+                <svg className="w-6 h-6" style={{ color: '#087482' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+              </div>
+              <p className="text-sm font-medium text-gray-900">Check your email</p>
+              <p className="text-sm text-gray-500 mt-1">
+                If an account exists for <span className="font-medium">{email}</span>, you'll receive a reset link shortly.
+              </p>
+              <button
+                onClick={() => switchTab('signin')}
+                className="mt-4 text-sm font-medium transition-colors"
+                style={{ color: '#087482' }}
+                onMouseEnter={e => { e.currentTarget.style.color = '#076570' }}
+                onMouseLeave={e => { e.currentTarget.style.color = '#087482' }}
+              >
+                Back to sign in →
+              </button>
+            </div>
+          ) : (
+            <form onSubmit={handleForgotPassword} className="space-y-4">
+              <div>
+                <p className="text-sm font-semibold text-gray-900 mb-1">Reset your password</p>
+                <p className="text-sm text-gray-500 mb-4">Enter your email and we'll send you a reset link.</p>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  className={inputClass}
+                  style={inputStyle}
+                  required
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-2.5 text-white font-medium rounded-lg disabled:opacity-50 transition-colors text-sm"
+                style={{ backgroundColor: '#087482' }}
+                onMouseEnter={e => { if (!loading) e.currentTarget.style.backgroundColor = '#076570' }}
+                onMouseLeave={e => { e.currentTarget.style.backgroundColor = '#087482' }}
+              >
+                {loading ? 'Sending...' : 'Send Reset Link'}
+              </button>
             </form>
           )
         )}

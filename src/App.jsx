@@ -5,6 +5,7 @@ import { ThemeProvider } from './context/ThemeContext'
 import AppLayout from './components/layout/AppLayout'
 import ProtectedRoute from './components/layout/ProtectedRoute'
 import LoginPage from './pages/LoginPage'
+import ResetPasswordPage from './pages/ResetPasswordPage'
 import DashboardPage from './pages/DashboardPage'
 import ScoresPage from './pages/ScoresPage'
 import FeedbackPage from './pages/FeedbackPage'
@@ -39,6 +40,7 @@ export default function App() {
     <ThemeProvider>
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
 
       <Route element={
         <ProtectedRoute allowedRoles={['admin', 'manager', 'viewer']}>
