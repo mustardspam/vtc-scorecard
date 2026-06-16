@@ -7,11 +7,13 @@ import UserManager from '../components/admin/UserManager'
 import ScoringConfig from '../components/admin/ScoringConfig'
 import WeightHistory from '../components/admin/WeightHistory'
 import DigestRecipients from '../components/admin/DigestRecipients'
-import { Settings, Users, Building2, MessageSquare, Shield, Calculator, History, Mail } from 'lucide-react'
+import CommunityMapConfig from '../components/admin/CommunityMapConfig'
+import { Settings, Users, Building2, MessageSquare, Shield, Calculator, History, Mail, Map } from 'lucide-react'
 
 const TABS = [
   { id: 'vendors', label: 'Vendors / Trades', icon: Building2 },
   { id: 'communities', label: 'Communities', icon: Building2 },
+  { id: 'community-map', label: 'Community Map', icon: Map },
   { id: 'feedback-rules', label: 'Feedback Rules', icon: MessageSquare },
   { id: 'severity-rules', label: 'Severity Rules', icon: Shield },
   { id: 'scoring', label: 'Scoring Config', icon: Calculator },
@@ -50,6 +52,7 @@ export default function AdminPage() {
       <div className="bg-white rounded-xl border border-gray-200 p-6">
         {tab === 'vendors' && <VendorManager />}
         {tab === 'communities' && <CommunityManager />}
+        {tab === 'community-map' && <CommunityMapConfig />}
         {tab === 'feedback-rules' && <FeedbackRulesEditor />}
         {tab === 'severity-rules' && <SeverityRulesEditor />}
         {tab === 'scoring' && <ScoringConfig />}

@@ -21,6 +21,7 @@
     "string-similarity-js": "^2.1.4",
     "tailwind-merge": "^3.5.0",
     "xlsx": "^0.18.5",
+    "leaflet": "^1.9.4",
     "zustand": "^5.0.13"
   },
   "devDependencies": {
