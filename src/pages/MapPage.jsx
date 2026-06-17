@@ -506,6 +506,7 @@ export default function MapPage() {
 
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
+        .leaflet-tile-pane { filter: grayscale(1) brightness(1.05); }
         .leaflet-tooltip { border-radius: 8px !important; border: 1px solid #e5e3db !important; box-shadow: 0 4px 12px rgba(0,0,0,0.1) !important; padding: 8px 10px !important; }
         .leaflet-tooltip-top::before { border-top-color: #e5e3db !important; }
       `}</style>
