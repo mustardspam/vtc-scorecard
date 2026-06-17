@@ -11,7 +11,7 @@ export default function CommunityMapConfig() {
     async function load() {
       const [commRes, manRes] = await Promise.all([
         supabase.from('communities').select('*').order('name'),
-        supabase.from('profiles').select('id, full_name').eq('role', 'manager').order('full_name'),
+        supabase.from('profiles').select('id, full_name').eq('is_area_manager', true).order('full_name'),
       ])
       setCommunities(commRes.data || [])
       setManagers(manRes.data || [])
@@ -62,7 +62,7 @@ export default function CommunityMapConfig() {
 
       {managers.length === 0 && (
         <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700">
-          No users with the "manager" role found. Create manager accounts in the User Management tab first, then return here to assign them to communities.
+          No area managers set up yet. Go to <strong>User Management</strong>, find each person, and toggle the <strong>Map Mgr</strong> switch on — any role (admin, manager, viewer) can be a map area manager.
         </div>
       )}
 

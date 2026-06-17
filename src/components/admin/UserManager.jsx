@@ -57,6 +57,11 @@ export default function UserManager() {
     loadUsers()
   }
 
+  async function handleToggleAreaManager(userId, email, current) {
+    await supabase.from('profiles').update({ is_area_manager: !current }).eq('id', userId)
+    loadUsers()
+  }
+
   const pending = users.filter(u => u.role === 'viewer' && !u.full_name)
   const active = users.filter(u => !(u.role === 'viewer' && !u.full_name))
 
@@ -129,6 +134,7 @@ export default function UserManager() {
                 <th className="px-3 py-2 text-xs font-medium text-gray-500">Email</th>
                 <th className="px-3 py-2 text-xs font-medium text-gray-500">Name</th>
                 <th className="px-3 py-2 text-xs font-medium text-gray-500">Role</th>
+                <th className="px-3 py-2 text-xs font-medium text-gray-500">Map Mgr</th>
                 <th className="px-3 py-2 text-xs font-medium text-gray-500">Status</th>
                 <th className="px-3 py-2 text-xs font-medium text-gray-500">Joined</th>
               </tr>
@@ -141,6 +147,7 @@ export default function UserManager() {
                   isSelf={u.id === user.id}
                   onRoleChange={handleRoleChange}
                   onToggleActive={handleToggleActive}
+                  onToggleAreaManager={handleToggleAreaManager}
                 />
               ))}
             </tbody>
@@ -195,7 +202,7 @@ function PendingUserRow({ u, isSelf, onRoleChange, onNameSave, onToggleActive })
   )
 }
 
-function UserRow({ u, isSelf, onRoleChange, onToggleActive }) {
+function UserRow({ u, isSelf, onRoleChange, onToggleActive, onToggleAreaManager }) {
   return (
     <tr className={!u.is_active ? 'opacity-40' : ''}>
       <td className="px-3 py-2 text-xs text-gray-700">{u.email}</td>
@@ -213,6 +220,15 @@ function UserRow({ u, isSelf, onRoleChange, onToggleActive }) {
         >
           {ROLES.map(r => <option key={r} value={r}>{r}</option>)}
         </select>
+      </td>
+      <td className="px-3 py-2">
+        <button
+          onClick={() => onToggleAreaManager(u.id, u.email, u.is_area_manager)}
+          title="Toggle Coverage Map area manager"
+          className={`w-8 h-5 rounded-full transition-colors relative flex-shrink-0 ${u.is_area_manager ? 'bg-teal-500' : 'bg-gray-200'}`}
+        >
+          <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${u.is_area_manager ? 'translate-x-3' : 'translate-x-0.5'}`} />
+        </button>
       </td>
       <td className="px-3 py-2">
         <button
