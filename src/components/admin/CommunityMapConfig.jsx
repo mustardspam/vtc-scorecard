@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, memo, useCallback } from 'react'
 import { supabase } from '../../lib/supabase'
-import { MapPin, CheckCircle } from 'lucide-react'
+import { MapPin, CheckCircle, AlertCircle } from 'lucide-react'
 
 export default function CommunityMapConfig() {
   const [communities, setCommunities] = useState([])
@@ -20,20 +20,30 @@ export default function CommunityMapConfig() {
     load()
   }, [])
 
-  async function handleUpdate(id, field, value) {
-    // Optimistically update local state
-    setCommunities(prev => prev.map(c => c.id === id ? { ...c, [field]: value, _saving: field, _saved: null } : c))
-    await supabase.from('communities').update({ [field]: value === '' ? null : value }).eq('id', id)
-    setCommunities(prev => prev.map(c => c.id === id ? { ...c, _saving: null, _saved: field } : c))
-    setTimeout(() => {
-      setCommunities(prev => prev.map(c => c.id === id ? { ...c, _saved: null } : c))
-    }, 2000)
-  }
+  const handleUpdate = useCallback(async (id, field, value) => {
+    const dbValue = (value === '' || value === null) ? null : value
+    setCommunities(prev => prev.map(c =>
+      c.id === id ? { ...c, [field]: dbValue, _saving: field, _saved: null, _error: null } : c
+    ))
+    const { error } = await supabase.from('communities').update({ [field]: dbValue }).eq('id', id)
+    setCommunities(prev => prev.map(c =>
+      c.id === id
+        ? { ...c, _saving: null, _saved: error ? null : field, _error: error?.message ?? null }
+        : c
+    ))
+    if (!error) {
+      setTimeout(() => setCommunities(prev => prev.map(c =>
+        c.id === id ? { ...c, _saved: null } : c
+      )), 2000)
+    } else {
+      setTimeout(() => setCommunities(prev => prev.map(c =>
+        c.id === id ? { ...c, _error: null } : c
+      )), 4000)
+    }
+  }, [])
 
   if (loading) {
-    return (
-      <div className="text-center py-10 text-sm text-gray-400">Loading communities…</div>
-    )
+    return <div className="text-center py-10 text-sm text-gray-400">Loading communities…</div>
   }
 
   const mapped = communities.filter(c => c.lat && c.lng).length
@@ -60,9 +70,15 @@ export default function CommunityMapConfig() {
         </div>
       </div>
 
+      <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-800">
+        <strong>Coordinate format:</strong> Enter decimal degrees (e.g. <code className="bg-blue-100 px-1 rounded">29.7604</code> lat, <code className="bg-blue-100 px-1 rounded">-95.3698</code> lng).
+        Greater Houston range: lat 29.3–30.4, lng −94.7 to −96.1.
+        Find coordinates at <strong>maps.google.com</strong> → right-click your location → copy the numbers shown.
+      </div>
+
       {managers.length === 0 && (
         <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700">
-          No area managers set up yet. Go to <strong>User Management</strong>, find each person, and toggle the <strong>Map Mgr</strong> switch on — any role (admin, manager, viewer) can be a map area manager.
+          No area managers set up yet. Go to <strong>User Management</strong> and toggle the <strong>Map Mgr</strong> switch on for each person.
         </div>
       )}
 
@@ -95,42 +111,62 @@ export default function CommunityMapConfig() {
   )
 }
 
-function CommunityRow({ community: c, managers, onUpdate }) {
+const CommunityRow = memo(function CommunityRow({ community: c, managers, onUpdate }) {
   const [lat, setLat] = useState(c.lat?.toString() ?? '')
   const [lng, setLng] = useState(c.lng?.toString() ?? '')
+  const [latErr, setLatErr] = useState('')
+  const [lngErr, setLngErr] = useState('')
 
-  // Sync if parent state changes (e.g. after save)
   useEffect(() => { setLat(c.lat?.toString() ?? '') }, [c.lat])
   useEffect(() => { setLng(c.lng?.toString() ?? '') }, [c.lng])
 
   const brandLabel = c.brand?.toLowerCase().includes('starlight') ? 'SL' : 'AW'
-  const brandCls = brandLabel === 'SL'
-    ? 'bg-pink-100 text-pink-700'
-    : 'bg-blue-100 text-blue-700'
+  const brandCls = brandLabel === 'SL' ? 'bg-pink-100 text-pink-700' : 'bg-blue-100 text-blue-700'
   const isPinned = c.lat && c.lng
 
   function commitLat() {
     const val = lat.trim()
-    const num = parseFloat(val)
-    if (val === '' || isNaN(num)) {
+    if (val === '') {
+      setLatErr('')
       onUpdate(c.id, 'lat', '')
-    } else {
-      onUpdate(c.id, 'lat', num)
+      return
     }
+    const num = parseFloat(val)
+    if (isNaN(num)) {
+      setLatErr('Must be a number')
+      return
+    }
+    if (num < -90 || num > 90) {
+      setLatErr('Lat must be −90 to 90. Houston is ~29.7')
+      return
+    }
+    setLatErr('')
+    onUpdate(c.id, 'lat', num)
   }
 
   function commitLng() {
     const val = lng.trim()
-    const num = parseFloat(val)
-    if (val === '' || isNaN(num)) {
+    if (val === '') {
+      setLngErr('')
       onUpdate(c.id, 'lng', '')
-    } else {
-      onUpdate(c.id, 'lng', num)
+      return
     }
+    const num = parseFloat(val)
+    if (isNaN(num)) {
+      setLngErr('Must be a number')
+      return
+    }
+    if (num < -180 || num > 180) {
+      setLngErr('Lng must be −180 to 180. Houston is ~−95.4')
+      return
+    }
+    setLngErr('')
+    onUpdate(c.id, 'lng', num)
   }
 
   const isSaving = c._saving != null
   const isSaved = c._saved != null
+  const isError = c._error != null
 
   return (
     <tr className="hover:bg-gray-50">
@@ -145,28 +181,42 @@ function CommunityRow({ community: c, managers, onUpdate }) {
         <span className={`text-xs font-bold px-2 py-0.5 rounded ${brandCls}`}>{brandLabel}</span>
       </td>
       <td className="px-4 py-2">
-        <input
-          type="number"
-          step="any"
-          value={lat}
-          onChange={e => setLat(e.target.value)}
-          onBlur={commitLat}
-          onKeyDown={e => e.key === 'Enter' && e.currentTarget.blur()}
-          placeholder="29.7604"
-          className="w-full px-2 py-1.5 border border-gray-200 rounded text-xs font-mono focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-300"
-        />
+        <div>
+          <input
+            type="text"
+            inputMode="decimal"
+            value={lat}
+            onChange={e => { setLat(e.target.value); setLatErr('') }}
+            onBlur={commitLat}
+            onKeyDown={e => e.key === 'Enter' && e.currentTarget.blur()}
+            placeholder="29.7604"
+            className={`w-full px-2 py-1.5 border rounded text-xs font-mono focus:outline-none focus:ring-1 ${
+              latErr
+                ? 'border-red-400 focus:border-red-400 focus:ring-red-300'
+                : 'border-gray-200 focus:border-blue-400 focus:ring-blue-300'
+            }`}
+          />
+          {latErr && <p className="text-xs text-red-600 mt-0.5 leading-tight">{latErr}</p>}
+        </div>
       </td>
       <td className="px-4 py-2">
-        <input
-          type="number"
-          step="any"
-          value={lng}
-          onChange={e => setLng(e.target.value)}
-          onBlur={commitLng}
-          onKeyDown={e => e.key === 'Enter' && e.currentTarget.blur()}
-          placeholder="-95.3698"
-          className="w-full px-2 py-1.5 border border-gray-200 rounded text-xs font-mono focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-300"
-        />
+        <div>
+          <input
+            type="text"
+            inputMode="decimal"
+            value={lng}
+            onChange={e => { setLng(e.target.value); setLngErr('') }}
+            onBlur={commitLng}
+            onKeyDown={e => e.key === 'Enter' && e.currentTarget.blur()}
+            placeholder="-95.3698"
+            className={`w-full px-2 py-1.5 border rounded text-xs font-mono focus:outline-none focus:ring-1 ${
+              lngErr
+                ? 'border-red-400 focus:border-red-400 focus:ring-red-300'
+                : 'border-gray-200 focus:border-blue-400 focus:ring-blue-300'
+            }`}
+          />
+          {lngErr && <p className="text-xs text-red-600 mt-0.5 leading-tight">{lngErr}</p>}
+        </div>
       </td>
       <td className="px-4 py-2">
         <select
@@ -187,7 +237,10 @@ function CommunityRow({ community: c, managers, onUpdate }) {
         {!isSaving && isSaved && (
           <CheckCircle className="w-4 h-4 text-green-500 mx-auto" />
         )}
+        {!isSaving && isError && (
+          <AlertCircle className="w-4 h-4 text-red-500 mx-auto" title={c._error} />
+        )}
       </td>
     </tr>
   )
-}
+})
