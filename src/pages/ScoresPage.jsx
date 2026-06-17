@@ -89,9 +89,15 @@ export default function ScoresPage() {
 
   async function handleRecalculate() {
     setRecalculating(true)
-    await supabase.rpc('calculate_scores')
-    await loadScores()
-    setRecalculating(false)
+    try {
+      const { error } = await supabase.rpc('calculate_scores')
+      if (error) throw error
+      await loadScores()
+    } catch (err) {
+      console.error('Recalculate error:', err)
+    } finally {
+      setRecalculating(false)
+    }
   }
 
   function handleSort(field) {

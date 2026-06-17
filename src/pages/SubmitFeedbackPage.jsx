@@ -89,10 +89,10 @@ export default function SubmitFeedbackPage() {
       })
       if (insertError) throw insertError
 
-      await logActivity('feedback_submitted',
+      logActivity('feedback_submitted',
         `${profile?.full_name || profile?.email} submitted ${form.category}${form.severity ? ` (${form.severity})` : ''} feedback`,
         { vendor_id: form.vendor_id, category: form.category, severity: form.severity || null }
-      )
+      ).catch(() => {})
 
       setSuccess(true)
       setForm({ construction_manager_id: '', vendor_id: '', community_id: '', category: '', severity: '', lot_or_address: '', description: '' })

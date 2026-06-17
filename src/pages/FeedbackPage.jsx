@@ -43,11 +43,16 @@ export default function FeedbackPage() {
   }
 
   async function handleApprove(id) {
-    await supabase.from('builder_feedback').update({
-      is_approved: true, reviewed_by: user.id, reviewed_at: new Date().toISOString()
-    }).eq('id', id)
-    await logActivity('feedback_approved', 'Approved builder feedback', { feedback_id: id })
-    loadFeedback()
+    try {
+      const { error } = await supabase.from('builder_feedback').update({
+        is_approved: true, reviewed_by: user.id, reviewed_at: new Date().toISOString()
+      }).eq('id', id)
+      if (error) throw error
+      logActivity('feedback_approved', 'Approved builder feedback', { feedback_id: id }).catch(() => {})
+      loadFeedback()
+    } catch (err) {
+      console.error('Approve error:', err)
+    }
   }
 
   function handleReject(id) {
@@ -57,12 +62,17 @@ export default function FeedbackPage() {
 
   async function confirmReject() {
     const id = rejectTarget
-    setRejectTarget(null)
-    await supabase.from('builder_feedback').update({
-      is_approved: false, reviewed_by: user.id, reviewed_at: new Date().toISOString(), review_notes: rejectReason || 'Rejected'
-    }).eq('id', id)
-    await logActivity('feedback_rejected', 'Rejected builder feedback', { feedback_id: id, reason: rejectReason })
-    loadFeedback()
+    try {
+      const { error } = await supabase.from('builder_feedback').update({
+        is_approved: false, reviewed_by: user.id, reviewed_at: new Date().toISOString(), review_notes: rejectReason || 'Rejected'
+      }).eq('id', id)
+      if (error) throw error
+      logActivity('feedback_rejected', 'Rejected builder feedback', { feedback_id: id, reason: rejectReason }).catch(() => {})
+      setRejectTarget(null)
+      loadFeedback()
+    } catch (err) {
+      console.error('Reject error:', err)
+    }
   }
 
   const filtered = feedback.filter(f => {

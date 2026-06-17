@@ -63,23 +63,32 @@ export default function UploadsPage() {
   }, [])
 
   async function loadVendors() {
-    const [vRes, aRes, brRes] = await Promise.all([
-      supabase.from('vendors').select('id, name, category_id').eq('is_active', true).order('name'),
-      supabase.from('vendor_aliases').select('*'),
-      supabase.from('vendor_brand_references').select('jc_vendor_id, vendor_id, brand'),
-    ])
-    setVendors(vRes.data || [])
-    setAliases(aRes.data || [])
-    setBrandRefs(brRes.data || [])
+    try {
+      const [vRes, aRes, brRes] = await Promise.all([
+        supabase.from('vendors').select('id, name, category_id').eq('is_active', true).order('name'),
+        supabase.from('vendor_aliases').select('*'),
+        supabase.from('vendor_brand_references').select('jc_vendor_id, vendor_id, brand'),
+      ])
+      setVendors(vRes.data || [])
+      setAliases(aRes.data || [])
+      setBrandRefs(brRes.data || [])
+    } catch (err) {
+      console.error('loadVendors error:', err)
+    }
   }
 
   async function loadHistory() {
-    const { data } = await supabase
-      .from('import_batches')
-      .select('*, uploaded_files(original_filename)')
-      .order('created_at', { ascending: false })
-      .limit(20)
-    setHistory(data || [])
+    try {
+      const { data, error } = await supabase
+        .from('import_batches')
+        .select('*, uploaded_files(original_filename)')
+        .order('created_at', { ascending: false })
+        .limit(20)
+      if (error) throw error
+      setHistory(data || [])
+    } catch (err) {
+      console.error('loadHistory error:', err)
+    }
   }
 
   const handleFileDrop = useCallback((e) => {
