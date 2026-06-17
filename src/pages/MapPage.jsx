@@ -95,6 +95,22 @@ export default function MapPage() {
     return { total: pinned.length, covered, byManager }
   }, [coveredIds, communities, managers])
 
+  // Vendor distribution — only computed when filtering by category
+  const categoryVendorStats = useMemo(() => {
+    if (!selectedCategoryId) return null
+    const catVendors = vendors.filter(v => v.category_id === selectedCategoryId)
+    const pinnedIds = new Set(communities.filter(c => c.lat && c.lng).map(c => c.id))
+    const rows = catVendors.map(v => {
+      const count = assignments.filter(a => a.vendor_id === v.id && pinnedIds.has(a.community_id)).length
+      return { id: v.id, name: v.name, count }
+    }).sort((a, b) => b.count - a.count)
+    const max = rows[0]?.count || 1
+    const totalCovered = new Set(
+      assignments.filter(a => catVendors.some(v => v.id === a.vendor_id) && pinnedIds.has(a.community_id)).map(a => a.community_id)
+    ).size
+    return { rows, max, totalCovered, vendorCount: catVendors.length }
+  }, [selectedCategoryId, vendors, assignments, communities])
+
   // Spread stats — only computed when filtering by a specific vendor
   const spreadStats = useMemo(() => {
     if (!selectedVendorId || !coveredIds) return null
@@ -281,8 +297,8 @@ export default function MapPage() {
           )}
         </div>
 
-        {/* Coverage stats */}
-        {stats && (
+        {/* Coverage stats — vendor filter only */}
+        {stats && selectedVendorId && (
           <div style={{ padding: '12px 14px', borderBottom: '1px solid #f0ede4' }}>
             <p style={{ fontSize: '10px', fontWeight: 600, color: '#bbb', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>Coverage</p>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginBottom: '10px' }}>
@@ -296,22 +312,55 @@ export default function MapPage() {
                     <span style={{ width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0, background: PALETTE[i % PALETTE.length] }} />
                     <span style={{ color: '#666', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.full_name}</span>
                   </div>
-                  <span style={{ fontWeight: 600, marginLeft: '8px', flexShrink: 0, color: m.gap ? '#d97706' : '#444' }}>
+                  <span style={{ fontWeight: 600, marginLeft: '8px', flexShrink: 0, color: '#444' }}>
                     {m.covered}/{m.total}
                   </span>
                 </div>
               ))}
             </div>
+          </div>
+        )}
 
-            {/* Coverage gap — only show for category filter, not single vendor */}
-            {!selectedVendorId && stats.byManager.some(m => m.gap) && (
-              <div style={{ marginTop: '10px', padding: '8px 10px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '6px' }}>
-                <p style={{ fontSize: '11px', fontWeight: 600, color: '#92400e', marginBottom: '4px' }}>⚠ Coverage gap</p>
-                {stats.byManager.filter(m => m.gap).map(m => (
-                  <p key={m.id} style={{ fontSize: '11px', color: '#b45309', margin: 0 }}>{m.full_name}'s zone has no coverage.</p>
-                ))}
-              </div>
-            )}
+        {/* Category vendor distribution */}
+        {categoryVendorStats && (
+          <div style={{ padding: '12px 14px', borderBottom: '1px solid #f0ede4' }}>
+            <p style={{ fontSize: '10px', fontWeight: 600, color: '#bbb', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>
+              {categories.find(c => c.id === selectedCategoryId)?.name ?? 'Category'} Vendors
+            </p>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginBottom: '2px' }}>
+              <span style={{ fontSize: '26px', fontWeight: 700, color: '#087482', lineHeight: 1 }}>{categoryVendorStats.vendorCount}</span>
+              <span style={{ fontSize: '12px', color: '#aaa' }}>vendors · {categoryVendorStats.totalCovered} communities</span>
+            </div>
+            <p style={{ fontSize: '11px', color: '#bbb', marginBottom: '10px' }}>tap a vendor to see spread</p>
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              {categoryVendorStats.rows.map(v => {
+                const isLight = v.count <= 1
+                const barColor = isLight ? '#d97706' : '#087482'
+                const barPct = Math.max(6, Math.round((v.count / categoryVendorStats.max) * 100))
+                return (
+                  <button
+                    key={v.id}
+                    onClick={() => selectVendor(v.id)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '8px',
+                      padding: '6px 0', borderBottom: '1px solid #f5f5f5',
+                      background: 'none', border: 'none', borderBottom: '1px solid #f5f5f5',
+                      cursor: 'pointer', textAlign: 'left', width: '100%',
+                    }}
+                  >
+                    <span style={{ fontSize: '12px', color: '#444', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+                      {v.name}
+                    </span>
+                    <div style={{ width: '52px', flexShrink: 0, height: '4px', background: '#eee', borderRadius: '2px' }}>
+                      <div style={{ width: `${barPct}%`, height: '4px', borderRadius: '2px', background: barColor }} />
+                    </div>
+                    <span style={{ fontSize: '11px', fontWeight: 600, width: '24px', textAlign: 'right', flexShrink: 0, color: isLight ? '#d97706' : '#555' }}>
+                      {v.count}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
           </div>
         )}
 
@@ -422,20 +471,33 @@ export default function MapPage() {
           </div>
         )}
 
-        {/* Vendor spread info banner */}
-        {spreadStats && spreadStats.covered.length >= 2 && (
+        {/* Map info banner */}
+        {(spreadStats?.covered.length >= 2 || categoryVendorStats) && (
           <div style={{
             position: 'absolute', top: '12px', right: '54px', zIndex: 1000,
             background: 'rgba(255,255,255,0.95)', borderRadius: '8px', border: '1px solid #e5e3db',
-            padding: '8px 12px', maxWidth: '240px',
-            borderLeft: `4px solid ${spreadStats.levelColor}`,
+            padding: '8px 12px', maxWidth: '260px',
+            borderLeft: `4px solid ${spreadStats ? spreadStats.levelColor : '#087482'}`,
           }}>
-            <p style={{ fontSize: '11px', fontWeight: 600, color: spreadStats.levelColor, marginBottom: '2px' }}>
-              {selectedVendorName}
-            </p>
-            <p style={{ fontSize: '11px', color: '#555', margin: 0 }}>
-              {Math.round(spreadStats.maxMi)} mi spread across {spreadStats.covered.length} communities
-            </p>
+            {spreadStats && spreadStats.covered.length >= 2 ? (
+              <>
+                <p style={{ fontSize: '11px', fontWeight: 600, color: spreadStats.levelColor, marginBottom: '2px' }}>
+                  {selectedVendorName}
+                </p>
+                <p style={{ fontSize: '11px', color: '#555', margin: 0 }}>
+                  {Math.round(spreadStats.maxMi)} mi spread across {spreadStats.covered.length} communities
+                </p>
+              </>
+            ) : categoryVendorStats ? (
+              <>
+                <p style={{ fontSize: '11px', fontWeight: 600, color: '#087482', marginBottom: '2px' }}>
+                  {categories.find(c => c.id === selectedCategoryId)?.name}
+                </p>
+                <p style={{ fontSize: '11px', color: '#555', margin: 0 }}>
+                  {categoryVendorStats.vendorCount} vendors · {categoryVendorStats.totalCovered} communities covered
+                </p>
+              </>
+            ) : null}
           </div>
         )}
 
