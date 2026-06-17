@@ -225,9 +225,20 @@ function UserRow({ u, isSelf, onRoleChange, onToggleActive, onToggleAreaManager 
         <button
           onClick={() => onToggleAreaManager(u.id, u.email, u.is_area_manager)}
           title="Toggle Coverage Map area manager"
-          className={`w-8 h-5 rounded-full transition-colors relative flex-shrink-0 ${u.is_area_manager ? 'bg-teal-500' : 'bg-gray-200'}`}
+          style={{
+            width: '36px', height: '20px', borderRadius: '10px', border: 'none',
+            background: u.is_area_manager ? '#087482' : '#d1d5db',
+            cursor: 'pointer', position: 'relative', display: 'block',
+            transition: 'background 0.2s', flexShrink: 0,
+          }}
         >
-          <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${u.is_area_manager ? 'translate-x-3' : 'translate-x-0.5'}`} />
+          <span style={{
+            position: 'absolute', top: '2px',
+            left: u.is_area_manager ? '18px' : '2px',
+            width: '16px', height: '16px', borderRadius: '50%',
+            background: 'white', boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+            transition: 'left 0.2s', display: 'block',
+          }} />
         </button>
       </td>
       <td className="px-3 py-2">
