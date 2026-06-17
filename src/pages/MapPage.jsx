@@ -15,27 +15,26 @@ function buildColorMap(managers) {
 function makeIcon(brand, color, opacity) {
   const isSL = brand?.toLowerCase().includes('starlight')
   const label = isSL ? 'SL' : 'AW'
-
   const shape = isSL
     ? `<polygon points="16,3 18.94,11.95 28.36,11.98 20.76,17.55 23.64,26.52 16,21 8.36,26.52 11.24,17.55 3.64,11.98 13.06,11.95" fill="${color}" stroke="white" stroke-width="2.5"/>`
     : `<circle cx="16" cy="16" r="13" fill="${color}" stroke="white" stroke-width="2.5"/>`
-
   const textY = isSL ? '19' : '20'
-
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
     <g opacity="${opacity}">
       ${shape}
       <text x="16" y="${textY}" text-anchor="middle" fill="white" font-size="9" font-weight="700" font-family="system-ui,sans-serif">${label}</text>
     </g>
   </svg>`
+  return L.divIcon({ html: svg, className: '', iconSize: [32, 32], iconAnchor: [16, 16], tooltipAnchor: [16, -4] })
+}
 
-  return L.divIcon({
-    html: svg,
-    className: '',
-    iconSize: [32, 32],
-    iconAnchor: [16, 16],
-    tooltipAnchor: [16, -4],
-  })
+function haversineKm(lat1, lng1, lat2, lng2) {
+  const R = 6371
+  const dLat = (lat2 - lat1) * Math.PI / 180
+  const dLng = (lng2 - lng1) * Math.PI / 180
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
 
 export default function MapPage() {
@@ -49,26 +48,21 @@ export default function MapPage() {
   const mapContainerRef = useRef(null)
   const mapRef = useRef(null)
   const markersRef = useRef([])
+  const linesRef = useRef([])
 
-  // Initialize Leaflet map once
   useEffect(() => {
     if (mapRef.current || !mapContainerRef.current) return
-
     mapRef.current = L.map(mapContainerRef.current, {
       center: [29.7604, -95.3698],
       zoom: 10,
       zoomControl: false,
     })
-
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
       maxZoom: 19,
     }).addTo(mapRef.current)
-
     L.control.zoom({ position: 'topright' }).addTo(mapRef.current)
-
     setMapReady(true)
-
     return () => {
       mapRef.current?.remove()
       mapRef.current = null
@@ -76,25 +70,19 @@ export default function MapPage() {
     }
   }, [])
 
-  // Covered community ids for the active filter
   const coveredIds = useMemo(() => {
     if (!selectedVendorId && !selectedCategoryId) return null
-
     const vendorIds = new Set()
     if (selectedVendorId) {
       vendorIds.add(selectedVendorId)
     } else {
       vendors.filter(v => v.category_id === selectedCategoryId).forEach(v => vendorIds.add(v.id))
     }
-
     const covered = new Set()
-    assignments.forEach(a => {
-      if (vendorIds.has(a.vendor_id)) covered.add(a.community_id)
-    })
+    assignments.forEach(a => { if (vendorIds.has(a.vendor_id)) covered.add(a.community_id) })
     return covered
   }, [selectedVendorId, selectedCategoryId, assignments, vendors])
 
-  // Per-manager coverage stats
   const stats = useMemo(() => {
     if (!coveredIds) return null
     const pinned = communities.filter(c => c.lat && c.lng)
@@ -107,35 +95,54 @@ export default function MapPage() {
     return { total: pinned.length, covered, byManager }
   }, [coveredIds, communities, managers])
 
-  // Rebuild markers whenever data or filters change
+  // Spread stats — only computed when filtering by a specific vendor
+  const spreadStats = useMemo(() => {
+    if (!selectedVendorId || !coveredIds) return null
+    const covered = communities.filter(c => c.lat && c.lng && coveredIds.has(c.id))
+    if (covered.length < 2) return { covered, maxMi: 0, avgMi: 0, level: 'Low', levelColor: '#087482', farthestA: null, farthestB: null }
+
+    let maxDist = 0, farthestA = null, farthestB = null
+    for (let i = 0; i < covered.length; i++) {
+      for (let j = i + 1; j < covered.length; j++) {
+        const d = haversineKm(+covered[i].lat, +covered[i].lng, +covered[j].lat, +covered[j].lng)
+        if (d > maxDist) { maxDist = d; farthestA = covered[i]; farthestB = covered[j] }
+      }
+    }
+
+    const centLat = covered.reduce((s, c) => s + +c.lat, 0) / covered.length
+    const centLng = covered.reduce((s, c) => s + +c.lng, 0) / covered.length
+    const avgDist = covered.reduce((s, c) => s + haversineKm(centLat, centLng, +c.lat, +c.lng), 0) / covered.length
+
+    const maxMi = maxDist * 0.621371
+    const avgMi = avgDist * 0.621371
+    const level = maxMi < 15 ? 'Low' : maxMi < 30 ? 'Medium' : 'High'
+    const levelColor = maxMi < 15 ? '#087482' : maxMi < 30 ? '#d97706' : '#c0392b'
+
+    return { covered, maxMi, avgMi, level, levelColor, farthestA, farthestB }
+  }, [selectedVendorId, coveredIds, communities])
+
+  // Rebuild markers
   useEffect(() => {
     if (!mapReady || loading) return
-
     markersRef.current.forEach(m => m.remove())
     markersRef.current = []
-
     const colorMap = buildColorMap(managers)
     const managerNames = Object.fromEntries(managers.map(m => [m.id, m.full_name]))
     const isFiltered = coveredIds !== null
-
     communities.forEach(c => {
       if (!c.lat || !c.lng) return
       if (c.area_manager_id && hiddenManagers.has(c.area_manager_id)) return
-
       const color = colorMap[c.area_manager_id] ?? '#9e9e9e'
       const isCovered = !isFiltered || coveredIds.has(c.id)
       const opacity = isFiltered && !isCovered ? 0.2 : 1
-
       const icon = makeIcon(c.brand, color, opacity)
-      const marker = L.marker([c.lat, c.lng], { icon })
-
+      const marker = L.marker([+c.lat, +c.lng], { icon })
       const managerName = c.area_manager_id ? (managerNames[c.area_manager_id] ?? 'Unknown') : 'Unassigned'
       const brandLabel = c.brand?.toLowerCase().includes('starlight') ? 'SL' : 'AW'
       const brandBg = brandLabel === 'SL' ? '#d81b60' : '#1565c0'
       const coverageHtml = isFiltered
         ? `<div style="font-size:11px;font-weight:600;margin-top:5px;color:${isCovered ? '#087482' : '#bbb'};">${isCovered ? '✓ Covered' : '✗ Not covered'}</div>`
         : ''
-
       marker.bindTooltip(
         `<div style="font-family:system-ui,sans-serif;padding:2px 0;min-width:155px;">
           <div style="font-weight:700;font-size:13px;margin-bottom:4px;color:#1a1a18;">${c.name}</div>
@@ -148,15 +155,48 @@ export default function MapPage() {
         </div>`,
         { sticky: true }
       )
-
       marker.addTo(mapRef.current)
       markersRef.current.push(marker)
     })
   }, [mapReady, loading, communities, managers, hiddenManagers, coveredIds])
 
+  // Draw/remove spread lines when vendor filter or spread stats change
+  useEffect(() => {
+    if (!mapReady) return
+    linesRef.current.forEach(l => l.remove())
+    linesRef.current = []
+    if (!spreadStats || spreadStats.covered.length < 2) return
+
+    const { covered, farthestA, farthestB } = spreadStats
+
+    // All-pairs gray dashed connections
+    for (let i = 0; i < covered.length; i++) {
+      for (let j = i + 1; j < covered.length; j++) {
+        const a = covered[i], b = covered[j]
+        const isFarthest = (a.id === farthestA?.id && b.id === farthestB?.id) ||
+                           (a.id === farthestB?.id && b.id === farthestA?.id)
+        if (!isFarthest) {
+          const line = L.polyline(
+            [[+a.lat, +a.lng], [+b.lat, +b.lng]],
+            { color: '#888888', weight: 1.2, opacity: 0.5, dashArray: '6 4' }
+          ).addTo(mapRef.current)
+          linesRef.current.push(line)
+        }
+      }
+    }
+
+    // Farthest pair in red on top
+    if (farthestA && farthestB) {
+      const line = L.polyline(
+        [[+farthestA.lat, +farthestA.lng], [+farthestB.lat, +farthestB.lng]],
+        { color: '#c0392b', weight: 2, opacity: 0.8, dashArray: '6 4' }
+      ).addTo(mapRef.current)
+      linesRef.current.push(line)
+    }
+  }, [mapReady, spreadStats])
+
   const pinnedCount = communities.filter(c => c.lat && c.lng).length
   const unpinnedCount = communities.length - pinnedCount
-
   const colorMap = useMemo(() => buildColorMap(managers), [managers])
 
   function toggleManager(id) {
@@ -168,37 +208,15 @@ export default function MapPage() {
     })
   }
 
-  function selectVendor(id) {
-    setSelectedVendorId(id)
-    setSelectedCategoryId('')
-  }
+  function selectVendor(id) { setSelectedVendorId(id); setSelectedCategoryId('') }
+  function selectCategory(id) { setSelectedCategoryId(id); setSelectedVendorId('') }
 
-  function selectCategory(id) {
-    setSelectedCategoryId(id)
-    setSelectedVendorId('')
-  }
+  const selectedVendorName = vendors.find(v => v.id === selectedVendorId)?.name ?? ''
 
   return (
-    // position:fixed escapes AppLayout's p-8 cleanly, sidebar is 16rem wide
-    <div style={{
-      position: 'fixed',
-      top: 0,
-      left: '16rem',
-      right: 0,
-      bottom: 0,
-      display: 'flex',
-      zIndex: 5,
-    }}>
+    <div style={{ position: 'fixed', top: 0, left: '16rem', right: 0, bottom: 0, display: 'flex', zIndex: 5 }}>
       {/* ── Left control panel ── */}
-      <div style={{
-        width: '256px',
-        minWidth: '256px',
-        background: '#fff',
-        borderRight: '1px solid #e5e3db',
-        display: 'flex',
-        flexDirection: 'column',
-        overflowY: 'auto',
-      }}>
+      <div style={{ width: '256px', minWidth: '256px', background: '#fff', borderRight: '1px solid #e5e3db', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
         {/* Header */}
         <div style={{ padding: '16px', borderBottom: '1px solid #f0ede4' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -213,15 +231,11 @@ export default function MapPage() {
 
         {/* Area Managers */}
         <div style={{ padding: '12px 14px', borderBottom: '1px solid #f0ede4' }}>
-          <p style={{ fontSize: '10px', fontWeight: 600, color: '#bbb', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>
-            Area Managers
-          </p>
+          <p style={{ fontSize: '10px', fontWeight: 600, color: '#bbb', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>Area Managers</p>
           {loading ? (
             <p style={{ fontSize: '12px', color: '#ccc' }}>Loading…</p>
           ) : managers.length === 0 ? (
-            <p style={{ fontSize: '11px', color: '#aaa', fontStyle: 'italic', lineHeight: 1.4 }}>
-              No managers found. Add users with "manager" role in Admin → User Management.
-            </p>
+            <p style={{ fontSize: '11px', color: '#aaa', fontStyle: 'italic', lineHeight: 1.4 }}>No managers found. Add users with "manager" role in Admin → User Management.</p>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
               {managers.map((m, i) => {
@@ -229,21 +243,13 @@ export default function MapPage() {
                 const isHidden = hiddenManagers.has(m.id)
                 const mineCount = communities.filter(c => c.area_manager_id === m.id && c.lat && c.lng).length
                 return (
-                  <button
-                    key={m.id}
-                    onClick={() => toggleManager(m.id)}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: '8px',
-                      padding: '6px 10px', borderRadius: '6px',
-                      border: `1px solid ${isHidden ? '#e0e0e0' : color + '55'}`,
-                      background: isHidden ? '#f5f5f5' : color + '18',
-                      opacity: isHidden ? 0.5 : 1,
-                      cursor: 'pointer', textAlign: 'left',
-                      fontSize: '12px', fontWeight: 500,
-                      color: isHidden ? '#999' : '#333',
-                      transition: 'opacity 0.15s',
-                    }}
-                  >
+                  <button key={m.id} onClick={() => toggleManager(m.id)} style={{
+                    display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 10px', borderRadius: '6px',
+                    border: `1px solid ${isHidden ? '#e0e0e0' : color + '55'}`,
+                    background: isHidden ? '#f5f5f5' : color + '18',
+                    opacity: isHidden ? 0.5 : 1, cursor: 'pointer', textAlign: 'left',
+                    fontSize: '12px', fontWeight: 500, color: isHidden ? '#999' : '#333', transition: 'opacity 0.15s',
+                  }}>
                     <span style={{ width: '10px', height: '10px', borderRadius: '50%', flexShrink: 0, background: isHidden ? '#ccc' : color }} />
                     <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.full_name}</span>
                     <span style={{ color: '#aaa', fontWeight: 400, flexShrink: 0 }}>{mineCount}</span>
@@ -256,34 +262,20 @@ export default function MapPage() {
 
         {/* Vendor / Category filter */}
         <div style={{ padding: '12px 14px', borderBottom: '1px solid #f0ede4' }}>
-          <p style={{ fontSize: '10px', fontWeight: 600, color: '#bbb', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>
-            Filter Coverage
-          </p>
-          <select
-            value={selectedVendorId}
-            onChange={e => selectVendor(e.target.value)}
-            style={{ width: '100%', padding: '7px 10px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', background: '#fff', marginBottom: '6px', outline: 'none', color: selectedVendorId ? '#333' : '#999' }}
-          >
+          <p style={{ fontSize: '10px', fontWeight: 600, color: '#bbb', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>Filter Coverage</p>
+          <select value={selectedVendorId} onChange={e => selectVendor(e.target.value)}
+            style={{ width: '100%', padding: '7px 10px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', background: '#fff', marginBottom: '6px', outline: 'none', color: selectedVendorId ? '#333' : '#999' }}>
             <option value="">All vendors</option>
-            {vendors.map(v => (
-              <option key={v.id} value={v.id}>{v.name}</option>
-            ))}
+            {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
           </select>
-          <select
-            value={selectedCategoryId}
-            onChange={e => selectCategory(e.target.value)}
-            style={{ width: '100%', padding: '7px 10px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', background: '#fff', outline: 'none', color: selectedCategoryId ? '#333' : '#999' }}
-          >
+          <select value={selectedCategoryId} onChange={e => selectCategory(e.target.value)}
+            style={{ width: '100%', padding: '7px 10px', border: '1px solid #ddd', borderRadius: '6px', fontSize: '12px', background: '#fff', outline: 'none', color: selectedCategoryId ? '#333' : '#999' }}>
             <option value="">— or filter by category —</option>
-            {categories.map(cat => (
-              <option key={cat.id} value={cat.id}>{cat.name}</option>
-            ))}
+            {categories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
           </select>
           {(selectedVendorId || selectedCategoryId) && (
-            <button
-              onClick={() => { setSelectedVendorId(''); setSelectedCategoryId('') }}
-              style={{ marginTop: '6px', fontSize: '11px', color: '#aaa', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
-            >
+            <button onClick={() => { setSelectedVendorId(''); setSelectedCategoryId('') }}
+              style={{ marginTop: '6px', fontSize: '11px', color: '#aaa', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
               ✕ Clear filter
             </button>
           )}
@@ -311,12 +303,53 @@ export default function MapPage() {
               ))}
             </div>
 
-            {stats.byManager.some(m => m.gap) && (
+            {/* Coverage gap — only show for category filter, not single vendor */}
+            {!selectedVendorId && stats.byManager.some(m => m.gap) && (
               <div style={{ marginTop: '10px', padding: '8px 10px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '6px' }}>
                 <p style={{ fontSize: '11px', fontWeight: 600, color: '#92400e', marginBottom: '4px' }}>⚠ Coverage gap</p>
                 {stats.byManager.filter(m => m.gap).map(m => (
                   <p key={m.id} style={{ fontSize: '11px', color: '#b45309', margin: 0 }}>{m.full_name}'s zone has no coverage.</p>
                 ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Vendor spread card — only shown when filtering by a specific vendor */}
+        {spreadStats && (
+          <div style={{ padding: '12px 14px', borderBottom: '1px solid #f0ede4' }}>
+            <p style={{ fontSize: '10px', fontWeight: 600, color: '#bbb', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '8px' }}>Vendor Spread</p>
+
+            {spreadStats.covered.length < 2 ? (
+              <p style={{ fontSize: '11px', color: '#aaa', fontStyle: 'italic' }}>
+                {spreadStats.covered.length === 0 ? 'No mapped communities covered.' : 'Only 1 community — no spread to measure.'}
+              </p>
+            ) : (
+              <div style={{ background: '#f8f7f4', borderRadius: '8px', padding: '10px 12px' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '2px' }}>
+                  <span style={{ fontSize: '28px', fontWeight: 700, color: spreadStats.levelColor, lineHeight: 1 }}>
+                    {Math.round(spreadStats.maxMi)} mi
+                  </span>
+                  <span style={{
+                    fontSize: '10px', fontWeight: 600, padding: '2px 8px', borderRadius: '20px', marginTop: '4px',
+                    background: spreadStats.levelColor + '1a', color: spreadStats.levelColor,
+                  }}>{spreadStats.level}</span>
+                </div>
+                <p style={{ fontSize: '10px', color: '#aaa', marginBottom: '8px' }}>farthest communities apart</p>
+
+                <div style={{ borderTop: '1px solid #e8e5de', paddingTop: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <div style={{ fontSize: '11px', color: '#888' }}>
+                    Avg from center: <span style={{ color: '#555', fontWeight: 500 }}>{Math.round(spreadStats.avgMi)} mi</span>
+                  </div>
+                  {spreadStats.farthestA && spreadStats.farthestB && (
+                    <div style={{ fontSize: '11px', color: '#888' }}>
+                      Farthest: <span style={{ color: '#c0392b', fontWeight: 500 }}>{spreadStats.farthestA.name} ↔ {spreadStats.farthestB.name}</span>
+                    </div>
+                  )}
+                  <div style={{ fontSize: '11px', color: '#888', marginTop: '2px' }}>
+                    Communities: <span style={{ color: '#555' }}>{spreadStats.covered.map(c => c.code || c.name).join(' · ')}</span>
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -348,13 +381,28 @@ export default function MapPage() {
                 Not covered by filter
               </div>
             )}
+            {spreadStats && spreadStats.covered.length >= 2 && (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <svg width="18" height="4" xmlns="http://www.w3.org/2000/svg">
+                    <line x1="0" y1="2" x2="18" y2="2" stroke="#888" strokeWidth="1.5" strokeDasharray="4 3"/>
+                  </svg>
+                  Vendor connections
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <svg width="18" height="4" xmlns="http://www.w3.org/2000/svg">
+                    <line x1="0" y1="2" x2="18" y2="2" stroke="#c0392b" strokeWidth="2" strokeDasharray="4 3"/>
+                  </svg>
+                  Max spread
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>
 
       {/* ── Map area ── */}
       <div style={{ flex: 1, position: 'relative' }}>
-        {/* Loading overlay */}
         {loading && (
           <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.85)', zIndex: 1000 }}>
             <div style={{ textAlign: 'center' }}>
@@ -364,16 +412,30 @@ export default function MapPage() {
           </div>
         )}
 
-        {/* No coordinates yet */}
         {!loading && pinnedCount === 0 && (
           <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, pointerEvents: 'none' }}>
-            <div style={{ background: '#fff', borderRadius: '12px', border: '1px solid #e5e3db', boxShadow: '0 4px 20px rgba(0,0,0,0.1)', padding: '28px', textAlign: 'center', maxWidth: '300px' }}>
+            <div style={{ background: '#fff', borderRadius: '12px', border: '1px solid #e5e3db', padding: '28px', textAlign: 'center', maxWidth: '300px' }}>
               <MapPin style={{ width: '40px', height: '40px', color: '#ddd', margin: '0 auto 12px' }} />
               <p style={{ fontWeight: 600, fontSize: '14px', color: '#444', marginBottom: '6px' }}>No communities mapped yet</p>
-              <p style={{ fontSize: '12px', color: '#aaa', lineHeight: 1.5 }}>
-                Go to Admin → Community Map to add GPS coordinates for each community.
-              </p>
+              <p style={{ fontSize: '12px', color: '#aaa', lineHeight: 1.5 }}>Go to Admin → Community Map to add GPS coordinates for each community.</p>
             </div>
+          </div>
+        )}
+
+        {/* Vendor spread info banner */}
+        {spreadStats && spreadStats.covered.length >= 2 && (
+          <div style={{
+            position: 'absolute', top: '12px', right: '54px', zIndex: 1000,
+            background: 'rgba(255,255,255,0.95)', borderRadius: '8px', border: '1px solid #e5e3db',
+            padding: '8px 12px', maxWidth: '240px',
+            borderLeft: `4px solid ${spreadStats.levelColor}`,
+          }}>
+            <p style={{ fontSize: '11px', fontWeight: 600, color: spreadStats.levelColor, marginBottom: '2px' }}>
+              {selectedVendorName}
+            </p>
+            <p style={{ fontSize: '11px', color: '#555', margin: 0 }}>
+              {Math.round(spreadStats.maxMi)} mi spread across {spreadStats.covered.length} communities
+            </p>
           </div>
         )}
 
