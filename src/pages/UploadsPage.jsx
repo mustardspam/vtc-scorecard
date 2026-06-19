@@ -532,7 +532,7 @@ export default function UploadsPage() {
 
   async function insertReworkRecords(batchId, rows, vendorMap) {
     const records = rows.filter(r => r.vendor_name).map(r => {
-      const cost = Math.abs(Number(r.cost) || 0)
+      const cost = Math.abs(Number(String(r.cost).replace(/[$,()]/g, '').trim()) || 0)
       let severity, penaltyPoints
       if (cost <= 100) { severity = 'low'; penaltyPoints = 2 }
       else if (cost <= 250) { severity = 'medium'; penaltyPoints = 5 }
