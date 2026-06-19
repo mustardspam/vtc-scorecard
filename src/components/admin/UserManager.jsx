@@ -21,12 +21,18 @@ export default function UserManager() {
 
   async function loadUsers() {
     setLoading(true)
-    const { data } = await supabase
-      .from('profiles')
-      .select('*')
-      .order('created_at', { ascending: false })
-    setUsers(data || [])
-    setLoading(false)
+    try {
+      const [profilesRes, loginsRes] = await Promise.all([
+        supabase.from('profiles').select('*').order('created_at', { ascending: false }),
+        supabase.rpc('get_user_last_logins'),
+      ])
+      const loginMap = new Map((loginsRes.data || []).map(r => [r.id, r.last_sign_in_at]))
+      setUsers((profilesRes.data || []).map(u => ({ ...u, last_sign_in_at: loginMap.get(u.id) ?? null })))
+    } catch (err) {
+      console.error('loadUsers error:', err)
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function handleRoleChange(userId, newRole, email) {
@@ -137,6 +143,7 @@ export default function UserManager() {
                 <th className="px-3 py-2 text-xs font-medium text-gray-500">Map Mgr</th>
                 <th className="px-3 py-2 text-xs font-medium text-gray-500">Status</th>
                 <th className="px-3 py-2 text-xs font-medium text-gray-500">Joined</th>
+                <th className="px-3 py-2 text-xs font-medium text-gray-500">Last Login</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -254,6 +261,9 @@ function UserRow({ u, isSelf, onRoleChange, onToggleActive, onToggleAreaManager 
       </td>
       <td className="px-3 py-2 text-xs text-gray-400">
         {new Date(u.created_at).toLocaleDateString()}
+      </td>
+      <td className="px-3 py-2 text-xs text-gray-400">
+        {u.last_sign_in_at ? new Date(u.last_sign_in_at).toLocaleString() : 'Never'}
       </td>
     </tr>
   )
