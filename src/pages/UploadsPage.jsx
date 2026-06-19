@@ -6,7 +6,7 @@ import { matchVendors } from '../lib/parsers/vendor-matcher'
 import { parseJCVendorReport, parseJCVendorReportXLSX } from '../lib/parsers/jc-vendor-parser'
 import { logActivity } from '../hooks/useActivityLog'
 import { useAuth } from '../hooks/useAuth'
-import { Upload, FileText, CheckCircle, XCircle, AlertTriangle, ArrowRight, Loader2, Building2 } from 'lucide-react'
+import { Upload, FileText, CheckCircle, XCircle, AlertTriangle, ArrowRight, Loader2, Building2, Trash2 } from 'lucide-react'
 
 const FILE_TYPES = [
   { value: 'schedule', label: 'Schedule Data', description: 'Monthly schedule adherence report' },
@@ -54,7 +54,8 @@ export default function UploadsPage() {
   const [importError, setImportError] = useState(null)
   const [importProgress, setImportProgress] = useState('')
   const [selectedUnmatched, setSelectedUnmatched] = useState(new Set())
-  const { user, isManager } = useAuth()
+  const [deleting, setDeleting] = useState(null)
+  const { user, isManager, isAdmin } = useAuth()
   const canUpload = isManager()
 
   useEffect(() => {
@@ -81,13 +82,50 @@ export default function UploadsPage() {
     try {
       const { data, error } = await supabase
         .from('import_batches')
-        .select('*, uploaded_files(original_filename)')
+        .select('*, uploaded_files(original_filename, storage_path)')
         .order('created_at', { ascending: false })
         .limit(20)
       if (error) throw error
       setHistory(data || [])
     } catch (err) {
       console.error('loadHistory error:', err)
+    }
+  }
+
+  async function handleDeleteImport(batch) {
+    if (!confirm(`Delete import "${batch.uploaded_files?.original_filename || 'unknown'}" and all its data? This cannot be undone.`)) return
+    setDeleting(batch.id)
+    try {
+      const batchId = batch.id
+      const fileId = batch.uploaded_file_id
+
+      await supabase.from('schedule_records').delete().eq('batch_id', batchId)
+      await supabase.from('safety_records').delete().eq('batch_id', batchId)
+      await supabase.from('rework_records').delete().eq('batch_id', batchId)
+      await supabase.from('raw_import_rows').delete().eq('batch_id', batchId)
+      await supabase.from('import_batches').delete().eq('id', batchId)
+
+      if (fileId) {
+        const { data: otherBatches } = await supabase
+          .from('import_batches')
+          .select('id')
+          .eq('uploaded_file_id', fileId)
+          .limit(1)
+        if (!otherBatches?.length) {
+          if (batch.uploaded_files?.storage_path) {
+            await supabase.storage.from('uploads').remove([batch.uploaded_files.storage_path])
+          }
+          await supabase.from('uploaded_files').delete().eq('id', fileId)
+        }
+      }
+
+      await logActivity('import_deleted', `Deleted import: ${batch.uploaded_files?.original_filename}`, { batch_id: batchId, file_type: batch.file_type })
+      await loadHistory()
+    } catch (err) {
+      console.error('Delete import error:', err)
+      alert('Failed to delete import: ' + err.message)
+    } finally {
+      setDeleting(null)
     }
   }
 
@@ -649,6 +687,16 @@ export default function UploadsPage() {
                     {h.status}
                   </span>
                   <span>{new Date(h.created_at).toLocaleDateString()}</span>
+                  {isAdmin() && (
+                    <button
+                      onClick={() => handleDeleteImport(h)}
+                      disabled={deleting === h.id}
+                      className="ml-1 p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors disabled:opacity-50"
+                      title="Delete this import and all associated data"
+                    >
+                      {deleting === h.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
