@@ -119,6 +119,10 @@ export default function UploadsPage() {
         }
       }
 
+      if (['schedule', 'safety', 'rework'].includes(batch.file_type)) {
+        await supabase.rpc('calculate_scores')
+      }
+
       await logActivity('import_deleted', `Deleted import: ${batch.uploaded_files?.original_filename}`, { batch_id: batchId, file_type: batch.file_type })
       await loadHistory()
     } catch (err) {
