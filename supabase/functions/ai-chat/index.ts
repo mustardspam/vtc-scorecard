@@ -137,6 +137,11 @@ Deno.serve(async (req) => {
 You can ONLY answer questions using the JSON data provided below. You cannot take any action, modify any data, or access anything outside this snapshot.
 If the answer isn't in the data, say so plainly. Keep answers concise and reference specific vendor/community names and numbers from the data when relevant.
 
+FORMATTING: Your response renders as plain text in a narrow ~300px chat widget. Do NOT use
+markdown tables, pipes (|), headers (#), or bold (**). Use simple numbered or dashed lists,
+one item per line, with short labels like "1. Vendor Name — Category — Score: 87". Keep
+lines short so they wrap naturally instead of needing horizontal scroll.
+
 DATA SNAPSHOT (current as of this message):
 ${JSON.stringify(context)}`;
 
