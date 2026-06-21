@@ -3,8 +3,8 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
-const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY")!;
-const GEMINI_MODEL = "gemini-2.0-flash";
+const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY")!;
+const OPENROUTER_MODEL = "meta-llama/llama-3.3-70b-instruct:free";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -66,7 +66,7 @@ Deno.serve(async (req) => {
       15000,
       "fetch context from database"
     );
-    console.log("ai-chat: context fetched, calling Gemini");
+    console.log("ai-chat: context fetched, calling OpenRouter");
 
     const context = {
       vendor_scores: scores.data ?? [],
@@ -82,41 +82,44 @@ If the answer isn't in the data, say so plainly. Keep answers concise and refere
 DATA SNAPSHOT (current as of this message):
 ${JSON.stringify(context)}`;
 
-    const contents = [
+    const messages = [
+      { role: "system", content: systemPrompt },
       ...(Array.isArray(history) ? history.slice(-10).map((m: { role: string; text: string }) => ({
-        role: m.role === "assistant" ? "model" : "user",
-        parts: [{ text: m.text }],
+        role: m.role === "assistant" ? "assistant" : "user",
+        content: m.text,
       })) : []),
-      { role: "user", parts: [{ text: message }] },
+      { role: "user", content: message },
     ];
 
-    const geminiRes = await withTimeout(
-      fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            system_instruction: { parts: [{ text: systemPrompt }] },
-            contents,
-          }),
-        }
-      ),
+    const orRes = await withTimeout(
+      fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+          "HTTP-Referer": "https://vtcouncil.online",
+          "X-Title": "VTC Scorecard",
+        },
+        body: JSON.stringify({
+          model: OPENROUTER_MODEL,
+          messages,
+        }),
+      }),
       20000,
-      "Gemini API call"
+      "OpenRouter API call"
     );
 
-    if (!geminiRes.ok) {
-      const errText = await geminiRes.text();
-      console.error("ai-chat: Gemini API error", errText);
-      return new Response(JSON.stringify({ error: `Gemini API error: ${errText}` }), {
+    if (!orRes.ok) {
+      const errText = await orRes.text();
+      console.error("ai-chat: OpenRouter API error", errText);
+      return new Response(JSON.stringify({ error: `OpenRouter API error: ${errText}` }), {
         status: 502,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const geminiData = await geminiRes.json();
-    const reply = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text ?? "Sorry, I couldn't generate a response.";
+    const orData = await orRes.json();
+    const reply = orData?.choices?.[0]?.message?.content ?? "Sorry, I couldn't generate a response.";
     console.log("ai-chat: success");
 
     return new Response(JSON.stringify({ reply }), {
