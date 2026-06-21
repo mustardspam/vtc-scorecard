@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { supabase } from '../../lib/supabase'
+import { useAuth } from '../../hooks/useAuth'
 import { MessageCircle, X, Send, Loader2, Sparkles } from 'lucide-react'
 
 export default function AIChatWidget() {
@@ -31,8 +31,10 @@ export default function AIChatWidget() {
     setSending(true)
 
     try {
-      const { data: sessionData } = await withTimeout(supabase.auth.getSession(), 8000, 'Checking session')
-      const token = sessionData?.session?.access_token
+      // Read the cached session from the auth store instead of calling
+      // supabase.auth.getSession() directly — that call can hang indefinitely
+      // if another browser tab holds the cross-tab token-refresh lock.
+      const token = useAuth.getState().session?.access_token
       if (!token) throw new Error('Not signed in')
 
       const controller = new AbortController()

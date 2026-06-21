@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 export const useAuth = create((set, get) => ({
   user: null,
   profile: null,
+  session: null,
   loading: true,
 
   initialize: async () => {
@@ -16,7 +17,7 @@ export const useAuth = create((set, get) => ({
       }
       if (session?.user) {
         const profile = await get().fetchProfile(session.user.id)
-        set({ user: session.user, profile, loading: false })
+        set({ user: session.user, profile, session, loading: false })
       } else {
         set({ loading: false })
       }
@@ -30,9 +31,9 @@ export const useAuth = create((set, get) => ({
       if (event === 'INITIAL_SESSION') return
       if (session?.user) {
         const profile = await get().fetchProfile(session.user.id)
-        set({ user: session.user, profile, loading: false })
+        set({ user: session.user, profile, session, loading: false })
       } else {
-        set({ user: null, profile: null, loading: false })
+        set({ user: null, profile: null, session: null, loading: false })
       }
     })
   },
