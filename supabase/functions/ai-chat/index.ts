@@ -11,6 +11,13 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(`Timed out after ${ms}ms at: ${label}`)), ms)),
+  ]);
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -40,20 +47,26 @@ Deno.serve(async (req) => {
       global: { headers: { Authorization: authHeader } },
     });
 
-    const [scores, communities, categories, feedback] = await Promise.all([
-      supabase
-        .from("score_results")
-        .select("weighted_total, safety_score, schedule_score, rework_score, feedback_score, overall_rank, vendors(name, vendor_categories(name))")
-        .order("weighted_total", { ascending: false, nullsFirst: false }),
-      supabase.from("communities").select("name, code, brand"),
-      supabase.from("vendor_categories").select("name"),
-      supabase
-        .from("builder_feedback")
-        .select("category, severity, points, description, created_at, vendors(name)")
-        .eq("is_approved", true)
-        .order("created_at", { ascending: false })
-        .limit(30),
-    ]);
+    console.log("ai-chat: fetching context");
+    const [scores, communities, categories, feedback] = await withTimeout(
+      Promise.all([
+        supabase
+          .from("score_results")
+          .select("weighted_total, safety_score, schedule_score, rework_score, feedback_score, overall_rank, vendors(name, vendor_categories(name))")
+          .order("weighted_total", { ascending: false, nullsFirst: false }),
+        supabase.from("communities").select("name, code, brand"),
+        supabase.from("vendor_categories").select("name"),
+        supabase
+          .from("builder_feedback")
+          .select("category, severity, points, description, created_at, vendors(name)")
+          .eq("is_approved", true)
+          .order("created_at", { ascending: false })
+          .limit(30),
+      ]),
+      15000,
+      "fetch context from database"
+    );
+    console.log("ai-chat: context fetched, calling Gemini");
 
     const context = {
       vendor_scores: scores.data ?? [],
@@ -77,20 +90,25 @@ ${JSON.stringify(context)}`;
       { role: "user", parts: [{ text: message }] },
     ];
 
-    const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          system_instruction: { parts: [{ text: systemPrompt }] },
-          contents,
-        }),
-      }
+    const geminiRes = await withTimeout(
+      fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            system_instruction: { parts: [{ text: systemPrompt }] },
+            contents,
+          }),
+        }
+      ),
+      20000,
+      "Gemini API call"
     );
 
     if (!geminiRes.ok) {
       const errText = await geminiRes.text();
+      console.error("ai-chat: Gemini API error", errText);
       return new Response(JSON.stringify({ error: `Gemini API error: ${errText}` }), {
         status: 502,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -99,11 +117,13 @@ ${JSON.stringify(context)}`;
 
     const geminiData = await geminiRes.json();
     const reply = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text ?? "Sorry, I couldn't generate a response.";
+    console.log("ai-chat: success");
 
     return new Response(JSON.stringify({ reply }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
+    console.error("ai-chat: error", err);
     return new Response(JSON.stringify({ error: err instanceof Error ? err.message : "Unknown error" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

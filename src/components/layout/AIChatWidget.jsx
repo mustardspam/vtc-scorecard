@@ -14,6 +14,13 @@ export default function AIChatWidget() {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight
   }, [messages, open])
 
+  function withTimeout(promise, ms, label) {
+    return Promise.race([
+      promise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error(`${label} timed out — try again`)), ms)),
+    ])
+  }
+
   async function handleSend() {
     const text = input.trim()
     if (!text || sending) return
@@ -24,15 +31,21 @@ export default function AIChatWidget() {
     setSending(true)
 
     try {
-      const { data: sessionData } = await supabase.auth.getSession()
+      const { data: sessionData } = await withTimeout(supabase.auth.getSession(), 8000, 'Checking session')
       const token = sessionData?.session?.access_token
       if (!token) throw new Error('Not signed in')
 
-      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ message: text, history: nextMessages }),
-      })
+      const controller = new AbortController()
+      const res = await withTimeout(
+        fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ message: text, history: nextMessages }),
+          signal: controller.signal,
+        }).catch(err => { throw err }),
+        25000,
+        'Request'
+      ).catch(err => { controller.abort(); throw err })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Request failed')
       setMessages(prev => [...prev, { role: 'assistant', text: data.reply }])
