@@ -1,5 +1,6 @@
 import { Outlet } from 'react-router-dom'
 import Sidebar from './Sidebar'
+import AIChatWidget from './AIChatWidget'
 import { useTheme } from '../../context/ThemeContext'
 
 export default function AppLayout() {
@@ -10,6 +11,7 @@ export default function AppLayout() {
       <main className="flex-1 ml-64 p-8 bg-gray-50">
         <Outlet />
       </main>
+      <AIChatWidget />
     </div>
   )
 }
