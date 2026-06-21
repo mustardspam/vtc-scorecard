@@ -4,11 +4,13 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY")!;
-// Tried in order; a model temporarily rate-limited upstream falls through to the next.
+// Tried in order; a model temporarily rate-limited (or removed) upstream falls through
+// to the next. OpenRouter's free model catalog changes frequently -- verify against
+// https://openrouter.ai/api/v1/models (filter for ids ending in ":free") if these go stale.
 const OPENROUTER_MODELS = [
   "meta-llama/llama-3.3-70b-instruct:free",
-  "deepseek/deepseek-chat-v3-0324:free",
-  "google/gemini-2.0-flash-exp:free",
+  "openai/gpt-oss-120b:free",
+  "qwen/qwen3-next-80b-a3b-instruct:free",
 ];
 
 const corsHeaders = {
