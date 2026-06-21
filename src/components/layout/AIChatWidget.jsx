@@ -43,7 +43,7 @@ export default function AIChatWidget() {
           body: JSON.stringify({ message: text, history: nextMessages }),
           signal: controller.signal,
         }).catch(err => { throw err }),
-        25000,
+        40000,
         'Request'
       ).catch(err => { controller.abort(); throw err })
       const data = await res.json()

@@ -4,7 +4,12 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY")!;
-const OPENROUTER_MODEL = "meta-llama/llama-3.3-70b-instruct:free";
+// Tried in order; a model temporarily rate-limited upstream falls through to the next.
+const OPENROUTER_MODELS = [
+  "meta-llama/llama-3.3-70b-instruct:free",
+  "deepseek/deepseek-chat-v3-0324:free",
+  "google/gemini-2.0-flash-exp:free",
+];
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -16,6 +21,57 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
     promise,
     new Promise<T>((_, reject) => setTimeout(() => reject(new Error(`Timed out after ${ms}ms at: ${label}`)), ms)),
   ]);
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Tries each free model in order. On a 429 (upstream provider temporarily
+// rate-limited), retries the same model once after the suggested delay,
+// then falls through to the next model in the list.
+async function callOpenRouter(messages: unknown[]): Promise<string> {
+  let lastError = "Unknown error";
+
+  for (const model of OPENROUTER_MODELS) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+          "HTTP-Referer": "https://vtcouncil.online",
+          "X-Title": "VTC Scorecard",
+        },
+        body: JSON.stringify({ model, messages }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        return data?.choices?.[0]?.message?.content ?? "Sorry, I couldn't generate a response.";
+      }
+
+      const errText = await res.text();
+      lastError = errText;
+
+      if (res.status === 429 && attempt === 0) {
+        let retryAfterMs = 3000;
+        try {
+          const parsed = JSON.parse(errText);
+          const seconds = parsed?.error?.metadata?.retry_after_seconds;
+          if (typeof seconds === "number") retryAfterMs = Math.min(seconds * 1000 + 500, 12000);
+        } catch { /* use default delay */ }
+        console.log(`ai-chat: ${model} rate-limited, retrying in ${retryAfterMs}ms`);
+        await sleep(retryAfterMs);
+        continue;
+      }
+
+      console.log(`ai-chat: ${model} failed (${res.status}), trying next model`);
+      break;
+    }
+  }
+
+  throw new Error(`All models exhausted. Last error: ${lastError}`);
 }
 
 Deno.serve(async (req) => {
@@ -91,35 +147,16 @@ ${JSON.stringify(context)}`;
       { role: "user", content: message },
     ];
 
-    const orRes = await withTimeout(
-      fetch("https://openrouter.ai/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${OPENROUTER_API_KEY}`,
-          "HTTP-Referer": "https://vtcouncil.online",
-          "X-Title": "VTC Scorecard",
-        },
-        body: JSON.stringify({
-          model: OPENROUTER_MODEL,
-          messages,
-        }),
-      }),
-      20000,
-      "OpenRouter API call"
-    );
-
-    if (!orRes.ok) {
-      const errText = await orRes.text();
-      console.error("ai-chat: OpenRouter API error", errText);
-      return new Response(JSON.stringify({ error: `OpenRouter API error: ${errText}` }), {
+    let reply: string;
+    try {
+      reply = await withTimeout(callOpenRouter(messages), 30000, "OpenRouter API call (with retries)");
+    } catch (err) {
+      console.error("ai-chat: OpenRouter API error", err);
+      return new Response(JSON.stringify({ error: `OpenRouter API error: ${err instanceof Error ? err.message : err}` }), {
         status: 502,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-
-    const orData = await orRes.json();
-    const reply = orData?.choices?.[0]?.message?.content ?? "Sorry, I couldn't generate a response.";
     console.log("ai-chat: success");
 
     return new Response(JSON.stringify({ reply }), {
