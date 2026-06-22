@@ -2,8 +2,11 @@ name: Weekly Digest Email
 
 on:
   schedule:
-    # Every Monday at 8:00 AM Eastern (12:00 UTC)
-    - cron: '0 12 * * 1'
+    # Every Monday at 8:00 AM US Central (13:00 UTC during CDT / summer).
+    # NOTE: GitHub Actions cron is always UTC and does NOT follow daylight saving.
+    # During CST (winter) this fires at 7:00 AM Central; bump to '0 14 * * 1' if you
+    # want a true 8:00 AM year-round during standard time.
+    - cron: '0 13 * * 1'
   workflow_dispatch: # Allow manual trigger from GitHub Actions UI
 
 jobs:
