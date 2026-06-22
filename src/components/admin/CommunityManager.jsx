@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
+import { logActivity } from '../../hooks/useActivityLog'
 import { Plus, Pencil, Save, X } from 'lucide-react'
 
 export default function CommunityManager() {
@@ -27,6 +28,13 @@ export default function CommunityManager() {
     }
     setForm({ name: '', code: '', brand: '' })
     setCreating(false)
+    loadData()
+  }
+
+  async function handleToggleActive(id, name, currentActive) {
+    if (currentActive && !confirm(`Mark ${name} inactive? It will be hidden from filters, the map, and feedback forms.`)) return
+    await supabase.from('communities').update({ is_active: !currentActive }).eq('id', id)
+    await logActivity(currentActive ? 'community_deactivated' : 'community_reactivated', `${currentActive ? 'Deactivated' : 'Reactivated'} community: ${name}`, { community_name: name })
     loadData()
   }
 
@@ -74,7 +82,13 @@ export default function CommunityManager() {
               <td className="px-3 py-2 font-medium">{c.name}</td>
               <td className="px-3 py-2 font-mono text-gray-500">{c.code}</td>
               <td className="px-3 py-2 text-gray-500">{c.brand || '—'}</td>
-              <td className="px-3 py-2"><span className={`text-xs px-2 py-0.5 rounded ${c.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>{c.is_active ? 'Active' : 'Inactive'}</span></td>
+              <td className="px-3 py-2">
+                <button onClick={() => handleToggleActive(c.id, c.name, c.is_active)}
+                  title={c.is_active ? 'Click to mark inactive' : 'Click to reactivate'}
+                  className={`text-xs px-2 py-0.5 rounded cursor-pointer ${c.is_active ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+                  {c.is_active ? 'Active' : 'Inactive'}
+                </button>
+              </td>
               <td className="px-3 py-2 text-right">
                 <button onClick={() => { setEditing(c.id); setForm({ name: c.name, code: c.code, brand: c.brand || '' }); setCreating(true) }} className="p-1 text-gray-400 hover:text-blue-600"><Pencil className="w-3.5 h-3.5" /></button>
               </td>
