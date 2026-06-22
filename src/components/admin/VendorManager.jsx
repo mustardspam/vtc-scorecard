@@ -2,12 +2,13 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { logActivity } from '../../hooks/useActivityLog'
 import { useAuth } from '../../hooks/useAuth'
-import { Plus, Pencil, Trash2, Search, Save, X } from 'lucide-react'
+import { Plus, Pencil, Search, Save, X } from 'lucide-react'
 
 export default function VendorManager() {
   const [vendors, setVendors] = useState([])
   const [categories, setCategories] = useState([])
   const [search, setSearch] = useState('')
+  const [showAll, setShowAll] = useState(false)
   const [editing, setEditing] = useState(null)
   const [creating, setCreating] = useState(false)
   const [form, setForm] = useState({ name: '', category_id: '', is_trade: true })
@@ -42,9 +43,11 @@ export default function VendorManager() {
     loadData()
   }
 
-  async function handleDeactivate(id, name) {
-    if (!confirm(`Deactivate ${name}? Historical records will be preserved.`)) return
-    await supabase.from('vendors').update({ is_active: false }).eq('id', id)
+  async function handleToggleActive(id, name, currentActive) {
+    if (currentActive && !confirm(`Deactivate ${name}? Historical records will be preserved, and their score will drop out of the dashboard averages.`)) return
+    await supabase.from('vendors').update({ is_active: !currentActive }).eq('id', id)
+    await supabase.rpc('calculate_scores')
+    await logActivity(currentActive ? 'vendor_deactivated' : 'vendor_reactivated', `${currentActive ? 'Deactivated' : 'Reactivated'} vendor: ${name}`, { vendor_name: name })
     loadData()
   }
 
@@ -55,15 +58,26 @@ export default function VendorManager() {
   }
 
   const filtered = vendors.filter(v =>
-    v.name.toLowerCase().includes(search.toLowerCase()) ||
-    v.vendor_categories?.name?.toLowerCase().includes(search.toLowerCase())
+    (showAll || v.is_active) &&
+    (v.name.toLowerCase().includes(search.toLowerCase()) ||
+      v.vendor_categories?.name?.toLowerCase().includes(search.toLowerCase()))
   )
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Vendors & Trades ({vendors.length})</h2>
+        <h2 className="text-lg font-semibold">Vendors & Trades ({filtered.length})</h2>
         <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1 text-sm bg-gray-100 rounded-lg p-0.5">
+            <button onClick={() => setShowAll(false)}
+              className={`px-2.5 py-1 rounded-md ${!showAll ? 'bg-white shadow text-gray-900' : 'text-gray-500'}`}>
+              Active only
+            </button>
+            <button onClick={() => setShowAll(true)}
+              className={`px-2.5 py-1 rounded-md ${showAll ? 'bg-white shadow text-gray-900' : 'text-gray-500'}`}>
+              Show all
+            </button>
+          </div>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input type="text" placeholder="Search..." value={search} onChange={e => setSearch(e.target.value)}
@@ -121,14 +135,15 @@ export default function VendorManager() {
                 <td className="px-3 py-2 text-gray-500">{v.vendor_categories?.name}</td>
                 <td className="px-3 py-2 text-gray-500">{v.is_trade ? 'Trade' : 'Vendor'}</td>
                 <td className="px-3 py-2">
-                  <span className={`text-xs px-2 py-0.5 rounded ${v.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                  <button onClick={() => handleToggleActive(v.id, v.name, v.is_active)}
+                    title={v.is_active ? 'Click to deactivate' : 'Click to reactivate'}
+                    className={`text-xs px-2 py-0.5 rounded cursor-pointer ${v.is_active ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
                     {v.is_active ? 'Active' : 'Inactive'}
-                  </span>
+                  </button>
                 </td>
                 <td className="px-3 py-2 text-right">
                   <div className="flex items-center justify-end gap-1">
                     <button onClick={() => startEdit(v)} className="p-1 text-gray-400 hover:text-blue-600"><Pencil className="w-3.5 h-3.5" /></button>
-                    {v.is_active && <button onClick={() => handleDeactivate(v.id, v.name)} className="p-1 text-gray-400 hover:text-red-600"><Trash2 className="w-3.5 h-3.5" /></button>}
                   </div>
                 </td>
               </tr>
