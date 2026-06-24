@@ -25,7 +25,7 @@ export default function SeverityRulesEditor() {
   async function handleSave() {
     setSaving(true)
     for (const rule of safetyRules) {
-      await supabase.from('safety_severity_rules').update({ points: rule.points, updated_by: user.id, updated_at: new Date().toISOString() }).eq('id', rule.id)
+      await supabase.from('safety_severity_rules').update({ points: rule.points, dollar_value: rule.dollar_value, updated_by: user.id, updated_at: new Date().toISOString() }).eq('id', rule.id)
     }
     for (const rule of reworkRules) {
       await supabase.from('rework_severity_rules').update({ penalty_points: rule.penalty_points, cost_threshold_low: rule.cost_threshold_low, cost_threshold_high: rule.cost_threshold_high, updated_by: user.id, updated_at: new Date().toISOString() }).eq('id', rule.id)
@@ -38,13 +38,14 @@ export default function SeverityRulesEditor() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-semibold mb-2">Safety Severity Points</h2>
-        <p className="text-sm text-gray-500 mb-3">Points deducted per incident. Formula: score = 100 - (total_points x multiplier)</p>
+        <h2 className="text-lg font-semibold mb-2">Safety Severity Points & Risk $ Value</h2>
+        <p className="text-sm text-gray-500 mb-3">Points deducted per incident (score = 100 - total_points x multiplier). Dollar value feeds the Risk (12mo) exposure metric — anchored to the 2026 OSHA penalty schedule, editable here.</p>
         <table className="w-full text-sm">
           <thead className="bg-gray-50">
             <tr>
               <th className="px-3 py-2 text-left font-medium text-gray-600">Severity</th>
               <th className="px-3 py-2 text-left font-medium text-gray-600">Points</th>
+              <th className="px-3 py-2 text-left font-medium text-gray-600">Risk $ value</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -52,6 +53,7 @@ export default function SeverityRulesEditor() {
               <tr key={r.id}>
                 <td className="px-3 py-2 capitalize">{r.severity.replace('_', ' ')}</td>
                 <td className="px-3 py-2"><input type="number" value={r.points} onChange={e => setSafetyRules(prev => prev.map(x => x.id === r.id ? { ...x, points: Number(e.target.value) } : x))} className="w-24 px-2 py-1 border border-gray-300 rounded text-sm" /></td>
+                <td className="px-3 py-2"><input type="number" value={r.dollar_value} onChange={e => setSafetyRules(prev => prev.map(x => x.id === r.id ? { ...x, dollar_value: Number(e.target.value) } : x))} className="w-28 px-2 py-1 border border-gray-300 rounded text-sm" /></td>
               </tr>
             ))}
           </tbody>

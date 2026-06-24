@@ -30,6 +30,19 @@ function scoreBg(score) {
   return 'bg-red-50'
 }
 
+function fmtCurrency(n) {
+  if (n == null) return '—'
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n)
+}
+
+function riskColor(n) {
+  if (n == null) return 'text-gray-400'
+  if (n >= 75000) return 'text-red-700'
+  if (n >= 20000) return 'text-orange-700'
+  if (n > 0) return 'text-yellow-700'
+  return 'text-green-700'
+}
+
 export default function ScoresPage() {
   const [scores, setScores] = useState([])
   const [trendMap, setTrendMap] = useState({})
@@ -145,11 +158,11 @@ export default function ScoresPage() {
   }
 
   function exportCSV() {
-    const headers = ['Rank', 'Vendor', 'Category', 'Safety', 'Schedule', 'Rework', 'Feedback', 'Weighted Total']
+    const headers = ['Rank', 'Vendor', 'Category', 'Safety', 'Schedule', 'Rework', 'Feedback', 'Weighted Total', 'Risk (12mo)']
     const rows = filtered.map((s, i) => [
       i + 1, s.vendors?.name, s.vendors?.vendor_categories?.name,
       s.safety_score ?? '', s.schedule_score ?? '', s.rework_score ?? '',
-      s.feedback_score ?? '', s.weighted_total ?? '',
+      s.feedback_score ?? '', s.weighted_total ?? '', s.risk_exposure_12mo ?? '',
     ])
     const csv = [headers, ...rows].map(r => r.join(',')).join('\n')
     const blob = new Blob([csv], { type: 'text/csv' })
@@ -242,6 +255,18 @@ export default function ScoresPage() {
                   </span>
                 </th>
               ))}
+              <th
+                className="px-4 py-3 font-medium text-gray-600 text-right cursor-pointer hover:text-gray-900 relative group"
+                onClick={() => handleSort('risk_exposure_12mo')}
+              >
+                <span className="flex items-center justify-end gap-1">
+                  Risk (12mo)
+                  <SortIcon field="risk_exposure_12mo" />
+                </span>
+                <div className="hidden group-hover:block absolute right-0 top-full mt-1 w-64 p-2 bg-white border border-gray-200 rounded-lg shadow-lg text-left text-xs font-normal text-gray-600 normal-case z-10">
+                  Estimated 12-month $ exposure from rework backcharge admin overhead, OSHA-anchored safety costs, and no-shows — projected at this vendor's recent job-volume trend.
+                </div>
+              </th>
               <th className="px-4 py-3 font-medium text-gray-600 text-center">Trend</th>
               <th className="px-2 py-3 w-10 no-print" />
             </tr>
@@ -277,6 +302,19 @@ export default function ScoresPage() {
                       </td>
                     )
                   })}
+                  <td className="px-4 py-3 text-right font-mono relative group">
+                    <span className={riskColor(s.risk_exposure_12mo)}>{fmtCurrency(s.risk_exposure_12mo)}</span>
+                    {s.risk_exposure_12mo != null && (
+                      <div className="hidden group-hover:block absolute right-0 top-full mt-1 w-64 p-2 bg-white border border-gray-200 rounded-lg shadow-lg text-left text-xs font-normal text-gray-600 z-10 space-y-0.5">
+                        <p>{s.risk_rework_count} rework instance{s.risk_rework_count === 1 ? '' : 's'} → {fmtCurrency(s.risk_rework_dollar)}</p>
+                        <p>Safety incidents → {fmtCurrency(s.risk_safety_dollar)}</p>
+                        <p>{s.risk_noshow_count} no-show{s.risk_noshow_count === 1 ? '' : 's'} → {fmtCurrency(s.risk_noshow_dollar)}</p>
+                        {s.risk_low_data && (
+                          <p className="text-amber-600 pt-1 border-t border-gray-100 mt-1">Limited schedule history — using observed volume, not yet annualized</p>
+                        )}
+                      </div>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-center">
                     <TrendSparkline history={(trendMap[s.vendor_id] || []).map(h => h.score)} />
                   </td>
@@ -292,7 +330,7 @@ export default function ScoresPage() {
                 </tr>
                 {expandedId === s.id && drillDown && (
                   <tr key={`${s.id}-detail`}>
-                    <td colSpan={10} className="px-4 py-4 bg-blue-50">
+                    <td colSpan={11} className="px-4 py-4 bg-blue-50">
                       <DrillDownPanel
                         data={drillDown}
                         vendorName={s.vendors?.name}
@@ -306,7 +344,7 @@ export default function ScoresPage() {
             ))}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={10} className="px-4 py-12 text-center">
+                <td colSpan={11} className="px-4 py-12 text-center">
                   {search ? (
                     <>
                       <p className="text-sm font-medium text-gray-700">No results for "{search}"</p>
