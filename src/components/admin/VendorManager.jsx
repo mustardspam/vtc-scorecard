@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Fragment } from 'react'
 import { supabase } from '../../lib/supabase'
 import { logActivity } from '../../hooks/useActivityLog'
 import { useAuth } from '../../hooks/useAuth'
-import { Plus, Pencil, Search, Save, X } from 'lucide-react'
+import { Plus, Pencil, Search, Save, X, Merge } from 'lucide-react'
 
 export default function VendorManager() {
   const [vendors, setVendors] = useState([])
@@ -12,6 +12,9 @@ export default function VendorManager() {
   const [editing, setEditing] = useState(null)
   const [creating, setCreating] = useState(false)
   const [form, setForm] = useState({ name: '', category_id: '', is_trade: true })
+  const [merging, setMerging] = useState(null)
+  const [mergeTarget, setMergeTarget] = useState('')
+  const [mergeBusy, setMergeBusy] = useState(false)
   const { user } = useAuth()
 
   useEffect(() => { loadData() }, [])
@@ -55,6 +58,41 @@ export default function VendorManager() {
     setEditing(v.id)
     setForm({ name: v.name, category_id: v.category_id, is_trade: v.is_trade })
     setCreating(true)
+  }
+
+  function startMerge(v) {
+    setMerging(v.id)
+    setMergeTarget('')
+  }
+
+  async function handleConfirmMerge(duplicate) {
+    if (!mergeTarget) return
+    const survivor = vendors.find(v => v.id === mergeTarget)
+    if (!survivor) return
+    if (!confirm(
+      `Merge "${duplicate.name}" into "${survivor.name}"?\n\n` +
+      `All of its history (schedule, safety, rework, feedback) will move to ${survivor.name}, ` +
+      `scores will be recalculated, and "${duplicate.name}" will be deactivated. This cannot be undone from the UI.`
+    )) return
+
+    setMergeBusy(true)
+    const { error } = await supabase.rpc('merge_vendors', {
+      p_duplicate_id: duplicate.id,
+      p_survivor_id: survivor.id,
+    })
+    setMergeBusy(false)
+
+    if (error) {
+      alert(`Merge failed: ${error.message}`)
+      return
+    }
+
+    await logActivity('vendor_merged', `Merged vendor: ${duplicate.name} into ${survivor.name}`, {
+      duplicate_name: duplicate.name, survivor_name: survivor.name,
+    })
+    setMerging(null)
+    setMergeTarget('')
+    loadData()
   }
 
   const filtered = vendors.filter(v =>
@@ -130,23 +168,60 @@ export default function VendorManager() {
           </thead>
           <tbody className="divide-y divide-gray-100">
             {filtered.map(v => (
-              <tr key={v.id} className={!v.is_active ? 'opacity-50' : ''}>
-                <td className="px-3 py-2 font-medium">{v.name}</td>
-                <td className="px-3 py-2 text-gray-500">{v.vendor_categories?.name}</td>
-                <td className="px-3 py-2 text-gray-500">{v.is_trade ? 'Trade' : 'Vendor'}</td>
-                <td className="px-3 py-2">
-                  <button onClick={() => handleToggleActive(v.id, v.name, v.is_active)}
-                    title={v.is_active ? 'Click to deactivate' : 'Click to reactivate'}
-                    className={`text-xs px-2 py-0.5 rounded cursor-pointer ${v.is_active ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
-                    {v.is_active ? 'Active' : 'Inactive'}
-                  </button>
-                </td>
-                <td className="px-3 py-2 text-right">
-                  <div className="flex items-center justify-end gap-1">
-                    <button onClick={() => startEdit(v)} className="p-1 text-gray-400 hover:text-blue-600"><Pencil className="w-3.5 h-3.5" /></button>
-                  </div>
-                </td>
-              </tr>
+              <Fragment key={v.id}>
+                <tr className={!v.is_active ? 'opacity-50' : ''}>
+                  <td className="px-3 py-2 font-medium">{v.name}</td>
+                  <td className="px-3 py-2 text-gray-500">{v.vendor_categories?.name}</td>
+                  <td className="px-3 py-2 text-gray-500">{v.is_trade ? 'Trade' : 'Vendor'}</td>
+                  <td className="px-3 py-2">
+                    {v.merged_into ? (
+                      <span className="text-xs px-2 py-0.5 rounded bg-purple-100 text-purple-700"
+                        title={`Merged into ${vendors.find(x => x.id === v.merged_into)?.name || ''}`}>
+                        Merged
+                      </span>
+                    ) : (
+                      <button onClick={() => handleToggleActive(v.id, v.name, v.is_active)}
+                        title={v.is_active ? 'Click to deactivate' : 'Click to reactivate'}
+                        className={`text-xs px-2 py-0.5 rounded cursor-pointer ${v.is_active ? 'bg-green-100 text-green-700 hover:bg-green-200' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}>
+                        {v.is_active ? 'Active' : 'Inactive'}
+                      </button>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <div className="flex items-center justify-end gap-1">
+                      {!v.merged_into && (
+                        <button onClick={() => startMerge(v)} title="Merge into another vendor" className="p-1 text-gray-400 hover:text-purple-600">
+                          <Merge className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      <button onClick={() => startEdit(v)} className="p-1 text-gray-400 hover:text-blue-600"><Pencil className="w-3.5 h-3.5" /></button>
+                    </div>
+                  </td>
+                </tr>
+                {merging === v.id && (
+                  <tr className="bg-purple-50">
+                    <td colSpan={5} className="px-3 py-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-gray-700">Merge <strong>{v.name}</strong> into:</span>
+                        <select value={mergeTarget} onChange={e => setMergeTarget(e.target.value)}
+                          className="px-2 py-1.5 text-sm border border-gray-300 rounded-lg bg-white min-w-[240px]">
+                          <option value="">Select surviving vendor...</option>
+                          {vendors.filter(o => o.id !== v.id && o.is_active && !o.merged_into).map(o => (
+                            <option key={o.id} value={o.id}>{o.name}</option>
+                          ))}
+                        </select>
+                        <button onClick={() => handleConfirmMerge(v)} disabled={!mergeTarget || mergeBusy}
+                          className="flex items-center gap-1 px-3 py-1.5 text-sm bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50">
+                          <Merge className="w-3.5 h-3.5" /> {mergeBusy ? 'Merging...' : 'Confirm Merge'}
+                        </button>
+                        <button onClick={() => setMerging(null)} className="flex items-center gap-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">
+                          <X className="w-3.5 h-3.5" /> Cancel
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
             ))}
           </tbody>
         </table>
