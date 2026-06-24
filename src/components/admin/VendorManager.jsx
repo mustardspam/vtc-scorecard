@@ -76,23 +76,24 @@ export default function VendorManager() {
     )) return
 
     setMergeBusy(true)
-    const { error } = await supabase.rpc('merge_vendors', {
-      p_duplicate_id: duplicate.id,
-      p_survivor_id: survivor.id,
-    })
-    setMergeBusy(false)
+    try {
+      const { error } = await supabase.rpc('merge_vendors', {
+        p_duplicate_id: duplicate.id,
+        p_survivor_id: survivor.id,
+      })
+      if (error) throw error
 
-    if (error) {
-      alert(`Merge failed: ${error.message}`)
-      return
+      await logActivity('vendor_merged', `Merged vendor: ${duplicate.name} into ${survivor.name}`, {
+        duplicate_name: duplicate.name, survivor_name: survivor.name,
+      })
+      setMerging(null)
+      setMergeTarget('')
+      loadData()
+    } catch (err) {
+      alert(`Merge failed: ${err.message}`)
+    } finally {
+      setMergeBusy(false)
     }
-
-    await logActivity('vendor_merged', `Merged vendor: ${duplicate.name} into ${survivor.name}`, {
-      duplicate_name: duplicate.name, survivor_name: survivor.name,
-    })
-    setMerging(null)
-    setMergeTarget('')
-    loadData()
   }
 
   const filtered = vendors.filter(v =>
