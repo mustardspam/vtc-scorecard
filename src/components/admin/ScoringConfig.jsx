@@ -42,13 +42,16 @@ export default function ScoringConfig() {
   const [config, setConfig] = useState({})
   const [thresholds, setThresholds] = useState({ threshold_good: 85, threshold_watch: 70, threshold_probation: 50 })
   const [minData, setMinData] = useState({ min_schedule_jobs: 5, min_feedback_count: 3, min_safety_records: 1, min_rework_records: 1 })
+  const [riskConfig, setRiskConfig] = useState({ rework_overhead_dollar: 150, no_show_dollar: 300, min_risk_months: 3 })
   const [saving, setSaving] = useState(false)
   const [savingThresholds, setSavingThresholds] = useState(false)
   const [savingMin, setSavingMin] = useState(false)
+  const [savingRisk, setSavingRisk] = useState(false)
   const [calculating, setCalculating] = useState(false)
   const [message, setMessage] = useState('')
   const [thresholdMsg, setThresholdMsg] = useState('')
   const [minMsg, setMinMsg] = useState('')
+  const [riskMsg, setRiskMsg] = useState('')
   const { user } = useAuth()
 
   useEffect(() => { loadConfig() }, [])
@@ -69,6 +72,31 @@ export default function ScoringConfig() {
       min_safety_records: map.min_safety_records != null ? Number(map.min_safety_records) : 1,
       min_rework_records: map.min_rework_records != null ? Number(map.min_rework_records) : 1,
     })
+    setRiskConfig({
+      rework_overhead_dollar: map.rework_overhead_dollar != null ? Number(map.rework_overhead_dollar) : 150,
+      no_show_dollar: map.no_show_dollar != null ? Number(map.no_show_dollar) : 300,
+      min_risk_months: map.min_risk_months != null ? Number(map.min_risk_months) : 3,
+    })
+  }
+
+  async function handleSaveRisk() {
+    setSavingRisk(true)
+    setRiskMsg('')
+    try {
+      for (const [key, value] of Object.entries(riskConfig)) {
+        const { error } = await supabase
+          .from('system_config')
+          .upsert({ key, value: String(value), updated_by: user.id, updated_at: new Date().toISOString() }, { onConflict: 'key' })
+        if (error) throw error
+      }
+      await logActivity('rules_updated', 'Updated risk exposure config', { riskConfig })
+      setRiskMsg('Risk config saved — recalculate scores to apply')
+      setTimeout(() => setRiskMsg(''), 4000)
+    } catch (err) {
+      setRiskMsg('Error: ' + (err.message || 'Save failed'))
+    } finally {
+      setSavingRisk(false)
+    }
   }
 
   async function handleSaveMin() {
@@ -307,6 +335,61 @@ export default function ScoringConfig() {
             <Save className="w-4 h-4" /> {savingMin ? 'Saving...' : 'Save Minimums'}
           </button>
           {minMsg && <span className="text-xs text-green-600">{minMsg}</span>}
+        </div>
+      </div>
+
+      {/* Risk (12mo) exposure config */}
+      <div>
+        <h2 className="text-lg font-semibold mb-1">Risk (12mo) Exposure</h2>
+        <p className="text-sm text-gray-500 mb-4">
+          Display-only $ projection shown on the Scores page and report cards — not part of the weighted score. Safety $ values are set per severity tier in the Severity Rules panel above.
+        </p>
+        <div className="grid grid-cols-3 gap-4 mb-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Rework overhead $ (per instance)</label>
+            <p className="text-xs text-gray-400 mb-1">Admin overhead per backcharge — VPO, re-inspection, resequencing, AP. Excludes the recouped material/labor cost.</p>
+            <input
+              type="number"
+              value={riskConfig.rework_overhead_dollar}
+              onChange={e => setRiskConfig(c => ({ ...c, rework_overhead_dollar: Number(e.target.value) }))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">No-show $ (per instance)</label>
+            <p className="text-xs text-gray-400 mb-1">Estimated cost of a lost day.</p>
+            <input
+              type="number"
+              value={riskConfig.no_show_dollar}
+              onChange={e => setRiskConfig(c => ({ ...c, no_show_dollar: Number(e.target.value) }))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Min. months for trend projection</label>
+            <p className="text-xs text-gray-400 mb-1">Below this many distinct months of schedule history, exposure uses the actual trailing volume instead of an annualized trend.</p>
+            <input
+              type="number"
+              min={1}
+              value={riskConfig.min_risk_months}
+              onChange={e => setRiskConfig(c => ({ ...c, min_risk_months: Number(e.target.value) }))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+            />
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleSaveRisk}
+            disabled={savingRisk}
+            className="flex items-center gap-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+          >
+            <Save className="w-4 h-4" /> {savingRisk ? 'Saving...' : 'Save Risk Config'}
+          </button>
+          {riskMsg && (
+            <span className={`text-xs ${riskMsg.startsWith('Error') ? 'text-red-600' : 'text-green-600'}`}>
+              {riskMsg}
+            </span>
+          )}
         </div>
       </div>
 

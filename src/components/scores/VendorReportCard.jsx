@@ -13,6 +13,11 @@ function fmt(v) {
   return v != null ? Number(v).toFixed(1) : '—'
 }
 
+function fmtCurrency(v) {
+  if (v == null) return '—'
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(v)
+}
+
 function ScoreBox({ label, value, getTier, large }) {
   const tier = getTier(value)
   return (
@@ -144,6 +149,32 @@ export default function VendorReportCard({ scoreRow, getTier, onClose }) {
                 {SCORE_FIELDS.map(({ label, key, large }) => (
                   <ScoreBox key={key} label={label} value={scoreRow[key]} getTier={getTier} large={large} />
                 ))}
+              </div>
+            </div>
+
+            {/* Risk (12mo) — display-only, not part of the weighted score above */}
+            <div>
+              <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3 flex items-center gap-1.5 relative w-fit group">
+                Risk (12mo)
+                <span className="text-gray-300 cursor-help no-print">ⓘ</span>
+                <div className="hidden group-hover:block absolute left-0 top-full mt-1 w-72 p-2.5 bg-white border border-gray-200 rounded-lg shadow-lg text-left text-xs font-normal normal-case text-gray-600 z-10 no-print">
+                  Estimated 12-month $ exposure if this vendor continues at its current trend: rework backcharge admin overhead + OSHA-anchored safety costs + no-shows, scaled to a trend-adjusted job volume. Separate from the score above — does not affect it.
+                </div>
+              </h2>
+              <div className="rounded-lg border border-red-200 bg-red-50 p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-2xl font-bold text-red-700">{fmtCurrency(scoreRow.risk_exposure_12mo)}</p>
+                  {scoreRow.risk_low_data && (
+                    <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-0.5">
+                      Limited schedule history — not yet annualized
+                    </span>
+                  )}
+                </div>
+                <div className="grid grid-cols-3 gap-3 text-xs text-gray-600">
+                  <p>{scoreRow.risk_rework_count} rework instance{scoreRow.risk_rework_count === 1 ? '' : 's'} → <span className="font-medium text-gray-800">{fmtCurrency(scoreRow.risk_rework_dollar)}</span></p>
+                  <p>Safety incidents → <span className="font-medium text-gray-800">{fmtCurrency(scoreRow.risk_safety_dollar)}</span></p>
+                  <p>{scoreRow.risk_noshow_count} no-show{scoreRow.risk_noshow_count === 1 ? '' : 's'} → <span className="font-medium text-gray-800">{fmtCurrency(scoreRow.risk_noshow_dollar)}</span></p>
+                </div>
               </div>
             </div>
 
