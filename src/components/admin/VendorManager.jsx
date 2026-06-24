@@ -77,10 +77,16 @@ export default function VendorManager() {
 
     setMergeBusy(true)
     try {
-      const { error } = await supabase.rpc('merge_vendors', {
-        p_duplicate_id: duplicate.id,
-        p_survivor_id: survivor.id,
-      })
+      const timeout = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Timed out waiting for a response. The merge may have completed on the server — refresh and check before retrying.')), 20000)
+      )
+      const { error } = await Promise.race([
+        supabase.rpc('merge_vendors', {
+          p_duplicate_id: duplicate.id,
+          p_survivor_id: survivor.id,
+        }),
+        timeout,
+      ])
       if (error) throw error
 
       await logActivity('vendor_merged', `Merged vendor: ${duplicate.name} into ${survivor.name}`, {
