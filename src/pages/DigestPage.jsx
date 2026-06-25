@@ -216,23 +216,21 @@ export default function DigestPage() {
     setSending(true)
     setSendStatus(null)
     try {
-      const { data: patRow } = await supabase.from('system_config').select('value').eq('key', 'github_pat').single()
-      const pat = patRow?.value
-      if (!pat) {
-        setSendStatus({ error: 'No GitHub PAT configured. Add key "github_pat" in system_config via the Admin panel.' })
+      const token = useAuth.getState().session?.access_token
+      if (!token) {
+        setSendStatus({ error: 'Not signed in' })
         return
       }
-      const res = await fetch('https://api.github.com/repos/mustardspam/vtc-scorecard/actions/workflows/digest-email.yml/dispatches', {
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/trigger-digest`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${pat}`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ref: 'main' }),
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       })
-      if (res.status === 204) {
+      const body = await res.json().catch(() => ({}))
+      if (res.ok && body.success) {
         setSendStatus({ success: true })
         setTimeout(() => setSendStatus(null), 4000)
       } else {
-        const body = await res.json().catch(() => ({}))
-        setSendStatus({ error: body.message || `GitHub API error ${res.status}` })
+        setSendStatus({ error: body.error || `Request failed (${res.status})` })
       }
     } catch (err) {
       setSendStatus({ error: err.message })
