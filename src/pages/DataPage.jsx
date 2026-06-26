@@ -5,6 +5,7 @@ import { Search, ChevronDown, ChevronUp, Database, Trash2 } from 'lucide-react'
 import { cn } from '../lib/cn'
 import CategoryChip from '../components/ui/CategoryChip'
 import { categoryChipStyle, BRAND_CHIPS, TYPE_CHIPS } from '../lib/design/tokens'
+import { formatJcVendorIds } from '../lib/formatJcVendorIds'
 
 export default function DataPage() {
   const [tab, setTab] = useState('vendors')
@@ -43,7 +44,7 @@ export default function DataPage() {
           id, name, code, brand, is_active,
           vendor_community_assignments(
             cost_code,
-            vendors(id, name, is_trade, vendor_categories(name))
+            vendors(id, name, is_trade, vendor_categories(name), vendor_brand_references(brand, jc_vendor_id))
           )
         `).eq('is_active', true).order('name'),
         supabase.from('vendor_categories').select('*').order('sort_order'),
@@ -374,18 +375,11 @@ function VendorList({ vendors, categories, onCategoryChange, selectedIds, onTogg
                         </span>
                       </div>
 
-                      {brandRefs.length > 0 && (
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          {brandRefs.map(r => (
-                            <span key={r.jc_vendor_id} className={`text-xs font-mono px-1.5 py-0.5 rounded border ${
-                              r.brand === 'Starlight'
-                                ? 'bg-yellow-50 text-yellow-800 border-yellow-200'
-                                : 'bg-blue-50 text-blue-800 border-blue-200'
-                            }`}>
-                              {r.brand === 'Starlight' ? 'SL' : 'AW'}:{r.jc_vendor_id}
-                            </span>
-                          ))}
-                        </div>
+                      {formatJcVendorIds(brandRefs) && (
+                        <p className="text-xs text-gray-500">
+                          <span className="font-medium text-gray-600">Vendor ID:</span>{' '}
+                          <span className="font-mono">{formatJcVendorIds(brandRefs)}</span>
+                        </p>
                       )}
                     </div>
                   </div>
@@ -545,10 +539,17 @@ function CommunityList({ communities }) {
                       <p className="text-xs font-medium text-gray-500 mb-2">Assigned Vendors & Trades</p>
                       {uniqueVendors.map(v => {
                         const catName = v.vendor_categories?.name
+                        const jcIds = formatJcVendorIds(v.vendor_brand_references)
                         return (
                           <div key={v.id} className="flex items-center justify-between px-3 py-2 rounded-lg" style={{ background: 'var(--g-panel-2)', border: '1px solid var(--g-line)' }}>
                             <div className="min-w-0 flex-1">
                               <p className="text-xs font-medium truncate" style={{ color: 'var(--g-text)' }}>{v.name}</p>
+                              {jcIds && (
+                                <p className="text-xs mt-0.5" style={{ color: 'var(--g-dim)' }}>
+                                  <span className="font-medium">Vendor ID:</span>{' '}
+                                  <span className="font-mono">{jcIds}</span>
+                                </p>
+                              )}
                               <div className="flex items-center gap-1.5 mt-0.5">
                                 {catName && <CategoryChip name={catName} />}
                                 <span className="glass-category-chip" style={{ background: (v.is_trade ? TYPE_CHIPS.Trade : TYPE_CHIPS.Vendor).bg, color: (v.is_trade ? TYPE_CHIPS.Trade : TYPE_CHIPS.Vendor).text }}>

@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { X, Printer } from 'lucide-react'
+import { tierPillStyle, tierValueColor } from '../../lib/design/tokens'
+import { formatJcVendorIds } from '../../lib/formatJcVendorIds'
 
 const SEVERITY_BADGE = {
   kudos: 'bg-green-100 text-green-700',
@@ -17,8 +19,6 @@ function fmtCurrency(v) {
   if (v == null) return '—'
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(v)
 }
-
-import { tierPillStyle, tierValueColor } from '../../lib/design/tokens'
 
 function ScoreBox({ label, value, getTier, large }) {
   const tier = getTier(value)
@@ -54,7 +54,7 @@ export default function VendorReportCard({ scoreRow, getTier, onClose }) {
       setLoadError('')
       setData(null)
       try {
-        const [snapRes, feedRes, safeRes, rwRes, assignRes] = await Promise.all([
+        const [snapRes, feedRes, safeRes, rwRes, assignRes, brandRes] = await Promise.all([
           supabase
             .from('snapshot_score_results')
             .select('weighted_total, safety_score, schedule_score, rework_score, feedback_score, snapshots(name, created_at)')
@@ -82,9 +82,13 @@ export default function VendorReportCard({ scoreRow, getTier, onClose }) {
             .from('vendor_community_assignments')
             .select('community_id, communities(code)')
             .eq('vendor_id', vendorId),
+          supabase
+            .from('vendor_brand_references')
+            .select('brand, jc_vendor_id')
+            .eq('vendor_id', vendorId),
         ])
 
-        for (const res of [snapRes, feedRes, safeRes, rwRes, assignRes]) {
+        for (const res of [snapRes, feedRes, safeRes, rwRes, assignRes, brandRes]) {
           if (res.error) throw res.error
         }
 
@@ -108,13 +112,14 @@ export default function VendorReportCard({ scoreRow, getTier, onClose }) {
             safety: safeRes.data || [],
             rework: rwRes.data || [],
             communityCodes,
+            brandRefs: brandRes.data || [],
           })
         }
       } catch (err) {
         console.error('VendorReportCard load error:', err)
         if (mounted) {
           setLoadError('Could not load report data. Please try again.')
-          setData({ snapshots: [], feedback: [], safety: [], rework: [], communityCodes: [] })
+          setData({ snapshots: [], feedback: [], safety: [], rework: [], communityCodes: [], brandRefs: [] })
         }
       } finally {
         if (mounted) setLoading(false)
@@ -124,7 +129,7 @@ export default function VendorReportCard({ scoreRow, getTier, onClose }) {
     if (vendorId) load()
     else if (mounted) {
       setLoading(false)
-      setData({ snapshots: [], feedback: [], safety: [], rework: [], communityCodes: [] })
+      setData({ snapshots: [], feedback: [], safety: [], rework: [], communityCodes: [], brandRefs: [] })
     }
 
     return () => { mounted = false }
@@ -181,6 +186,12 @@ export default function VendorReportCard({ scoreRow, getTier, onClose }) {
                 </p>
                 <h1 className="text-2xl font-bold text-gray-900">{vendorName}</h1>
                 {category && <p className="text-sm text-gray-500 mt-0.5">{category}</p>}
+                {formatJcVendorIds(data?.brandRefs) && (
+                  <p className="text-sm text-gray-500 mt-0.5">
+                    <span className="text-gray-600">Vendor ID:</span>{' '}
+                    <span className="font-mono text-xs">{formatJcVendorIds(data.brandRefs)}</span>
+                  </p>
+                )}
                 <p className="text-sm text-gray-500 mt-0.5">
                   {scoreRow.schedule_total_jobs ?? 0} job{(scoreRow.schedule_total_jobs ?? 0) === 1 ? '' : 's'} in score period
                 </p>
