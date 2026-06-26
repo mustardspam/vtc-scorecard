@@ -10,7 +10,6 @@ const FILE_TYPES = [
   { value: 'safety', label: 'Safety Data', description: 'Safety incident records' },
   { value: 'rework', label: 'Rework / Backcharges', description: 'Backcharge records with costs' },
   { value: 'vendor_master', label: 'Vendor Master List', description: 'Master list of vendors/trades' },
-  { value: 'community_reference', label: 'Community Reference', description: 'Community/neighborhood list' },
   { value: 'jc_vendor_report', label: 'JC Vendor Report', description: 'JC Preferred Vendors pivot report (auto-parses vendors + communities)' },
 ]
 
@@ -19,7 +18,6 @@ const REQUIRED_FIELDS = {
   safety: ['vendor_name', 'severity'],
   rework: ['vendor_name', 'cost'],
   vendor_master: ['vendor_name', 'category'],
-  community_reference: ['name', 'code'],
 }
 
 const INTERNAL_FIELDS = {
@@ -27,7 +25,6 @@ const INTERNAL_FIELDS = {
   safety: ['vendor_name', 'severity', 'incident_date', 'incident_type', 'community'],
   rework: ['vendor_name', 'cost', 'rework_date', 'description', 'severity', 'lot_or_address', 'community'],
   vendor_master: ['vendor_name', 'vendor_id', 'category'],
-  community_reference: ['name', 'code', 'brand'],
 }
 
 function importTypeLabel(batch) {
@@ -373,7 +370,6 @@ export default function UploadsPage() {
       else if (fileType === 'safety') await insertSafetyRecords(batch.id, mappedRows, vendorMap)
       else if (fileType === 'rework') await insertReworkRecords(batch.id, mappedRows, vendorMap)
       else if (fileType === 'vendor_master') await insertVendorMaster(mappedRows)
-      else if (fileType === 'community_reference') await insertCommunityReference(mappedRows)
 
       if (['schedule', 'safety', 'rework'].includes(fileType)) {
         await supabase.rpc('calculate_scores')
@@ -408,28 +404,13 @@ export default function UploadsPage() {
     try {
       const activeCommunities = jcParsed.communities.filter(c => selectedCommunities.has(c.code))
 
-      // 1. Check/insert communities — fetch ALL then filter client-side (avoids .in() encoding issues)
-      setImportProgress(`Checking ${activeCommunities.length} communities...`)
-      console.log('[JC] Step 1: fetching all communities')
-      const { data: allExistingComms, error: existingCommErr } = await withTimeout(
-        supabase.from('communities').select('code'),
-        60000, 'communities SELECT'
+      // 1. Upsert communities by short code parsed from JC column headers
+      setImportProgress(`Upserting ${activeCommunities.length} communities...`)
+      const { error: upsertCommErr } = await supabase.from('communities').upsert(
+        activeCommunities.map(c => ({ name: c.name, code: c.code, brand, is_active: true })),
+        { onConflict: 'code' }
       )
-      console.log('[JC] Step 1 result:', allExistingComms?.length, existingCommErr)
-      if (existingCommErr) throw new Error('Fetch existing communities failed: ' + existingCommErr.message)
-
-      const existingCommCodes = new Set((allExistingComms || []).map(c => c.code))
-      const missingComms = activeCommunities.filter(c => !existingCommCodes.has(c.code))
-      console.log('[JC] Step 1: existing =', existingCommCodes.size, 'missing =', missingComms.length)
-
-      if (missingComms.length > 0) {
-        setImportProgress(`Inserting ${missingComms.length} new communities...`)
-        const { error: insertCommErr } = await supabase.from('communities').insert(
-          missingComms.map(c => ({ name: c.code, code: c.code, brand, is_active: true }))
-        )
-        console.log('[JC] Step 1 insert result:', insertCommErr)
-        if (insertCommErr) throw new Error('Communities insert failed: ' + insertCommErr.message)
-      }
+      if (upsertCommErr) throw new Error('Communities upsert failed: ' + upsertCommErr.message)
 
       // 2. Fetch lookup maps
       setImportProgress('Fetching communities...')
@@ -699,18 +680,6 @@ export default function UploadsPage() {
     loadVendors()
   }
 
-  async function insertCommunityReference(rows) {
-    for (const row of rows) {
-      if (!row.name || !row.code) continue
-      await supabase.from('communities').upsert({
-        name: row.name,
-        code: row.code,
-        brand: row.brand || null,
-        is_active: true,
-      }, { onConflict: 'code' })
-    }
-  }
-
   function resetUpload() {
     setStep('upload')
     setFile(null)
@@ -909,6 +878,7 @@ export default function UploadsPage() {
                     return (
                       <button
                         key={c.code}
+                        title={c.name}
                         onClick={() => setSelectedCommunities(prev => {
                           const next = new Set(prev)
                           if (next.has(c.code)) next.delete(c.code)
