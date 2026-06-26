@@ -2,16 +2,16 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useThresholds } from '../hooks/useThresholds'
 import { useAuth } from '../hooks/useAuth'
+import { useScoreData } from '../hooks/useScoreData'
+import { useReferenceData } from '../hooks/useReferenceData'
 import { Mail, Copy, Check, Printer, RefreshCw, TrendingUp, TrendingDown, Minus, Send } from 'lucide-react'
 
 export default function DigestPage() {
-  const [scores, setScores] = useState([])
   const [snapshots, setSnapshots] = useState([])
   const [priorScores, setPriorScores] = useState([])
   const [recentFeedback, setRecentFeedback] = useState([])
-  const [weights, setWeights] = useState(null)
   const [minConfig, setMinConfig] = useState({ min_schedule_jobs: 5, min_feedback_count: 3, min_safety_records: 1, min_rework_records: 1 })
-  const [loading, setLoading] = useState(true)
+  const [metaLoading, setMetaLoading] = useState(true)
   const [copied, setCopied] = useState(false)
   const [sending, setSending] = useState(false)
   const [sendStatus, setSendStatus] = useState(null)
@@ -19,20 +19,20 @@ export default function DigestPage() {
   const { getTier } = useThresholds()
   const { isManager } = useAuth()
   const canSend = isManager()
+  const { scores, loading: scoresLoading } = useScoreData()
+  const { weights } = useReferenceData({ weights: true })
 
-  useEffect(() => { loadData() }, [])
+  useEffect(() => { loadMeta() }, [])
 
-  async function loadData() {
-    setLoading(true)
+  async function loadMeta() {
+    setMetaLoading(true)
     try {
     const since = new Date()
     since.setDate(since.getDate() - 30)
 
-    const [scoresRes, snapshotsRes, feedbackRes, weightsRes, minConfigRes] = await Promise.all([
-      supabase.from('score_results').select('*, vendors(name, vendor_categories(name))').order('weighted_total', { ascending: false, nullsFirst: false }),
+    const [snapshotsRes, feedbackRes, minConfigRes] = await Promise.all([
       supabase.from('snapshots').select('id, name, created_at').ilike('name', 'Week ending%').order('created_at', { ascending: false }).limit(1),
       supabase.from('builder_feedback').select('category, severity, points, vendors(name), submitter:profiles!builder_feedback_submitted_by_fkey(full_name)').eq('is_approved', true).gte('submitted_at', since.toISOString()).order('submitted_at', { ascending: false }).limit(50),
-      supabase.from('score_weights').select('*').eq('is_current', true).single(),
       supabase.from('system_config').select('key, value').in('key', ['min_schedule_jobs', 'min_feedback_count', 'min_safety_records', 'min_rework_records']),
     ])
 
@@ -46,29 +46,28 @@ export default function DigestPage() {
       prior = priorData || []
     }
 
-    const allScores = scoresRes.data || []
-    const filtered = allScores.filter(s => {
-      if (s.schedule_score != null && (s.schedule_total_jobs ?? 0) < parsedMin.min_schedule_jobs) return false
-      if (s.feedback_score != null && (s.feedback_count ?? 0) < parsedMin.min_feedback_count) return false
-      if (s.safety_score != null && parsedMin.min_safety_records > 0 && (s.safety_incident_count ?? 0) < parsedMin.min_safety_records) return false
-      if (s.rework_score != null && parsedMin.min_rework_records > 0 && (s.rework_count ?? 0) < parsedMin.min_rework_records) return false
-      return true
-    })
-
-    setScores(filtered)
     setMinConfig(parsedMin)
     setSnapshots(snaps)
     setPriorScores(prior)
     setRecentFeedback(feedbackRes.data || [])
-    setWeights(weightsRes.data)
     } catch (err) {
-      console.error('loadData error:', err)
+      console.error('loadMeta error:', err)
     } finally {
-      setLoading(false)
+      setMetaLoading(false)
     }
   }
 
-  const valid = scores.filter(s => s.weighted_total != null)
+  const loading = metaLoading || scoresLoading
+
+  const filteredScores = scores.filter(s => {
+    if (s.schedule_score != null && (s.schedule_total_jobs ?? 0) < minConfig.min_schedule_jobs) return false
+    if (s.feedback_score != null && (s.feedback_count ?? 0) < minConfig.min_feedback_count) return false
+    if (s.safety_score != null && minConfig.min_safety_records > 0 && (s.safety_incident_count ?? 0) < minConfig.min_safety_records) return false
+    if (s.rework_score != null && minConfig.min_rework_records > 0 && (s.rework_count ?? 0) < minConfig.min_rework_records) return false
+    return true
+  })
+
+  const valid = filteredScores.filter(s => s.weighted_total != null)
   const tierCounts = { Good: 0, Watch: 0, Probation: 0, Critical: 0 }
   for (const s of valid) {
     const t = getTier(s.weighted_total)
@@ -273,7 +272,7 @@ export default function DigestPage() {
         </div>
         <div className="flex flex-col items-end gap-2">
           <div className="flex items-center gap-2">
-            <button onClick={loadData} className="flex items-center gap-1 glass-btn-secondary text-sm py-1.5">
+            <button onClick={loadMeta} className="flex items-center gap-1 glass-btn-secondary text-sm py-1.5">
               <RefreshCw className="w-4 h-4" /> Refresh
             </button>
             <button onClick={handleCopy} className="flex items-center gap-1 px-3 py-1.5 text-sm bg-teal-600 text-white rounded-lg hover:bg-teal-700">

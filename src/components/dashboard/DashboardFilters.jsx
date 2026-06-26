@@ -1,21 +1,7 @@
-import { useState, useEffect } from 'react'
-import { supabase } from '../../lib/supabase'
+import { useReferenceData } from '../../hooks/useReferenceData'
 
 export default function DashboardFilters({ filters, onChange }) {
-  const [categories, setCategories] = useState([])
-  const [communities, setCommunities] = useState([])
-
-  useEffect(() => {
-    async function load() {
-      const [catRes, comRes] = await Promise.all([
-        supabase.from('vendor_categories').select('*').order('sort_order'),
-        supabase.from('communities').select('*').eq('is_active', true).order('name')
-      ])
-      setCategories(catRes.data || [])
-      setCommunities(comRes.data || [])
-    }
-    load()
-  }, [])
+  const { categories, communities } = useReferenceData({ categories: true, communities: true })
 
   return (
     <div className="flex items-center gap-2 flex-wrap">

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { logActivity } from '../../hooks/useActivityLog'
 import { useAuth } from '../../hooks/useAuth'
+import { useReferenceData } from '../../hooks/useReferenceData'
 import { RotateCcw, Save } from 'lucide-react'
 
 const DEFAULTS = {
@@ -20,34 +21,21 @@ const LABELS = {
 
 export default function WeightSliders() {
   const [weights, setWeights] = useState(DEFAULTS)
-  const [weightId, setWeightId] = useState(null)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
   const { isManager, isAdmin } = useAuth()
   const canEdit = isManager() || isAdmin()
+  const { weights: storedWeights, weightId, invalidateWeights } = useReferenceData({ weights: true })
 
   useEffect(() => {
-    let mounted = true
-    loadWeights(mounted)
-    return () => { mounted = false }
-  }, [])
-
-  async function loadWeights(mounted = true) {
-    try {
-      const { data } = await supabase.from('score_weights').select('*').eq('is_current', true).single()
-      if (mounted && data) {
-        setWeightId(data.id)
-        setWeights({
-          safety_weight: Number(data.safety_weight),
-          schedule_weight: Number(data.schedule_weight),
-          rework_weight: Number(data.rework_weight),
-          feedback_weight: Number(data.feedback_weight),
-        })
-      }
-    } catch (err) {
-      console.error('loadWeights error:', err)
-    }
-  }
+    if (!storedWeights) return
+    setWeights({
+      safety_weight: Number(storedWeights.safety_weight),
+      schedule_weight: Number(storedWeights.schedule_weight),
+      rework_weight: Number(storedWeights.rework_weight),
+      feedback_weight: Number(storedWeights.feedback_weight),
+    })
+  }, [storedWeights])
 
   const total = Object.values(weights).reduce((sum, v) => sum + v, 0)
   const isValid = Math.abs(total - 1) < 0.001
@@ -73,6 +61,7 @@ export default function WeightSliders() {
 
     if (!error) {
       await logActivity('weights_changed', 'Updated score weights', { before, after: weights })
+      invalidateWeights()
       setMessage('Weights saved successfully')
     } else {
       setMessage('Error saving weights')
@@ -89,6 +78,7 @@ export default function WeightSliders() {
         .update({ ...DEFAULTS, inspections_weight: 0, warranty_weight: 0, updated_at: new Date().toISOString() })
         .eq('id', weightId)
       await logActivity('weights_reset', 'Reset weights to default settings', { before, after: DEFAULTS })
+      invalidateWeights()
     }
     setMessage('Weights reset to defaults')
   }

@@ -1,57 +1,39 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { useThresholds } from '../hooks/useThresholds'
+import { useReferenceData } from '../hooks/useReferenceData'
 import { tierPillStyle, tierValueColor } from '../lib/design/tokens'
-import TierBadge from '../components/scores/TierBadge'
 import { MapPin, ThumbsUp, ThumbsDown, Users, Building2 } from 'lucide-react'
 
 export default function CommunityPage() {
-  const [communities, setCommunities] = useState([])
   const [selectedId, setSelectedId] = useState('')
   const [vendorRows, setVendorRows] = useState([])
-  const [feedbackStats, setFeedbackStats] = useState([])
   const [loading, setLoading] = useState(false)
   const [loadingCommunities, setLoadingCommunities] = useState(true)
   const { getTier } = useThresholds()
+  const { communities, loadCommunities } = useReferenceData({ communities: true })
 
   useEffect(() => {
-    let mounted = true
-    supabase
-      .from('communities')
-      .select('id, name, code, brand')
-      .eq('is_active', true)
-      .order('name')
-      .then(({ data }) => {
-        if (mounted) {
-          setCommunities(data || [])
-          setLoadingCommunities(false)
-        }
-      })
-      .catch(() => { if (mounted) setLoadingCommunities(false) })
-    return () => { mounted = false }
-  }, [])
+    loadCommunities().then(() => setLoadingCommunities(false))
+  }, [loadCommunities])
 
-  useEffect(() => {
-    if (!selectedId) return
-    let mounted = true
-    loadCommunityData(selectedId, mounted)
-    return () => { mounted = false }
-  }, [selectedId])
-
-  async function loadCommunityData(communityId, mounted = true) {
+  const loadCommunityData = useCallback(async (communityId, mounted = true) => {
     setLoading(true)
     try {
-    const [assignRes, scoreRes, feedbackRes] = await Promise.all([
-      // Vendors assigned to this community
-      supabase
-        .from('vendor_community_assignments')
-        .select('cost_code, vendors(id, name, vendor_categories(name), is_active)')
-        .eq('community_id', communityId),
-      // Current scores for all vendors
-      supabase
-        .from('score_results')
-        .select('vendor_id, weighted_total, safety_score, schedule_score, rework_score, feedback_score, schedule_total_jobs, feedback_count'),
-      // Feedback submitted for this community
+    const assignRes = await supabase
+      .from('vendor_community_assignments')
+      .select('cost_code, vendors(id, name, vendor_categories(name), is_active)')
+      .eq('community_id', communityId)
+
+    const vendorIds = [...new Set((assignRes.data || []).map(a => a.vendors?.id).filter(Boolean))]
+
+    const [scoreRes, feedbackRes] = await Promise.all([
+      vendorIds.length
+        ? supabase
+            .from('score_results')
+            .select('vendor_id, weighted_total, safety_score, schedule_score, rework_score, feedback_score, schedule_total_jobs, feedback_count')
+            .in('vendor_id', vendorIds)
+        : Promise.resolve({ data: [] }),
       supabase
         .from('builder_feedback')
         .select('vendor_id, category, severity, points, is_approved, vendors(name)')
@@ -91,7 +73,14 @@ export default function CommunityPage() {
     } finally {
       if (mounted) setLoading(false)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    if (!selectedId) return
+    let mounted = true
+    loadCommunityData(selectedId, mounted)
+    return () => { mounted = false }
+  }, [selectedId, loadCommunityData])
 
   const community = communities.find(c => c.id === selectedId)
 

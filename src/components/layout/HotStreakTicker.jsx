@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useThresholds } from '../../hooks/useThresholds'
 
@@ -23,6 +23,8 @@ function computeStreak(snaps, threshold) {
   return weeks
 }
 
+const RECENT_SNAPSHOT_WEEKS = 15
+
 export default function HotStreakTicker() {
   const [streaks, setStreaks] = useState([])
   const [loaded, setLoaded] = useState(false)
@@ -32,9 +34,22 @@ export default function HotStreakTicker() {
     let mounted = true
     async function load() {
       try {
+        const { data: recentSnaps } = await supabase
+          .from('snapshots')
+          .select('id')
+          .order('created_at', { ascending: false })
+          .limit(RECENT_SNAPSHOT_WEEKS)
+
+        const snapIds = (recentSnaps || []).map(s => s.id)
+        if (!snapIds.length) {
+          if (mounted) { setStreaks([]); setLoaded(true) }
+          return
+        }
+
         const { data } = await supabase
           .from('snapshot_score_results')
           .select('vendor_id, vendor_name, category_name, weighted_total, snapshots(created_at)')
+          .in('snapshot_id', snapIds)
           .not('vendor_id', 'is', null)
           .not('weighted_total', 'is', null)
 

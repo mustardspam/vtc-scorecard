@@ -24,7 +24,7 @@ export default function WeeklyLeaderboardTicker() {
         const weekStart = getISOWeekStart()
         const { data: feedback } = await supabase
           .from('builder_feedback')
-          .select('submitted_by')
+          .select('submitted_by, profiles!builder_feedback_submitted_by_fkey(full_name, email)')
           .gte('submitted_at', weekStart)
 
         if (!feedback?.length) {
@@ -33,32 +33,22 @@ export default function WeeklyLeaderboardTicker() {
         }
 
         const counts = {}
+        const profileMap = {}
         for (const row of feedback) {
           const uid = row.submitted_by
-          if (uid) counts[uid] = (counts[uid] || 0) + 1
+          if (!uid) continue
+          counts[uid] = (counts[uid] || 0) + 1
+          if (row.profiles && !profileMap[uid]) profileMap[uid] = row.profiles
         }
 
-        const topIds = Object.entries(counts)
+        const ranked = Object.entries(counts)
           .sort((a, b) => b[1] - a[1])
           .slice(0, 5)
-
-        if (!topIds.length) {
-          if (mounted) { setLeaders([]); setLoaded(true) }
-          return
-        }
-
-        const { data: profiles } = await supabase
-          .from('profiles')
-          .select('id, full_name, email')
-          .in('id', topIds.map(([id]) => id))
-
-        const profileMap = Object.fromEntries((profiles || []).map(p => [p.id, p]))
-
-        const ranked = topIds.map(([id, count], i) => {
-          const p = profileMap[id]
-          const name = p?.full_name || p?.email?.split('@')[0] || 'Unknown'
-          return { rank: i + 1, name, count }
-        })
+          .map(([id, count], i) => {
+            const p = profileMap[id]
+            const name = p?.full_name || p?.email?.split('@')[0] || 'Unknown'
+            return { rank: i + 1, name, count }
+          })
 
         if (mounted) { setLeaders(ranked); setLoaded(true) }
       } catch {

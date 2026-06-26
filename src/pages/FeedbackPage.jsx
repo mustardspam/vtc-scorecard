@@ -12,6 +12,8 @@ const FILTERS = [
   { value: 'all', label: 'All' },
 ]
 
+const FEEDBACK_PAGE_SIZE = 100
+
 export default function FeedbackPage() {
   const [feedback, setFeedback] = useState([])
   const [loading, setLoading] = useState(true)
@@ -34,6 +36,7 @@ export default function FeedbackPage() {
       .from('builder_feedback')
       .select('*, vendors(name), communities(name), submitted_profile:profiles!builder_feedback_submitted_by_fkey(full_name, email)')
       .order('submitted_at', { ascending: false })
+      .range(0, FEEDBACK_PAGE_SIZE - 1)
 
     if (filter === 'pending') query = query.eq('is_approved', false).is('reviewed_at', null)
     else if (filter === 'approved') query = query.eq('is_approved', true)

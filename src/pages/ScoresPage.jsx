@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { ArrowUpDown, Search, Download, ChevronDown, ChevronUp, RefreshCw, MoreHorizontal, X, ArrowLeft } from 'lucide-react'
 import { useThresholds } from '../hooks/useThresholds'
 import { useAuth } from '../hooks/useAuth'
+import { useScoreData } from '../hooks/useScoreData'
 import { logActivity } from '../hooks/useActivityLog'
 import TierBadge from '../components/scores/TierBadge'
 import VendorReportCard from '../components/scores/VendorReportCard'
@@ -43,7 +44,8 @@ export default function ScoresPage() {
 
   const [scores, setScores] = useState([])
   const [trendMap, setTrendMap] = useState({})
-  const [loading, setLoading] = useState(true)
+  const [trendsLoading, setTrendsLoading] = useState(true)
+  const { scores: cachedScores, loading: scoresLoading, refresh, invalidate } = useScoreData()
   const [recalculating, setRecalculating] = useState(false)
   const [search, setSearch] = useState('')
   const [sortField, setSortField] = useState('weighted_total')
@@ -57,10 +59,51 @@ export default function ScoresPage() {
   const canEdit = isManager()
 
   useEffect(() => {
+    setScores(cachedScores)
+  }, [cachedScores])
+
+  useEffect(() => {
     let mounted = true
-    loadScores(mounted)
+    async function loadTrends() {
+      setTrendsLoading(true)
+      try {
+        const { data: recentSnaps } = await supabase
+          .from('snapshots')
+          .select('id, created_at')
+          .order('created_at', { ascending: false })
+          .limit(8)
+
+        if (!recentSnaps?.length) {
+          if (mounted) { setTrendMap({}); setTrendsLoading(false) }
+          return
+        }
+
+        const { data: trendRows } = await supabase
+          .from('snapshot_score_results')
+          .select('vendor_id, weighted_total, snapshots(created_at)')
+          .in('snapshot_id', recentSnaps.map(s => s.id))
+          .not('vendor_id', 'is', null)
+
+        if (!mounted) return
+        const map = {}
+        for (const row of (trendRows || [])) {
+          if (!row.snapshots?.created_at || row.weighted_total == null) continue
+          if (!map[row.vendor_id]) map[row.vendor_id] = []
+          map[row.vendor_id].push({ score: Number(row.weighted_total), date: row.snapshots.created_at })
+        }
+        for (const id of Object.keys(map)) map[id].sort((a, b) => new Date(a.date) - new Date(b.date))
+        setTrendMap(map)
+      } catch (err) {
+        console.error('loadTrends error:', err)
+      } finally {
+        if (mounted) setTrendsLoading(false)
+      }
+    }
+    loadTrends()
     return () => { mounted = false }
   }, [])
+
+  const loading = scoresLoading || trendsLoading
 
   useEffect(() => {
     function onClick(e) {
@@ -70,28 +113,9 @@ export default function ScoresPage() {
     return () => document.removeEventListener('click', onClick)
   }, [])
 
-  async function loadScores(mounted = true) {
-    setLoading(true)
-    try {
-      const [scoresRes, trendRes] = await Promise.all([
-        supabase.from('score_results').select('*, vendors(name, category_id, vendor_categories(name))').order('weighted_total', { ascending: false, nullsFirst: false }),
-        supabase.from('snapshot_score_results').select('vendor_id, weighted_total, snapshots(created_at)').not('vendor_id', 'is', null),
-      ])
-      if (!mounted) return
-      setScores(scoresRes.data || [])
-      const map = {}
-      for (const row of (trendRes.data || [])) {
-        if (!row.snapshots?.created_at || row.weighted_total == null) continue
-        if (!map[row.vendor_id]) map[row.vendor_id] = []
-        map[row.vendor_id].push({ score: Number(row.weighted_total), date: row.snapshots.created_at })
-      }
-      for (const id of Object.keys(map)) map[id].sort((a, b) => new Date(a.date) - new Date(b.date))
-      setTrendMap(map)
-    } catch (err) {
-      console.error('loadScores error:', err)
-    } finally {
-      if (mounted) setLoading(false)
-    }
+  async function loadScores() {
+    invalidate()
+    await refresh()
   }
 
   async function handleRecalculate() {
@@ -112,18 +136,21 @@ export default function ScoresPage() {
     else { setSortField(field); setSortDir('desc') }
   }
 
-  const filtered = scores
-    .filter(s => {
-      if (!search) return true
-      const name = s.vendors?.name?.toLowerCase() || ''
-      const cat = s.vendors?.vendor_categories?.name?.toLowerCase() || ''
-      return name.includes(search.toLowerCase()) || cat.includes(search.toLowerCase())
-    })
-    .sort((a, b) => {
-      const aVal = a[sortField] ?? -Infinity
-      const bVal = b[sortField] ?? -Infinity
-      return sortDir === 'asc' ? aVal - bVal : bVal - aVal
-    })
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase()
+    return scores
+      .filter(s => {
+        if (!q) return true
+        const name = s.vendors?.name?.toLowerCase() || ''
+        const cat = s.vendors?.vendor_categories?.name?.toLowerCase() || ''
+        return name.includes(q) || cat.includes(q)
+      })
+      .sort((a, b) => {
+        const aVal = a[sortField] ?? -Infinity
+        const bVal = b[sortField] ?? -Infinity
+        return sortDir === 'asc' ? aVal - bVal : bVal - aVal
+      })
+  }, [scores, search, sortField, sortDir])
 
   function exportCSV() {
     const headers = ['Rank', 'Vendor', 'Category', 'Safety', 'Schedule', 'Rework', 'Feedback', 'Total', 'Risk (12mo)']

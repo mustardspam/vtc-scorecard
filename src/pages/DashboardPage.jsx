@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import ScoreSummaryCard from '../components/dashboard/ScoreSummaryCard'
@@ -7,68 +7,56 @@ import PerformerCard from '../components/dashboard/PerformerCard'
 import DashboardFilters from '../components/dashboard/DashboardFilters'
 import WeightSliders from '../components/weights/WeightSliders'
 import { useThresholds } from '../hooks/useThresholds'
+import { useScoreData } from '../hooks/useScoreData'
+import { useReferenceData } from '../hooks/useReferenceData'
 
 export default function DashboardPage() {
   const navigate = useNavigate()
-  const [scores, setScores] = useState([])
-  const [weights, setWeights] = useState(null)
-  const [communityCount, setCommunityCount] = useState(0)
-  const [loading, setLoading] = useState(true)
+  const [communityVendorIds, setCommunityVendorIds] = useState(null)
+  const [communityLoading, setCommunityLoading] = useState(false)
   const [filters, setFilters] = useState({ community: '', category: '' })
   const { getTier } = useThresholds()
+  const { scores: allScores, loading: scoresLoading } = useScoreData()
+  const { communities, weights } = useReferenceData({ communities: true, weights: true })
 
   useEffect(() => {
-    let mounted = true
-    loadData(mounted)
-    return () => { mounted = false }
-  }, [filters])
-
-  async function loadData(mounted = true) {
-    setLoading(true)
-    try {
-      let query = supabase
-        .from('score_results')
-        .select('*, vendors(name, category_id, vendor_categories(name))')
-        .order('weighted_total', { ascending: false })
-
-      if (filters.category) {
-        query = query.eq('category_id', filters.category)
-      }
-
-      if (filters.community) {
-        const { data: vendorIds, error: vcError } = await supabase
-          .from('vendor_community_assignments')
-          .select('vendor_id')
-          .eq('community_id', filters.community)
-        if (vcError) throw vcError
-        const ids = [...new Set((vendorIds || []).map(v => v.vendor_id))]
-        if (!ids.length) {
-          if (mounted) setScores([])
-          return
-        }
-        query = query.in('vendor_id', ids)
-      }
-
-      const [scoresRes, weightsRes, commRes] = await Promise.all([
-        query,
-        supabase.from('score_weights').select('*').eq('is_current', true).single(),
-        supabase.from('communities').select('id', { count: 'exact', head: true }).eq('is_active', true),
-      ])
-      if (scoresRes.error) throw scoresRes.error
-      if (mounted) {
-        setScores(scoresRes.data || [])
-        setWeights(weightsRes.data)
-        setCommunityCount(commRes.count || 0)
-      }
-    } catch (err) {
-      console.error('loadData error:', err)
-    } finally {
-      if (mounted) setLoading(false)
+    if (!filters.community) {
+      setCommunityVendorIds(null)
+      return
     }
-  }
+    let mounted = true
+    setCommunityLoading(true)
+    supabase
+      .from('vendor_community_assignments')
+      .select('vendor_id')
+      .eq('community_id', filters.community)
+      .then(({ data, error }) => {
+        if (!mounted) return
+        if (error) {
+          console.error('Community filter error:', error)
+          setCommunityVendorIds([])
+        } else {
+          setCommunityVendorIds([...new Set((data || []).map(v => v.vendor_id))])
+        }
+      })
+      .finally(() => { if (mounted) setCommunityLoading(false) })
+    return () => { mounted = false }
+  }, [filters.community])
 
-  const validScores = scores.filter(s => s.weighted_total != null)
+  const scores = useMemo(() => {
+    let rows = allScores.filter(s => s.weighted_total != null)
+    if (filters.category) rows = rows.filter(s => s.category_id === filters.category)
+    if (filters.community && communityVendorIds) {
+      rows = rows.filter(s => communityVendorIds.includes(s.vendor_id))
+    }
+    return rows
+  }, [allScores, filters.category, filters.community, communityVendorIds])
+
+  const loading = scoresLoading || (Boolean(filters.community) && communityLoading)
+
+  const validScores = scores
   const vendorCount = validScores.length
+  const communityCount = communities.length
   const avgScore = validScores.length
     ? (validScores.reduce((sum, s) => sum + Number(s.weighted_total), 0) / validScores.length).toFixed(1)
     : '—'

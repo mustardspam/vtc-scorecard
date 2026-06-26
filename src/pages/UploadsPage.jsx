@@ -1,9 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
-import { parseCSV } from '../lib/parsers/csv-parser'
-import { parseXLSX } from '../lib/parsers/xlsx-parser'
-import { matchVendors } from '../lib/parsers/vendor-matcher'
-import { parseJCVendorReport, parseJCVendorReportXLSX } from '../lib/parsers/jc-vendor-parser'
 import { logActivity } from '../hooks/useActivityLog'
 import { useAuth } from '../hooks/useAuth'
 import { Upload, FileText, CheckCircle, XCircle, AlertTriangle, ArrowRight, Loader2, Building2, Trash2 } from 'lucide-react'
@@ -197,9 +193,11 @@ export default function UploadsPage() {
         const ext = file.name.split('.').pop().toLowerCase()
         let result
         if (ext === 'csv') {
+          const { parseJCVendorReport } = await import('../lib/parsers/jc-vendor-parser')
           const text = await file.text()
           result = parseJCVendorReport(text)
         } else if (['xls', 'xlsx'].includes(ext)) {
+          const { parseJCVendorReportXLSX } = await import('../lib/parsers/jc-vendor-parser')
           result = await parseJCVendorReportXLSX(file)
         } else {
           alert('Please upload a CSV or XLSX file.')
@@ -219,8 +217,10 @@ export default function UploadsPage() {
       let result
       const ext = file.name.split('.').pop().toLowerCase()
       if (ext === 'csv') {
+        const { parseCSV } = await import('../lib/parsers/csv-parser')
         result = await parseCSV(file)
       } else if (['xls', 'xlsx'].includes(ext)) {
+        const { parseXLSX } = await import('../lib/parsers/xlsx-parser')
         result = await parseXLSX(file)
         if (result.sheetNames?.length > 1 && !sheetName) {
           setParsed(result)
@@ -261,7 +261,7 @@ export default function UploadsPage() {
     setColumnMap(prev => ({ ...prev, [internalField]: sourceColumn }))
   }
 
-  function applyMapping() {
+  async function applyMapping() {
     const fields = INTERNAL_FIELDS[fileType] || []
     const required = REQUIRED_FIELDS[fileType] || []
 
@@ -289,6 +289,7 @@ export default function UploadsPage() {
 
     if (['schedule', 'safety', 'rework'].includes(fileType)) {
       const rawNames = [...new Set(rows.map(r => r.vendor_name).filter(Boolean))]
+      const { matchVendors } = await import('../lib/parsers/vendor-matcher')
       const matches = matchVendors(rawNames, vendors, aliases, brandRefs)
       setVendorMatches(matches)
       const unmatched = matches.filter(m => m.source === 'unmatched')
