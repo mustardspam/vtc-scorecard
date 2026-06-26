@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
 import { X, Printer } from 'lucide-react'
 import { tierPillStyle, tierValueColor } from '../../lib/design/tokens'
@@ -158,7 +159,7 @@ export default function VendorReportCard({ scoreRow, getTier, onClose }) {
     { label: 'Total', key: 'weighted_total', large: true },
   ]
 
-  return (
+  return createPortal(
     <div className="report-card-print-root fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.65)' }}>
       <div className="report-card-inner bg-white rounded-xl w-full max-w-3xl flex flex-col shadow-2xl" style={{ maxHeight: '90vh' }}>
 
@@ -218,11 +219,11 @@ export default function VendorReportCard({ scoreRow, getTier, onClose }) {
                     {tier.label}
                   </div>
                 )}
-                <p className="text-xs text-gray-400 whitespace-nowrap leading-snug">
+                <p className="text-xs text-gray-400 leading-snug">
                   Generated {today}
                 </p>
-                <p className="text-xs text-gray-400 whitespace-nowrap leading-snug">
-                  Ashton Woods / Starlight Homes · VTC Scorecard
+                <p className="text-xs text-gray-400 leading-snug">
+                  VTC Scorecard
                 </p>
               </div>
             </div>
@@ -230,7 +231,7 @@ export default function VendorReportCard({ scoreRow, getTier, onClose }) {
             {/* Current scores */}
             <div>
               <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3">Current Scores</h2>
-              <div className="grid grid-cols-5 gap-3">
+              <div className="grid grid-cols-5 gap-3 report-card-score-grid">
                 {SCORE_FIELDS.map(({ label, key, large }) => (
                   <ScoreBox key={key} label={label} value={scoreRow[key]} getTier={getTier} large={large} />
                 ))}
@@ -246,16 +247,16 @@ export default function VendorReportCard({ scoreRow, getTier, onClose }) {
                   Estimated 12-month $ exposure if this vendor continues at its current trend: rework backcharge admin overhead + OSHA-anchored safety costs + no-shows, scaled to a trend-adjusted job volume. Separate from the score above — does not affect it.
                 </div>
               </h2>
-              <div className="rounded-lg border border-red-200 bg-red-50 p-4">
-                <div className="flex items-center justify-between mb-3">
+              <div className="rounded-lg border border-red-200 bg-red-50 p-4 report-card-risk">
+                <div className="flex items-center justify-between mb-3 report-card-risk-top">
                   <p className="text-2xl font-bold text-red-700">{fmtCurrency(scoreRow.risk_exposure_12mo)}</p>
                   {scoreRow.risk_low_data && (
-                    <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-0.5">
+                    <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-0.5 report-card-risk-badge">
                       Limited schedule history — not yet annualized
                     </span>
                   )}
                 </div>
-                <div className="grid grid-cols-3 gap-3 text-xs text-gray-600">
+                <div className="grid grid-cols-3 gap-3 text-xs text-gray-600 report-card-risk-details">
                   <p>{scoreRow.risk_rework_count} rework instance{scoreRow.risk_rework_count === 1 ? '' : 's'} → <span className="font-medium text-gray-800">{fmtCurrency(scoreRow.risk_rework_dollar)}</span></p>
                   <p>Safety incidents → <span className="font-medium text-gray-800">{fmtCurrency(scoreRow.risk_safety_dollar)}</span></p>
                   <p>{scoreRow.risk_noshow_count} no-show{scoreRow.risk_noshow_count === 1 ? '' : 's'} → <span className="font-medium text-gray-800">{fmtCurrency(scoreRow.risk_noshow_dollar)}</span></p>
@@ -278,8 +279,8 @@ export default function VendorReportCard({ scoreRow, getTier, onClose }) {
                     <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3">
                       Score History — {data.snapshots.length} Snapshot{data.snapshots.length !== 1 ? 's' : ''}
                     </h2>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
+                    <div className="overflow-x-auto report-card-table-wrap">
+                      <table className="w-full text-sm border border-gray-200 rounded-lg overflow-hidden report-card-table">
                         <thead>
                           <tr className="bg-gray-50 text-left">
                             <th className="px-4 py-2 font-medium text-gray-600">Snapshot</th>
@@ -365,7 +366,7 @@ export default function VendorReportCard({ scoreRow, getTier, onClose }) {
 
                 {/* Safety + Rework */}
                 {(data.safety.length > 0 || data.rework.length > 0) && (
-                  <div className="grid grid-cols-2 gap-6">
+                  <div className="grid grid-cols-2 gap-6 report-card-incidents">
                     {data.safety.length > 0 && (
                       <div>
                         <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3">
@@ -421,6 +422,7 @@ export default function VendorReportCard({ scoreRow, getTier, onClose }) {
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }

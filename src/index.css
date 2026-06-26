@@ -689,11 +689,12 @@ h1.text-2xl.font-bold.text-gray-900 {
 /* ── Print styles (report card) ── */
 @media print {
   @page {
-    margin: 0.6in;
-    size: letter;
+    margin: 0.45in;
+    size: letter portrait;
   }
 
   html, body {
+    width: 100% !important;
     height: auto !important;
     overflow: visible !important;
     background: white !important;
@@ -709,39 +710,49 @@ h1.text-2xl.font-bold.text-gray-900 {
     display: none !important;
   }
 
-  /* Hide page chrome; only the report card subtree stays visible */
-  body * { visibility: hidden; }
+  /* Only the report card is visible */
+  body * {
+    visibility: hidden !important;
+  }
 
   .report-card-print-root,
-  .report-card-print-root * { visibility: visible; }
+  .report-card-print-root * {
+    visibility: visible !important;
+  }
 
+  /* Anchor to the page — override modal fixed/centering */
   .report-card-print-root {
     position: absolute !important;
     top: 0 !important;
     left: 0 !important;
     right: 0 !important;
+    bottom: auto !important;
     width: 100% !important;
+    max-width: none !important;
     height: auto !important;
     max-height: none !important;
-    overflow: visible !important;
-    background: white !important;
-    padding: 0 !important;
     margin: 0 !important;
-    z-index: 2147483647 !important;
+    padding: 0 !important;
+    background: white !important;
     display: block !important;
-    inset: auto !important;
+    z-index: 2147483647 !important;
+    inset: 0 auto auto 0 !important;
+    transform: none !important;
+    align-items: stretch !important;
+    justify-content: flex-start !important;
   }
 
   .report-card-inner {
-    max-height: none !important;
+    width: 100% !important;
+    max-width: 100% !important;
     height: auto !important;
+    max-height: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
     overflow: visible !important;
     box-shadow: none !important;
     border-radius: 0 !important;
-    width: 100% !important;
-    max-width: none !important;
     display: block !important;
-    margin: 0 !important;
   }
 
   .report-card-scroll {
@@ -755,38 +766,142 @@ h1.text-2xl.font-bold.text-gray-900 {
   .report-card-content {
     position: static !important;
     width: 100% !important;
+    max-width: 100% !important;
     background: white !important;
     overflow: visible !important;
     box-sizing: border-box !important;
     padding: 0 !important;
+    margin: 0 !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
 
+  .report-card-content .overflow-x-auto {
+    overflow: visible !important;
+  }
+
+  /* Header: stack so meta never overlaps vendor info */
   .report-card-header {
-    display: flex !important;
-    flex-direction: row !important;
-    align-items: flex-start !important;
-    justify-content: space-between !important;
-    gap: 1.5rem !important;
+    display: block !important;
     break-inside: avoid;
     page-break-inside: avoid;
+    padding-bottom: 0.75rem !important;
+    margin-bottom: 0.75rem !important;
+    border-bottom: 2px solid #087482 !important;
   }
 
   .report-card-header > div:first-child {
+    width: 100% !important;
     min-width: 0 !important;
-    flex: 1 1 auto !important;
+    margin-bottom: 0.5rem !important;
+  }
+
+  .report-card-header h1 {
+    font-size: 1.2rem !important;
+    line-height: 1.3 !important;
   }
 
   .report-card-header-meta {
-    flex: 0 0 auto !important;
-    text-align: right !important;
-    align-items: flex-end !important;
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: wrap !important;
+    align-items: center !important;
+    gap: 0.4rem 0.75rem !important;
+    width: 100% !important;
+    text-align: left !important;
   }
 
   .report-card-header-meta p,
   .report-card-header-meta .glass-tier-pill {
-    white-space: nowrap !important;
+    white-space: normal !important;
+  }
+
+  /* Score boxes */
+  .report-card-score-grid {
+    display: grid !important;
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+    gap: 0.3rem !important;
+  }
+
+  .report-card-score-grid > div {
+    padding: 0.35rem 0.2rem !important;
+    min-width: 0 !important;
+  }
+
+  .report-card-score-grid .text-2xl,
+  .report-card-score-grid .text-xl {
+    font-size: 0.95rem !important;
+    line-height: 1.2 !important;
+  }
+
+  .report-card-score-grid .text-xs {
+    font-size: 0.6rem !important;
+  }
+
+  /* Risk block */
+  .report-card-risk {
+    padding: 0.6rem !important;
+  }
+
+  .report-card-risk-top {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 0.4rem !important;
+    margin-bottom: 0.5rem !important;
+  }
+
+  .report-card-risk-top .text-2xl {
+    font-size: 1.1rem !important;
+  }
+
+  .report-card-risk-badge {
+    max-width: 100% !important;
+    white-space: normal !important;
+    line-height: 1.3 !important;
+  }
+
+  .report-card-risk-details {
+    display: block !important;
+  }
+
+  .report-card-risk-details > p {
+    margin-bottom: 0.2rem !important;
+    font-size: 0.62rem !important;
+    line-height: 1.35 !important;
+  }
+
+  /* History table */
+  .report-card-table-wrap {
+    overflow: visible !important;
+    width: 100% !important;
+  }
+
+  .report-card-table {
+    width: 100% !important;
+    table-layout: fixed !important;
+    font-size: 0.62rem !important;
+  }
+
+  .report-card-table th,
+  .report-card-table td {
+    padding: 0.15rem 0.25rem !important;
+    word-wrap: break-word !important;
+    overflow-wrap: anywhere !important;
+  }
+
+  .report-card-table th:first-child,
+  .report-card-table td:first-child {
+    width: 28% !important;
+  }
+
+  /* Incidents: single column on print */
+  .report-card-incidents {
+    display: block !important;
+  }
+
+  .report-card-incidents > div + div {
+    margin-top: 0.75rem !important;
   }
 
   .report-card-content thead {
@@ -802,5 +917,19 @@ h1.text-2xl.font-bold.text-gray-900 {
   .report-card-content .space-y-1\.5 > div {
     break-inside: avoid;
     page-break-inside: avoid;
+  }
+
+  /* App shell must not clip the report card across pages */
+  html, body, #root {
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  body .h-screen,
+  body main {
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+    position: static !important;
   }
 }
