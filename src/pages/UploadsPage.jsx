@@ -440,19 +440,52 @@ export default function UploadsPage() {
 
       setImportProgress('Fetching vendors...')
       console.log('[JC] Step 2b: fetching vendors')
-      const vendorRes = await supabase.from('vendors').select('id, name')
+      const [vendorRes, aliasRes] = await Promise.all([
+        supabase.from('vendors').select('id, name').eq('is_active', true),
+        supabase.from('vendor_aliases').select('alias_name, vendor_id'),
+      ])
       console.log('[JC] Step 2b result:', vendorRes.data?.length, vendorRes.error)
       if (vendorRes.error) throw new Error('Fetch vendors failed: ' + vendorRes.error.message)
+      if (aliasRes.error) throw new Error('Fetch aliases failed: ' + aliasRes.error.message)
 
       setImportProgress('Fetching brand references...')
       console.log('[JC] Step 2c: fetching brand refs')
-      const refRes = await supabase.from('vendor_brand_references').select('jc_vendor_id, brand')
+      const refRes = await supabase.from('vendor_brand_references').select('jc_vendor_id, vendor_id, brand')
       console.log('[JC] Step 2c result:', refRes.data?.length, refRes.error)
       if (refRes.error) throw new Error('Fetch brand refs failed: ' + refRes.error.message)
 
+      const { resolveVendorForImport } = await import('../lib/parsers/vendor-matcher')
+      const vendorList = vendorRes.data || []
+      const aliasList = aliasRes.data || []
+      const allBrandRefs = refRes.data || []
+
       const communityCodeMap = new Map((commRes.data || []).map(c => [c.code, c.id]))
-      const vendorNameMap = new Map((vendorRes.data || []).map(v => [v.name.toLowerCase().trim(), v.id]))
-      const existingRefSet = new Set((refRes.data || []).map(r => `${r.brand}:${r.jc_vendor_id}`))
+      const existingRefSet = new Set(allBrandRefs.map(r => `${r.brand}:${r.jc_vendor_id}`))
+      const refVendorByBrandJc = new Map(allBrandRefs.map(r => [`${r.brand}:${r.jc_vendor_id}`, r.vendor_id]))
+      const aliasesToSave = new Map()
+
+      function rememberAlias(aliasName, vendorId) {
+        if (!aliasName || !vendorId) return
+        aliasesToSave.set(aliasName, vendorId)
+      }
+
+      function resolveJCVendor(jcVendor) {
+        const brandKey = `${brand}:${jcVendor.jcVendorId}`
+        const existingRefVendorId = refVendorByBrandJc.get(brandKey)
+        if (existingRefVendorId) return existingRefVendorId
+
+        const withId = `${jcVendor.jcVendorId} ${jcVendor.name}`
+        for (const rawName of [withId, jcVendor.name]) {
+          const { vendor, match } = resolveVendorForImport(rawName, vendorList, aliasList, allBrandRefs)
+          if (vendor) {
+            if (match?.source !== 'exact' && match?.source !== 'exact_ci' && match?.source !== 'jc_id') {
+              rememberAlias(jcVendor.name, vendor.id)
+            }
+            return vendor.id
+          }
+        }
+        return null
+      }
 
       // 3. Determine which vendors have active assignments
       const activeVendors = jcParsed.vendors.map(v => ({
@@ -464,10 +497,10 @@ export default function UploadsPage() {
       const { data: cats } = await supabase.from('vendor_categories').select('id, name').eq('name', 'Supplier').maybeSingle()
       const defaultCategoryId = cats?.id || null
 
-      // 5. Batch insert new vendors
+      // 5. Batch insert new vendors (only when matcher + aliases can't find a match)
       const newVendorNames = [...new Set(
         activeVendors
-          .filter(v => !vendorNameMap.has(v.name.toLowerCase().trim()))
+          .filter(v => !resolveJCVendor(v))
           .map(v => v.name)
       )]
       if (newVendorNames.length > 0) {
@@ -481,14 +514,30 @@ export default function UploadsPage() {
           .select('id, name')
         console.log('[JC] Step 4 result:', inserted?.length, error)
         if (error) throw new Error('Vendor insert failed: ' + error.message)
-        for (const v of (inserted || [])) vendorNameMap.set(v.name.toLowerCase().trim(), v.id)
+        for (const v of (inserted || [])) vendorList.push(v)
+      }
+
+      // Remember name variants so the next import auto-matches
+      if (aliasesToSave.size > 0) {
+        setImportProgress(`Saving ${aliasesToSave.size} vendor aliases...`)
+        const { error: aliasErr } = await supabase.from('vendor_aliases').upsert(
+          [...aliasesToSave.entries()].map(([alias_name, vendor_id]) => ({
+            alias_name, vendor_id, created_by: user?.id,
+          })),
+          { onConflict: 'alias_name' }
+        )
+        if (aliasErr) console.warn('[JC] Alias save failed (non-fatal):', aliasErr.message)
+      }
+
+      function vendorIdFor(jcVendor) {
+        return resolveJCVendor(jcVendor) || vendorList.find(v => v.name === jcVendor.name)?.id
       }
 
       // 6. Batch insert new brand references
       const newRefs = activeVendors
         .filter(v => !existingRefSet.has(`${brand}:${v.jcVendorId}`))
         .map(v => ({
-          vendor_id: vendorNameMap.get(v.name.toLowerCase().trim()),
+          vendor_id: vendorIdFor(v),
           brand, jc_vendor_id: v.jcVendorId, jc_vendor_name: v.name,
         }))
         .filter(r => r.vendor_id)
@@ -500,7 +549,7 @@ export default function UploadsPage() {
 
       // 7. Batch upsert community assignments in chunks of 500
       const allAssignments = activeVendors.flatMap(v => {
-        const vendorId = vendorNameMap.get(v.name.toLowerCase().trim())
+        const vendorId = vendorIdFor(v)
         if (!vendorId) return []
         return v.filteredAssignments
           .filter(a => communityCodeMap.has(a.communityCode))

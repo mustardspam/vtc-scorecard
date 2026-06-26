@@ -57,6 +57,13 @@ export function matchVendors(rawNames, vendorList, aliases = [], brandRefs = [])
       continue
     }
 
+    const lowerName = nameForMatching.toLowerCase().trim()
+    const exactCi = vendorList.find(v => v.name.toLowerCase().trim() === lowerName)
+    if (exactCi) {
+      results.push({ rawName, matchedVendor: exactCi, confidence: 1.0, source: 'exact_ci' })
+      continue
+    }
+
     const normalizedExact = vendorList.find(v => normalize(v.name) === normalizedRaw)
     if (normalizedExact) {
       results.push({ rawName, matchedVendor: normalizedExact, confidence: 0.95, source: 'normalized' })
@@ -82,4 +89,13 @@ export function matchVendors(rawNames, vendorList, aliases = [], brandRefs = [])
   }
 
   return results
+}
+
+/** Auto-resolve a vendor during imports (JC reports, etc.) without manual review. */
+export function resolveVendorForImport(rawName, vendorList, aliases = [], brandRefs = [], { fuzzyThreshold = 0.85 } = {}) {
+  const [match] = matchVendors([rawName], vendorList, aliases, brandRefs)
+  if (!match?.matchedVendor) return { vendor: null, match }
+  if (!match.needsConfirmation) return { vendor: match.matchedVendor, match }
+  if (match.confidence >= fuzzyThreshold) return { vendor: match.matchedVendor, match }
+  return { vendor: null, match }
 }
