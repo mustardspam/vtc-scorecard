@@ -763,16 +763,30 @@ h1.text-2xl.font-bold.text-gray-900 {
     print-color-adjust: exact;
   }
 
-  /* Stack header on print so tier/date don't split onto a separate page */
   .report-card-header {
-    display: block !important;
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: flex-start !important;
+    justify-content: space-between !important;
+    gap: 1.5rem !important;
     break-inside: avoid;
     page-break-inside: avoid;
   }
 
-  .report-card-header > div:last-child {
-    text-align: left !important;
-    margin-top: 0.75rem;
+  .report-card-header > div:first-child {
+    min-width: 0 !important;
+    flex: 1 1 auto !important;
+  }
+
+  .report-card-header-meta {
+    flex: 0 0 auto !important;
+    text-align: right !important;
+    align-items: flex-end !important;
+  }
+
+  .report-card-header-meta p,
+  .report-card-header-meta .glass-tier-pill {
+    white-space: nowrap !important;
   }
 
   .report-card-content thead {

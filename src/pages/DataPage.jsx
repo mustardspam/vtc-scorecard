@@ -345,63 +345,47 @@ function VendorList({ vendors, categories, onCategoryChange, selectedIds, onTogg
                 className={`px-4 py-3 cursor-pointer transition-colors ${isSelected ? 'hover:bg-red-100' : 'hover:bg-gray-50'}`}
                 onClick={() => setExpandedId(isExpanded ? null : v.id)}
               >
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex items-start gap-3 flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
                     {canEdit && (
                       <input
                         type="checkbox"
                         checked={isSelected}
                         onChange={() => onToggleSelect(v.id)}
                         onClick={e => e.stopPropagation()}
-                        className="mt-0.5 w-4 h-4 rounded border-gray-300 accent-red-600 cursor-pointer flex-shrink-0"
+                        className="w-4 h-4 rounded border-gray-300 accent-red-600 cursor-pointer flex-shrink-0"
                       />
                     )}
-                    <div className="flex-1 min-w-0 space-y-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-semibold text-gray-900">{v.name}</span>
+                    <div className="flex items-center gap-2 flex-wrap min-w-0">
+                      <span className="text-sm font-semibold text-gray-900">{v.name}</span>
 
-                        <CategoryBadge
-                          vendorId={v.id}
-                          categoryName={v.vendor_categories?.name}
-                          categories={categories}
-                          onCategoryChange={onCategoryChange}
-                          canEdit={canEdit}
-                        />
+                      <CategoryBadge
+                        vendorId={v.id}
+                        categoryName={v.vendor_categories?.name}
+                        categories={categories}
+                        onCategoryChange={onCategoryChange}
+                        canEdit={canEdit}
+                      />
 
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                          v.is_trade ? 'bg-indigo-100 text-indigo-700' : 'bg-purple-100 text-purple-700'
-                        }`}>
-                          {v.is_trade ? 'Trade' : 'Vendor'}
-                        </span>
-                      </div>
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                        v.is_trade ? 'bg-indigo-100 text-indigo-700' : 'bg-purple-100 text-purple-700'
+                      }`}>
+                        {v.is_trade ? 'Trade' : 'Vendor'}
+                      </span>
 
                       {formatJcVendorIds(brandRefs) && (
-                        <p className="text-xs text-gray-500">
+                        <span className="text-xs text-gray-500">
                           <span className="font-medium text-gray-600">Vendor ID:</span>{' '}
                           <span className="font-mono">{formatJcVendorIds(brandRefs)}</span>
-                        </p>
+                        </span>
                       )}
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-3 flex-shrink-0">
-                    {uniqueCommunities.length > 0 && (
-                      <div className="flex items-center gap-1 flex-wrap justify-end max-w-52">
-                        {uniqueCommunities.slice(0, 5).map(c => (
-                          <span key={c.id} className="text-xs font-mono px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded">
-                            {c.code}
-                          </span>
-                        ))}
-                        {uniqueCommunities.length > 5 && (
-                          <span className="text-xs text-gray-400">+{uniqueCommunities.length - 5}</span>
-                        )}
-                      </div>
-                    )}
-                    {isExpanded
-                      ? <ChevronUp className="w-4 h-4 text-gray-400" />
-                      : <ChevronDown className="w-4 h-4 text-gray-400" />
-                    }
-                  </div>
+                  {isExpanded
+                    ? <ChevronUp className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                    : <ChevronDown className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                  }
                 </div>
               </div>
 

@@ -189,8 +189,8 @@ export default function VendorReportCard({ scoreRow, getTier, onClose }) {
           <div className="report-card-content p-8 space-y-6">
 
             {/* Header */}
-            <div className="report-card-header flex items-start justify-between pb-5 border-b-2" style={{ borderColor: '#087482' }}>
-              <div>
+            <div className="report-card-header flex items-start justify-between gap-6 pb-5 border-b-2" style={{ borderColor: '#087482' }}>
+              <div className="min-w-0 flex-1">
                 <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 mb-1">
                   Vendor Performance Report
                 </p>
@@ -212,14 +212,18 @@ export default function VendorReportCard({ scoreRow, getTier, onClose }) {
                   </p>
                 )}
               </div>
-              <div className="text-right space-y-1.5">
+              <div className="report-card-header-meta shrink-0 flex flex-col items-end gap-1.5 text-right">
                 {tier && tier.label !== 'No data' && (
-                  <div className="glass-tier-pill text-sm" style={tierPillStyle(tier)}>
+                  <div className="glass-tier-pill text-sm whitespace-nowrap" style={tierPillStyle(tier)}>
                     {tier.label}
                   </div>
                 )}
-                <p className="text-xs text-gray-400">Generated {today}</p>
-                <p className="text-xs text-gray-400">Ashton Woods / Starlight Homes · VTC Scorecard</p>
+                <p className="text-xs text-gray-400 whitespace-nowrap leading-snug">
+                  Generated {today}
+                </p>
+                <p className="text-xs text-gray-400 whitespace-nowrap leading-snug">
+                  Ashton Woods / Starlight Homes · VTC Scorecard
+                </p>
               </div>
             </div>
 
