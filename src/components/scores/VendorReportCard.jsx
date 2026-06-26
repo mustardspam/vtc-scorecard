@@ -144,8 +144,8 @@ export default function VendorReportCard({ scoreRow, getTier, onClose }) {
   ]
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.65)' }}>
-      <div className="bg-white rounded-xl w-full max-w-3xl flex flex-col shadow-2xl" style={{ maxHeight: '90vh' }}>
+    <div className="report-card-print-root fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.65)' }}>
+      <div className="report-card-inner bg-white rounded-xl w-full max-w-3xl flex flex-col shadow-2xl" style={{ maxHeight: '90vh' }}>
 
         {/* Modal controls — hidden on print */}
         <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200 flex-shrink-0 no-print">

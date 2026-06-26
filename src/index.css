@@ -688,21 +688,88 @@ h1.text-2xl.font-bold.text-gray-900 {
 
 /* ── Print styles (report card) ── */
 @media print {
+  @page {
+    margin: 0.5in;
+    size: letter;
+  }
+
   .no-print { display: none !important; }
+
+  html, body, #root {
+    height: auto !important;
+    overflow: visible !important;
+    background: white !important;
+  }
+
   body * { visibility: hidden; }
-  .report-card-content,
-  .report-card-content * { visibility: visible; }
+
+  .report-card-print-root,
+  .report-card-print-root * { visibility: visible; }
+
+  .report-card-print-root {
+    position: static !important;
+    inset: auto !important;
+    width: 100% !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    background: white !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    z-index: auto !important;
+    display: block !important;
+  }
+
+  .report-card-inner {
+    max-height: none !important;
+    height: auto !important;
+    overflow: visible !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    display: block !important;
+  }
+
   .report-card-scroll {
     overflow: visible !important;
     max-height: none !important;
+    height: auto !important;
+    flex: none !important;
   }
+
   .report-card-content {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    background: white;
-    padding: 2rem;
-    box-sizing: border-box;
+    position: static !important;
+    width: 100% !important;
+    background: white !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    box-sizing: border-box !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .report-card-content thead {
+    display: table-header-group;
+  }
+
+  .report-card-content tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .report-card-content .space-y-2 > div,
+  .report-card-content .space-y-1\.5 > div {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* App shell must not clip the report card across pages */
+  body .h-screen,
+  body main {
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+    position: static !important;
   }
 }
