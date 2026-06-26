@@ -34,6 +34,12 @@ const INTERNAL_FIELDS = {
   community_reference: ['name', 'code', 'brand'],
 }
 
+function importTypeLabel(batch) {
+  if (batch.column_mapping?.source === 'jc_vendor_report') return 'JC Vendor Report'
+  const match = FILE_TYPES.find(t => t.value === batch.file_type)
+  return match?.label || batch.file_type || 'Import'
+}
+
 export default function UploadsPage() {
   const [step, setStep] = useState('upload')
   const [file, setFile] = useState(null)
@@ -50,6 +56,8 @@ export default function UploadsPage() {
   const [errors, setErrors] = useState([])
   const [importing, setImporting] = useState(false)
   const [history, setHistory] = useState([])
+  const [historyLoading, setHistoryLoading] = useState(true)
+  const [historyError, setHistoryError] = useState('')
   const [jcParsed, setJcParsed] = useState(null)
   const [selectedCommunities, setSelectedCommunities] = useState(new Set())
   const [importError, setImportError] = useState(null)
@@ -60,8 +68,10 @@ export default function UploadsPage() {
   const canUpload = isManager()
 
   useEffect(() => {
+    let mounted = true
     loadVendors()
-    loadHistory()
+    loadHistory(mounted)
+    return () => { mounted = false }
   }, [])
 
   async function loadVendors() {
@@ -79,17 +89,55 @@ export default function UploadsPage() {
     }
   }
 
-  async function loadHistory() {
+  async function loadHistory(mounted = true) {
+    setHistoryLoading(true)
+    setHistoryError('')
     try {
-      const { data, error } = await supabase
+      let rows = null
+
+      const joined = await supabase
         .from('import_batches')
-        .select('*, uploaded_files(original_filename, storage_path)')
+        .select('*, uploaded_files!import_batches_uploaded_file_id_fkey(original_filename, storage_path)')
         .order('created_at', { ascending: false })
         .limit(20)
-      if (error) throw error
-      setHistory(data || [])
+
+      if (joined.error) {
+        console.warn('loadHistory joined query failed, falling back:', joined.error.message)
+        const batchesRes = await supabase
+          .from('import_batches')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(20)
+        if (batchesRes.error) throw batchesRes.error
+
+        const fileIds = [...new Set((batchesRes.data || []).map(b => b.uploaded_file_id).filter(Boolean))]
+        let filesById = {}
+        if (fileIds.length) {
+          const filesRes = await supabase
+            .from('uploaded_files')
+            .select('id, original_filename, storage_path')
+            .in('id', fileIds)
+          if (filesRes.error) throw filesRes.error
+          filesById = Object.fromEntries((filesRes.data || []).map(f => [f.id, f]))
+        }
+
+        rows = (batchesRes.data || []).map(b => ({
+          ...b,
+          uploaded_files: filesById[b.uploaded_file_id] || null,
+        }))
+      } else {
+        rows = joined.data
+      }
+
+      if (mounted) setHistory(rows || [])
     } catch (err) {
       console.error('loadHistory error:', err)
+      if (mounted) {
+        setHistory([])
+        setHistoryError('Could not load import history. Please refresh the page.')
+      }
+    } finally {
+      if (mounted) setHistoryLoading(false)
     }
   }
 
@@ -476,6 +524,35 @@ export default function UploadsPage() {
       const importedVendors = activeVendors.length
       const importedAssignments = allAssignments.length
 
+      // Record in import history (JC imports previously skipped import_batches)
+      if (file && user?.id) {
+        setImportProgress('Saving import record...')
+        const storagePath = `${Date.now()}_${file.name}`
+        const { data: fileRecord } = await supabase.storage.from('uploads').upload(storagePath, file)
+        const { data: uploadedFile, error: uploadedFileErr } = await supabase.from('uploaded_files').insert({
+          original_filename: file.name,
+          storage_path: fileRecord?.path || storagePath,
+          file_type: 'other',
+          file_size_bytes: file.size,
+          mime_type: file.type,
+          uploaded_by: user.id,
+        }).select().single()
+        if (!uploadedFileErr && uploadedFile) {
+          await supabase.from('import_batches').insert({
+            uploaded_file_id: uploadedFile.id,
+            file_type: 'other',
+            status: 'approved',
+            column_mapping: { source: 'jc_vendor_report', brand },
+            row_count: importedAssignments,
+            valid_row_count: importedAssignments,
+            error_row_count: 0,
+            imported_by: user.id,
+            approved_by: user.id,
+            approved_at: new Date().toISOString(),
+          })
+        }
+      }
+
       await logActivity('import_approved',
         `Imported JC Vendor Report (${brand}): ${importedVendors} vendors, ${activeCommunities.length} communities, ${importedAssignments} assignments`,
         { brand, vendor_count: importedVendors, community_count: activeCommunities.length, assignment_count: importedAssignments }
@@ -599,6 +676,7 @@ export default function UploadsPage() {
     setImportError(null)
     setImportProgress('')
     setSelectedUnmatched(new Set())
+    loadHistory()
   }
 
   return (
@@ -676,23 +754,32 @@ export default function UploadsPage() {
       )}
 
       {/* Import history — visible to everyone (read-only for viewers) */}
-      {step === 'upload' && history.length > 0 && (
+      {step === 'upload' && (
         <div className="glass-panel p-6">
           <h2 className="glass-section-title mb-3">Import History</h2>
+          {historyLoading ? (
+            <div className="flex justify-center py-8">
+              <div className="app-loading-spinner" />
+            </div>
+          ) : historyError ? (
+            <div className="text-sm text-red-600 py-4">{historyError}</div>
+          ) : history.length === 0 ? (
+            <p className="text-sm py-4" style={{ color: 'var(--g-dim)' }}>No imports yet. Upload a file above to get started.</p>
+          ) : (
           <div className="space-y-2">
             {history.map(h => (
               <div key={h.id} className="flex items-center justify-between text-sm py-2 border-b border-gray-100">
-                <div className="flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-gray-400" />
-                  <span className="font-medium">{h.uploaded_files?.original_filename}</span>
-                  <span className="text-xs px-2 py-0.5 bg-gray-100 rounded">{h.file_type}</span>
+                <div className="flex items-center gap-2 min-w-0">
+                  <FileText className="w-4 h-4 text-gray-400 shrink-0" />
+                  <span className="font-medium truncate">{h.uploaded_files?.original_filename || 'Unknown file'}</span>
+                  <span className="text-xs px-2 py-0.5 bg-gray-100 rounded shrink-0">{importTypeLabel(h)}</span>
                 </div>
-                <div className="flex items-center gap-3 text-gray-500">
-                  <span>{h.row_count} rows</span>
+                <div className="flex items-center gap-3 text-gray-500 shrink-0">
+                  <span>{h.row_count ?? 0} rows</span>
                   <span className={`px-2 py-0.5 rounded text-xs ${h.status === 'approved' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
                     {h.status}
                   </span>
-                  <span>{new Date(h.created_at).toLocaleDateString()}</span>
+                  <span>{h.created_at ? new Date(h.created_at).toLocaleDateString() : '—'}</span>
                   {isAdmin() && (
                     <button
                       onClick={() => handleDeleteImport(h)}
@@ -707,6 +794,7 @@ export default function UploadsPage() {
               </div>
             ))}
           </div>
+          )}
         </div>
       )}
 

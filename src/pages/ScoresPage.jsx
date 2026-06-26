@@ -167,14 +167,14 @@ export default function ScoresPage() {
         <button type="button" onClick={() => setSearchParams({})} className="glass-link flex items-center gap-1.5 text-sm bg-transparent border-none cursor-pointer">
           <ArrowLeft className="w-4 h-4" /> Back to Scores
         </button>
-        <VendorReportCard scoreRow={detailRow} getTier={getTier} onClose={() => setSearchParams({})} />
+        <VendorReportCard key={detailRow.vendor_id} scoreRow={detailRow} getTier={getTier} onClose={() => setSearchParams({})} />
       </div>
     )
   }
 
   return (
     <div className="space-y-4 min-w-0">
-      {reportCard && <VendorReportCard scoreRow={reportCard} getTier={getTier} onClose={() => setReportCard(null)} />}
+      {reportCard && <VendorReportCard key={reportCard.vendor_id} scoreRow={reportCard} getTier={getTier} onClose={() => setReportCard(null)} />}
       {logActionTarget && (
         <LogActionModal vendorName={logActionTarget.vendors?.name} vendorId={logActionTarget.vendor_id} onClose={() => setLogActionTarget(null)} />
       )}

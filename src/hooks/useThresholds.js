@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { create } from 'zustand'
 import { supabase } from '../lib/supabase'
 import { TIER_COLORS } from '../lib/design/tokens'
@@ -36,11 +37,11 @@ const useThresholdStore = create((set, get) => ({
 }))
 
 export function useThresholds() {
-  const { thresholds, minThresholds, load } = useThresholdStore()
+  const { thresholds, minThresholds, loaded, load } = useThresholdStore()
 
-  if (!useThresholdStore.getState().loaded) {
-    load()
-  }
+  useEffect(() => {
+    if (!loaded) load()
+  }, [loaded, load])
 
   function getTier(score) {
     if (score == null) return { label: 'No data', ...TIER_COLORS['No data'], color: 'text-[var(--g-dim)]', bg: 'bg-transparent' }

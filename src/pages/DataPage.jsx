@@ -20,33 +20,47 @@ export default function DataPage() {
   const { isManager } = useAuth()
   const canEdit = isManager()
 
-  useEffect(() => { loadData() }, [])
+  useEffect(() => {
+    let mounted = true
+    loadData(mounted)
+    return () => { mounted = false }
+  }, [])
 
-  async function loadData() {
+  async function loadData(mounted = true) {
     setLoading(true)
-    const [vRes, cRes, catRes] = await Promise.all([
-      supabase.from('vendors').select(`
-        id, name, is_active, is_trade, category_id,
-        vendor_categories(id, name),
-        vendor_brand_references(brand, jc_vendor_id),
-        vendor_community_assignments(
-          cost_code,
-          communities(id, name, code, brand)
-        )
-      `).eq('is_active', true).order('name'),
-      supabase.from('communities').select(`
-        id, name, code, brand, is_active,
-        vendor_community_assignments(
-          cost_code,
-          vendors(id, name, is_trade, vendor_categories(name))
-        )
-      `).eq('is_active', true).order('name'),
-      supabase.from('vendor_categories').select('*').order('sort_order'),
-    ])
-    setVendors(vRes.data || [])
-    setCommunities(cRes.data || [])
-    setCategories(catRes.data || [])
-    setLoading(false)
+    try {
+      const [vRes, cRes, catRes] = await Promise.all([
+        supabase.from('vendors').select(`
+          id, name, is_active, is_trade, category_id,
+          vendor_categories(id, name),
+          vendor_brand_references(brand, jc_vendor_id),
+          vendor_community_assignments(
+            cost_code,
+            communities(id, name, code, brand)
+          )
+        `).eq('is_active', true).order('name'),
+        supabase.from('communities').select(`
+          id, name, code, brand, is_active,
+          vendor_community_assignments(
+            cost_code,
+            vendors(id, name, is_trade, vendor_categories(name))
+          )
+        `).eq('is_active', true).order('name'),
+        supabase.from('vendor_categories').select('*').order('sort_order'),
+      ])
+      if (vRes.error) throw vRes.error
+      if (cRes.error) throw cRes.error
+      if (catRes.error) throw catRes.error
+      if (mounted) {
+        setVendors(vRes.data || [])
+        setCommunities(cRes.data || [])
+        setCategories(catRes.data || [])
+      }
+    } catch (err) {
+      console.error('DataPage loadData error:', err)
+    } finally {
+      if (mounted) setLoading(false)
+    }
   }
 
   function toggleVendorSelect(id) {

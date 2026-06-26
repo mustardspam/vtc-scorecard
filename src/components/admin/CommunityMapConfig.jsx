@@ -8,16 +8,26 @@ export default function CommunityMapConfig() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    let mounted = true
     async function load() {
-      const [commRes, manRes] = await Promise.all([
-        supabase.from('communities').select('*').order('name'),
-        supabase.from('profiles').select('id, full_name').eq('is_area_manager', true).order('full_name'),
-      ])
-      setCommunities(commRes.data || [])
-      setManagers(manRes.data || [])
-      setLoading(false)
+      setLoading(true)
+      try {
+        const [commRes, manRes] = await Promise.all([
+          supabase.from('communities').select('*').order('name'),
+          supabase.from('profiles').select('id, full_name').eq('is_area_manager', true).order('full_name'),
+        ])
+        if (mounted) {
+          setCommunities(commRes.data || [])
+          setManagers(manRes.data || [])
+        }
+      } catch (err) {
+        console.error('CommunityMapConfig load error:', err)
+      } finally {
+        if (mounted) setLoading(false)
+      }
     }
     load()
+    return () => { mounted = false }
   }, [])
 
   const handleUpdate = useCallback(async (id, field, value) => {

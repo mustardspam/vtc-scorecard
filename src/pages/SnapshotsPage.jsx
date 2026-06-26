@@ -4,12 +4,67 @@ import { useAuth } from '../hooks/useAuth'
 import { logActivity } from '../hooks/useActivityLog'
 import { Camera, Eye, GitCompare, Trash2, Save, ChevronDown, ChevronUp } from 'lucide-react'
 
+const INSERT_CHUNK = 500
+
+async function fetchAllScoreResults() {
+  const pageSize = 1000
+  let all = []
+  let from = 0
+  while (true) {
+    const { data, error } = await supabase
+      .from('score_results')
+      .select('*, vendors(name, vendor_categories(name))')
+      .order('weighted_total', { ascending: false, nullsFirst: false })
+      .range(from, from + pageSize - 1)
+    if (error) throw new Error('Load scores: ' + error.message)
+    if (!data?.length) break
+    all.push(...data)
+    if (data.length < pageSize) break
+    from += pageSize
+  }
+  return all
+}
+
+async function insertInChunks(table, rows, label) {
+  if (!rows.length) return
+  for (let i = 0; i < rows.length; i += INSERT_CHUNK) {
+    const chunk = rows.slice(i, i + INSERT_CHUNK)
+    const { error } = await supabase.from(table).insert(chunk)
+    if (error) {
+      throw new Error(`${label} (rows ${i + 1}–${i + chunk.length}): ${error.message}`)
+    }
+  }
+}
+
+function mapScoreToSnapshotRow(snapshotId, s) {
+  return {
+    snapshot_id: snapshotId,
+    vendor_id: s.vendor_id,
+    vendor_name: s.vendors?.name || 'Unknown',
+    category_name: s.vendors?.vendor_categories?.name || '',
+    safety_score: s.safety_score,
+    schedule_score: s.schedule_score,
+    rework_score: s.rework_score,
+    feedback_score: s.feedback_score,
+    safety_incident_count: s.safety_incident_count,
+    schedule_total_jobs: s.schedule_total_jobs,
+    schedule_no_shows: s.schedule_no_shows,
+    rework_count: s.rework_count,
+    feedback_count: s.feedback_count,
+    weighted_total: s.weighted_total,
+    overall_rank: s.overall_rank,
+    category_rank: s.category_rank,
+  }
+}
+
 export default function SnapshotsPage() {
   const [snapshots, setSnapshots] = useState([])
   const [loading, setLoading] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
   const [createForm, setCreateForm] = useState({ name: '', description: '', notes: '' })
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
+  const [saveProgress, setSaveProgress] = useState('')
   const [expandedId, setExpandedId] = useState(null)
   const [detail, setDetail] = useState(null)
   const [compareIds, setCompareIds] = useState([])
@@ -25,10 +80,11 @@ export default function SnapshotsPage() {
   async function loadSnapshots(mounted = true) {
     setLoading(true)
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('snapshots')
         .select('*, profiles!snapshots_created_by_fkey(full_name, email)')
         .order('created_at', { ascending: false })
+      if (error) throw error
       if (mounted) setSnapshots(data || [])
     } catch (err) {
       console.error('loadSnapshots error:', err)
@@ -38,79 +94,88 @@ export default function SnapshotsPage() {
   }
 
   async function handleCreate() {
-    if (!createForm.name) return
+    if (!createForm.name || !user?.id) return
     setSaving(true)
+    setSaveError('')
+    setSaveProgress('Loading current scores…')
+    let snapshotId = null
     try {
-      const { data: scores } = await supabase
-        .from('score_results')
-        .select('*, vendors(name, vendor_categories(name))')
+      const [scores, weightsRes, filesRes] = await Promise.all([
+        fetchAllScoreResults(),
+        supabase.from('score_weights').select('*').eq('is_current', true).maybeSingle(),
+        supabase.from('uploaded_files').select('id, original_filename, file_type').order('uploaded_at', { ascending: false }).limit(100),
+      ])
 
-      const { data: weights } = await supabase
-        .from('score_weights').select('*').eq('is_current', true).single()
+      if (weightsRes.error) throw new Error('Load weights: ' + weightsRes.error.message)
+      if (filesRes.error) throw new Error('Load files: ' + filesRes.error.message)
+      const weights = weightsRes.data
+      const files = filesRes.data || []
 
-      const { data: files } = await supabase.from('uploaded_files').select('id, original_filename, file_type')
-
-      const { data: snapshot } = await supabase.from('snapshots').insert({
+      setSaveProgress('Creating snapshot…')
+      const { data: snapshot, error: snapError } = await supabase.from('snapshots').insert({
         name: createForm.name,
         description: createForm.description || null,
         notes: createForm.notes || null,
         created_by: user.id,
       }).select().single()
 
-      if (scores?.length) {
-        await supabase.from('snapshot_score_results').insert(
-          scores.map(s => ({
-            snapshot_id: snapshot.id,
-            vendor_id: s.vendor_id,
-            vendor_name: s.vendors?.name || 'Unknown',
-            category_name: s.vendors?.vendor_categories?.name || '',
-            safety_score: s.safety_score,
-            schedule_score: s.schedule_score,
-            rework_score: s.rework_score,
-            feedback_score: s.feedback_score,
-            safety_incident_count: s.safety_incident_count,
-            schedule_total_jobs: s.schedule_total_jobs,
-            schedule_no_shows: s.schedule_no_shows,
-            rework_count: s.rework_count,
-            feedback_count: s.feedback_count,
-            weighted_total: s.weighted_total,
-            overall_rank: s.overall_rank,
-            category_rank: s.category_rank,
-          }))
+      if (snapError) throw new Error('Create snapshot: ' + snapError.message)
+      snapshotId = snapshot.id
+
+      if (scores.length) {
+        setSaveProgress(`Saving ${scores.length} vendor scores…`)
+        await insertInChunks(
+          'snapshot_score_results',
+          scores.map(s => mapScoreToSnapshotRow(snapshot.id, s)),
+          'Save vendor scores',
         )
       }
 
       if (weights) {
-        await supabase.from('snapshot_weights').insert({
+        setSaveProgress('Saving weights…')
+        const { error: weightsError } = await supabase.from('snapshot_weights').insert({
           snapshot_id: snapshot.id,
           safety_weight: weights.safety_weight,
           schedule_weight: weights.schedule_weight,
-          inspections_weight: weights.inspections_weight,
+          inspections_weight: weights.inspections_weight ?? 0,
           rework_weight: weights.rework_weight,
-          warranty_weight: weights.warranty_weight,
+          warranty_weight: weights.warranty_weight ?? 0,
           feedback_weight: weights.feedback_weight,
         })
+        if (weightsError) throw new Error('Save weights: ' + weightsError.message)
       }
 
-      if (files?.length) {
-        await supabase.from('snapshot_file_refs').insert(
+      if (files.length) {
+        setSaveProgress('Saving file references…')
+        await insertInChunks(
+          'snapshot_file_refs',
           files.map(f => ({
             snapshot_id: snapshot.id,
             uploaded_file_id: f.id,
-            file_type: f.file_type,
+            file_type: ['schedule', 'safety', 'rework', 'vendor_master', 'community_reference', 'other'].includes(f.file_type)
+              ? f.file_type
+              : null,
             original_filename: f.original_filename,
-          }))
+          })),
+          'Save file references',
         )
       }
 
-      await logActivity('snapshot_created', `Created snapshot: ${createForm.name}`, { snapshot_id: snapshot.id })
+      logActivity('snapshot_created', `Created snapshot: ${createForm.name}`, { snapshot_id: snapshot.id }).catch(() => {})
+
       setShowCreate(false)
       setCreateForm({ name: '', description: '', notes: '' })
+      setSaveProgress('')
       loadSnapshots(true)
     } catch (err) {
-      alert('Error creating snapshot: ' + err.message)
+      console.error('handleCreate error:', err)
+      if (snapshotId) {
+        await supabase.from('snapshots').delete().eq('id', snapshotId)
+      }
+      setSaveError(err.message || 'Failed to create snapshot')
     } finally {
       setSaving(false)
+      setSaveProgress('')
     }
   }
 
@@ -177,7 +242,7 @@ export default function SnapshotsPage() {
             </button>
           )}
           {(isAdmin() || isManager()) && (
-            <button onClick={() => setShowCreate(!showCreate)} className="flex items-center gap-1 px-3 py-1.5 text-sm glass-btn-primary">
+            <button onClick={() => { setShowCreate(!showCreate); setSaveError('') }} className="flex items-center gap-1 px-3 py-1.5 text-sm glass-btn-primary">
               <Camera className="w-4 h-4" /> Save Snapshot
             </button>
           )}
@@ -197,6 +262,12 @@ export default function SnapshotsPage() {
             className="flex items-center gap-1 px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">
             <Save className="w-4 h-4" /> {saving ? 'Saving...' : 'Save Snapshot'}
           </button>
+          {saveProgress && saving && (
+            <p className="text-xs text-gray-500">{saveProgress}</p>
+          )}
+          {saveError && (
+            <p className="text-sm text-red-600">{saveError}</p>
+          )}
         </div>
       )}
 

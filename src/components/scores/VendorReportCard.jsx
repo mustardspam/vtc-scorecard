@@ -43,51 +43,78 @@ function ScoreBox({ label, value, getTier, large }) {
 export default function VendorReportCard({ scoreRow, getTier, onClose }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
 
   useEffect(() => {
-    load()
-  }, [])
-
-  async function load() {
+    let mounted = true
     const vendorId = scoreRow.vendor_id
-    const [snapRes, feedRes, safeRes, rwRes] = await Promise.all([
-      supabase
-        .from('snapshot_score_results')
-        .select('weighted_total, safety_score, schedule_score, rework_score, feedback_score, snapshots(name, created_at)')
-        .eq('vendor_id', vendorId),
-      supabase
-        .from('builder_feedback')
-        .select('category, severity, points, description, submitted_at, communities(name)')
-        .eq('vendor_id', vendorId)
-        .eq('is_approved', true)
-        .order('submitted_at', { ascending: false })
-        .limit(10),
-      supabase
-        .from('safety_records')
-        .select('record_date, severity, severity_points, incident_type')
-        .eq('vendor_id', vendorId)
-        .order('record_date', { ascending: false })
-        .limit(6),
-      supabase
-        .from('rework_records')
-        .select('record_date, cost, severity, description')
-        .eq('vendor_id', vendorId)
-        .order('record_date', { ascending: false })
-        .limit(6),
-    ])
 
-    const snapshots = (snapRes.data || [])
-      .filter(s => s.snapshots?.created_at)
-      .sort((a, b) => new Date(a.snapshots.created_at) - new Date(b.snapshots.created_at))
+    async function load() {
+      setLoading(true)
+      setLoadError('')
+      setData(null)
+      try {
+        const [snapRes, feedRes, safeRes, rwRes] = await Promise.all([
+          supabase
+            .from('snapshot_score_results')
+            .select('weighted_total, safety_score, schedule_score, rework_score, feedback_score, snapshots(name, created_at)')
+            .eq('vendor_id', vendorId),
+          supabase
+            .from('builder_feedback')
+            .select('category, severity, points, description, submitted_at, communities(name)')
+            .eq('vendor_id', vendorId)
+            .eq('is_approved', true)
+            .order('submitted_at', { ascending: false })
+            .limit(10),
+          supabase
+            .from('safety_records')
+            .select('record_date, severity, severity_points, incident_type')
+            .eq('vendor_id', vendorId)
+            .order('record_date', { ascending: false })
+            .limit(6),
+          supabase
+            .from('rework_records')
+            .select('record_date, cost, severity, description')
+            .eq('vendor_id', vendorId)
+            .order('record_date', { ascending: false })
+            .limit(6),
+        ])
 
-    setData({
-      snapshots,
-      feedback: feedRes.data || [],
-      safety: safeRes.data || [],
-      rework: rwRes.data || [],
-    })
-    setLoading(false)
-  }
+        for (const res of [snapRes, feedRes, safeRes, rwRes]) {
+          if (res.error) throw res.error
+        }
+
+        const snapshots = (snapRes.data || [])
+          .filter(s => s.snapshots?.created_at)
+          .sort((a, b) => new Date(a.snapshots.created_at) - new Date(b.snapshots.created_at))
+
+        if (mounted) {
+          setData({
+            snapshots,
+            feedback: feedRes.data || [],
+            safety: safeRes.data || [],
+            rework: rwRes.data || [],
+          })
+        }
+      } catch (err) {
+        console.error('VendorReportCard load error:', err)
+        if (mounted) {
+          setLoadError('Could not load report data. Please try again.')
+          setData({ snapshots: [], feedback: [], safety: [], rework: [] })
+        }
+      } finally {
+        if (mounted) setLoading(false)
+      }
+    }
+
+    if (vendorId) load()
+    else if (mounted) {
+      setLoading(false)
+      setData({ snapshots: [], feedback: [], safety: [], rework: [] })
+    }
+
+    return () => { mounted = false }
+  }, [scoreRow.vendor_id])
 
   const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
   const vendorName = scoreRow.vendors?.name || 'Unknown Vendor'
@@ -190,8 +217,13 @@ export default function VendorReportCard({ scoreRow, getTier, onClose }) {
 
             {loading ? (
               <p className="text-sm text-gray-400 py-6 text-center">Loading report data…</p>
+            ) : !data ? (
+              <p className="text-sm text-gray-400 py-6 text-center">No report data available.</p>
             ) : (
               <>
+                {loadError && (
+                  <p className="text-sm text-red-600 py-2 text-center">{loadError}</p>
+                )}
                 {/* Snapshot history */}
                 {data.snapshots.length > 0 && (
                   <div>

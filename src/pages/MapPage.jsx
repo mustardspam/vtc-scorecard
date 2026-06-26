@@ -38,7 +38,7 @@ function haversineKm(lat1, lng1, lat2, lng2) {
 }
 
 export default function MapPage() {
-  const { communities, vendors, categories, managers, assignments, loading } = useMapData()
+  const { communities, vendors, categories, managers, assignments, loading, assignmentsLoading, error } = useMapData()
 
   const [hiddenManagers, setHiddenManagers] = useState(new Set())
   const [selectedVendorId, setSelectedVendorId] = useState('')
@@ -242,7 +242,11 @@ export default function MapPage() {
           <p style={{ fontSize: '11px', color: '#aaa', marginTop: '4px' }}>
             {loading ? 'Loading…' : `${pinnedCount} of ${communities.length} communities pinned`}
             {!loading && unpinnedCount > 0 ? ` · ${unpinnedCount} unmapped` : ''}
+            {!loading && assignmentsLoading ? ' · loading coverage…' : ''}
           </p>
+          {error && (
+            <p style={{ fontSize: '11px', color: '#c0392b', marginTop: '4px' }}>{error}</p>
+          )}
         </div>
 
         {/* Area Managers */}
@@ -289,6 +293,9 @@ export default function MapPage() {
             <option value="">— or filter by category —</option>
             {categories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
           </select>
+          {(selectedVendorId || selectedCategoryId) && assignmentsLoading && (
+            <p style={{ fontSize: '11px', color: '#aaa', marginTop: '6px' }}>Loading vendor coverage…</p>
+          )}
           {(selectedVendorId || selectedCategoryId) && (
             <button onClick={() => { setSelectedVendorId(''); setSelectedCategoryId('') }}
               style={{ marginTop: '6px', fontSize: '11px', color: '#aaa', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>

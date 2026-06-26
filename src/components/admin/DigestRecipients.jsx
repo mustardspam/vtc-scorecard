@@ -16,15 +16,21 @@ export default function DigestRecipients() {
 
   async function load() {
     setLoading(true)
-    const { data } = await supabase
-      .from('system_config')
-      .select('value')
-      .eq('key', 'digest_recipients')
-      .single()
-    if (data?.value) {
-      try { setEmails(JSON.parse(data.value)) } catch { setEmails([]) }
+    try {
+      const { data, error } = await supabase
+        .from('system_config')
+        .select('value')
+        .eq('key', 'digest_recipients')
+        .single()
+      if (error && error.code !== 'PGRST116') throw error
+      if (data?.value) {
+        try { setEmails(JSON.parse(data.value)) } catch { setEmails([]) }
+      }
+    } catch (err) {
+      console.error('DigestRecipients load error:', err)
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }
 
   async function save(list) {

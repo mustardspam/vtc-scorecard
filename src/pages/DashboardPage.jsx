@@ -25,34 +25,36 @@ export default function DashboardPage() {
 
   async function loadData(mounted = true) {
     setLoading(true)
-    let query = supabase
-      .from('score_results')
-      .select('*, vendors(name, category_id, vendor_categories(name))')
-      .order('weighted_total', { ascending: false })
-
-    if (filters.category) {
-      query = query.eq('category_id', filters.category)
-    }
-
-    if (filters.community) {
-      const { data: vendorIds } = await supabase
-        .from('vendor_communities')
-        .select('vendor_id')
-        .eq('community_id', filters.community)
-      const ids = (vendorIds || []).map(v => v.vendor_id)
-      if (ids.length) query = query.in('vendor_id', ids)
-      else {
-        if (mounted) { setScores([]); setLoading(false) }
-        return
-      }
-    }
-
     try {
+      let query = supabase
+        .from('score_results')
+        .select('*, vendors(name, category_id, vendor_categories(name))')
+        .order('weighted_total', { ascending: false })
+
+      if (filters.category) {
+        query = query.eq('category_id', filters.category)
+      }
+
+      if (filters.community) {
+        const { data: vendorIds, error: vcError } = await supabase
+          .from('vendor_community_assignments')
+          .select('vendor_id')
+          .eq('community_id', filters.community)
+        if (vcError) throw vcError
+        const ids = [...new Set((vendorIds || []).map(v => v.vendor_id))]
+        if (!ids.length) {
+          if (mounted) setScores([])
+          return
+        }
+        query = query.in('vendor_id', ids)
+      }
+
       const [scoresRes, weightsRes, commRes] = await Promise.all([
         query,
         supabase.from('score_weights').select('*').eq('is_current', true).single(),
         supabase.from('communities').select('id', { count: 'exact', head: true }).eq('is_active', true),
       ])
+      if (scoresRes.error) throw scoresRes.error
       if (mounted) {
         setScores(scoresRes.data || [])
         setWeights(weightsRes.data)

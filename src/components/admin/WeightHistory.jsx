@@ -57,14 +57,20 @@ export default function WeightHistory() {
 
   async function loadHistory() {
     setLoading(true)
-    const { data } = await supabase
-      .from('activity_log')
-      .select('id, action_type, description, metadata, created_at, profiles!activity_log_user_id_fkey(full_name, email)')
-      .in('action_type', ['weights_changed', 'weights_reset'])
-      .order('created_at', { ascending: false })
-      .limit(100)
-    setEntries(data || [])
-    setLoading(false)
+    try {
+      const { data, error } = await supabase
+        .from('activity_log')
+        .select('id, action_type, description, metadata, created_at, profiles!activity_log_user_id_fkey(full_name, email)')
+        .in('action_type', ['weights_changed', 'weights_reset'])
+        .order('created_at', { ascending: false })
+        .limit(100)
+      if (error) throw error
+      setEntries(data || [])
+    } catch (err) {
+      console.error('WeightHistory load error:', err)
+    } finally {
+      setLoading(false)
+    }
   }
 
   if (loading) {

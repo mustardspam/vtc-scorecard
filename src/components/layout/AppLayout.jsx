@@ -26,7 +26,7 @@ export default function AppLayout() {
             isMap ? 'overflow-hidden' : 'overflow-y-auto overflow-x-hidden px-5 py-5 sm:px-6 lg:px-7 lg:py-6',
           )}
         >
-          <Outlet />
+          <Outlet key={pathname} />
         </main>
       </div>
       <AIChatWidget />
