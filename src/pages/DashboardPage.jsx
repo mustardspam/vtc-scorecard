@@ -5,6 +5,7 @@ import ScoreSummaryCard from '../components/dashboard/ScoreSummaryCard'
 import ParameterBreakdown from '../components/dashboard/ParameterBreakdown'
 import PerformerCard from '../components/dashboard/PerformerCard'
 import DashboardFilters from '../components/dashboard/DashboardFilters'
+import WeightSliders from '../components/weights/WeightSliders'
 import { useThresholds } from '../hooks/useThresholds'
 
 export default function DashboardPage() {
@@ -178,6 +179,11 @@ export default function DashboardPage() {
             )}
           </div>
         </div>
+      </div>
+
+      <div className="glass-panel p-4 sm:p-5 min-w-0">
+        <h2 className="glass-section-title mb-4">Weight Configuration</h2>
+        <WeightSliders />
       </div>
     </div>
   )

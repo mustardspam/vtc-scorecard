@@ -230,7 +230,7 @@ export default function MapPage() {
   const selectedVendorName = vendors.find(v => v.id === selectedVendorId)?.name ?? ''
 
   return (
-    <div className="absolute inset-0 -mx-5 -my-5 sm:-mx-6 lg:-mx-7 lg:-my-6 flex min-w-0 z-[5]">
+    <div className="flex h-full min-h-0 min-w-0 z-[5]">
       {/* ── Left control panel ── */}
       <div style={{ width: '256px', minWidth: '256px', background: 'var(--g-panel)', borderRight: '1px solid var(--g-line)', display: 'flex', flexDirection: 'column', overflowY: 'auto', backdropFilter: 'saturate(160%) blur(18px)' }}>
         {/* Header */}

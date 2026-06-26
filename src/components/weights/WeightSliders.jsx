@@ -97,7 +97,7 @@ export default function WeightSliders() {
     <div className="space-y-4">
       {Object.entries(LABELS).map(([key, label]) => (
         <div key={key} className="flex items-center gap-4">
-          <span className="text-sm font-medium text-gray-700 w-28">{label}</span>
+          <span className="text-sm font-medium w-28" style={{ color: 'var(--g-text)' }}>{label}</span>
           <input
             type="range"
             min="0"
@@ -106,29 +106,34 @@ export default function WeightSliders() {
             value={weights[key]}
             onChange={e => handleChange(key, e.target.value)}
             disabled={!canEdit}
-            className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600 disabled:opacity-50"
+            className="flex-1 h-2 rounded-lg appearance-none cursor-pointer disabled:opacity-50"
+            style={{ background: 'var(--g-line)', accentColor: 'var(--g-accent)' }}
           />
-          <span className={`text-sm font-mono w-16 text-right ${!isValid ? 'text-red-600 font-bold' : 'text-gray-700'}`}>
+          <span
+            className="text-sm font-mono w-16 text-right"
+            style={{ color: !isValid ? '#d44848' : 'var(--g-text)', fontWeight: !isValid ? 700 : 400 }}
+          >
             {(weights[key] * 100).toFixed(1)}%
           </span>
         </div>
       ))}
 
-      <div className="flex items-center justify-between pt-2 border-t border-gray-200">
+      <div className="flex items-center justify-between pt-2" style={{ borderTop: '1px solid var(--g-line)' }}>
         <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-gray-700">Total:</span>
-          <span className={`text-sm font-bold ${isValid ? 'text-green-600' : 'text-red-600'}`}>
+          <span className="text-sm font-medium" style={{ color: 'var(--g-text)' }}>Total:</span>
+          <span className="text-sm font-bold" style={{ color: isValid ? '#2fa35f' : '#d44848' }}>
             {(total * 100).toFixed(1)}%
           </span>
-          {!isValid && <span className="text-xs text-red-500">Must equal 100%</span>}
+          {!isValid && <span className="text-xs" style={{ color: '#d44848' }}>Must equal 100%</span>}
         </div>
 
         {canEdit && (
           <div className="flex items-center gap-2">
-            {message && <span className="text-xs text-green-600">{message}</span>}
+            {message && <span className="text-xs" style={{ color: '#2fa35f' }}>{message}</span>}
             <button
               onClick={handleReset}
-              className="flex items-center gap-1 px-3 py-1.5 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
+              className="flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg"
+              style={{ color: 'var(--g-dim)', border: '1px solid var(--g-line)' }}
             >
               <RotateCcw className="w-3.5 h-3.5" />
               Reset to Default
