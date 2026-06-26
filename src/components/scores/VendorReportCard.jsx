@@ -20,6 +20,16 @@ function fmtCurrency(v) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(v)
 }
 
+/** Project abbreviation only — omit embedded marketing name (e.g. "HOUFM Avalon Ridge" → "HOUFM"). */
+function communityAbbreviation(community) {
+  const code = community?.code?.trim()
+  if (!code) return null
+  const name = community?.name?.trim()
+  if (name && name !== code) return code
+  const space = code.indexOf(' ')
+  return space > 0 ? code.slice(0, space) : code
+}
+
 function ScoreBox({ label, value, getTier, large }) {
   const tier = getTier(value)
   return (
@@ -61,7 +71,7 @@ export default function VendorReportCard({ scoreRow, getTier, onClose }) {
             .eq('vendor_id', vendorId),
           supabase
             .from('builder_feedback')
-            .select('category, severity, points, description, submitted_at, communities(name)')
+            .select('category, severity, points, description, submitted_at, communities(name, code)')
             .eq('vendor_id', vendorId)
             .eq('is_approved', true)
             .order('submitted_at', { ascending: false })
@@ -80,7 +90,7 @@ export default function VendorReportCard({ scoreRow, getTier, onClose }) {
             .limit(6),
           supabase
             .from('vendor_community_assignments')
-            .select('community_id, communities(code)')
+            .select('community_id, communities(name, code)')
             .eq('vendor_id', vendorId),
           supabase
             .from('vendor_brand_references')
@@ -94,12 +104,12 @@ export default function VendorReportCard({ scoreRow, getTier, onClose }) {
 
         const communityCodeMap = new Map()
         for (const row of assignRes.data || []) {
-          const code = row.communities?.code
-          if (code && row.community_id && !communityCodeMap.has(row.community_id)) {
-            communityCodeMap.set(row.community_id, code)
+          const abbrev = communityAbbreviation(row.communities)
+          if (abbrev && row.community_id && !communityCodeMap.has(row.community_id)) {
+            communityCodeMap.set(row.community_id, abbrev)
           }
         }
-        const communityCodes = [...communityCodeMap.values()].sort((a, b) => a.localeCompare(b))
+        const communityCodes = [...new Set(communityCodeMap.values())].sort((a, b) => a.localeCompare(b))
 
         const snapshots = (snapRes.data || [])
           .filter(s => s.snapshots?.created_at)
@@ -324,6 +334,7 @@ export default function VendorReportCard({ scoreRow, getTier, onClose }) {
                         const label = f.category === 'kudos'
                           ? 'Kudos'
                           : `${(f.severity || '').charAt(0).toUpperCase() + (f.severity || '').slice(1)} Complaint`
+                        const communityCode = communityAbbreviation(f.communities)
                         return (
                           <div key={i} className="border border-gray-200 rounded-lg p-3">
                             <div className="flex items-center justify-between mb-1">
@@ -332,8 +343,8 @@ export default function VendorReportCard({ scoreRow, getTier, onClose }) {
                                   {label}
                                 </span>
                                 <span className="text-xs font-mono text-gray-500">{f.points} pts</span>
-                                {f.communities?.name && (
-                                  <span className="text-xs text-gray-400">{f.communities.name}</span>
+                                {communityCode && (
+                                  <span className="text-xs font-mono text-gray-400">{communityCode}</span>
                                 )}
                               </div>
                               <span className="text-xs text-gray-400 whitespace-nowrap">
