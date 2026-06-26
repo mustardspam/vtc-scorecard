@@ -153,9 +153,10 @@ export default function ScoresPage() {
   }, [scores, search, sortField, sortDir])
 
   function exportCSV() {
-    const headers = ['Rank', 'Vendor', 'Category', 'Safety', 'Schedule', 'Rework', 'Feedback', 'Total', 'Risk (12mo)']
+    const headers = ['Rank', 'Vendor', 'Category', 'Jobs (score period)', 'Safety', 'Schedule', 'Rework', 'Feedback', 'Total', 'Risk (12mo)']
     const rows = filtered.map((s, i) => [
       i + 1, s.vendors?.name, s.vendors?.vendor_categories?.name,
+      s.schedule_total_jobs ?? 0,
       s.safety_score ?? '', s.schedule_score ?? '', s.rework_score ?? '',
       s.feedback_score ?? '', s.weighted_total ?? '', s.risk_exposure_12mo ?? '',
     ])
@@ -233,6 +234,9 @@ export default function ScoresPage() {
                 <th className="text-left">#</th>
                 <th className="text-left">Vendor / Trade</th>
                 <th className="text-left">Category</th>
+                <th className="text-right cursor-pointer" onClick={() => handleSort('schedule_total_jobs')} title="Jobs in score period (from schedule uploads)">
+                  <span className="inline-flex items-center justify-end gap-1 w-full">Jobs<SortIcon field="schedule_total_jobs" /></span>
+                </th>
                 {SCORE_FIELDS.map(field => (
                   <th key={field} className="text-right cursor-pointer" onClick={() => handleSort(field)}>
                     <span className="inline-flex items-center justify-end gap-1 w-full">{SCORE_LABELS[field]}<SortIcon field={field} /></span>
@@ -268,6 +272,9 @@ export default function ScoresPage() {
                       </div>
                     </td>
                     <td><CategoryChip name={s.vendors?.vendor_categories?.name} /></td>
+                    <td className="text-right font-mono text-[13px]" style={{ color: 'var(--g-dim)' }} title="Jobs in score period">
+                      {s.schedule_total_jobs ?? 0}
+                    </td>
                     {SCORE_FIELDS.map(field => {
                       const lowData = field !== 'weighted_total' && !hasEnoughData(s, field)
                       const tier = getTier(s[field])
@@ -317,7 +324,7 @@ export default function ScoresPage() {
                 )
               })}
               {filtered.length === 0 && (
-                <tr><td colSpan={11} className="text-center py-12" style={{ color: 'var(--g-dim)' }}>No vendors match your search</td></tr>
+                <tr><td colSpan={12} className="text-center py-12" style={{ color: 'var(--g-dim)' }}>No vendors match your search</td></tr>
               )}
             </tbody>
           </table>

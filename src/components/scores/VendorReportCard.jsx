@@ -167,6 +167,9 @@ export default function VendorReportCard({ scoreRow, getTier, onClose }) {
                 </p>
                 <h1 className="text-2xl font-bold text-gray-900">{vendorName}</h1>
                 {category && <p className="text-sm text-gray-500 mt-0.5">{category}</p>}
+                <p className="text-sm text-gray-500 mt-0.5">
+                  {scoreRow.schedule_total_jobs ?? 0} job{(scoreRow.schedule_total_jobs ?? 0) === 1 ? '' : 's'} in score period
+                </p>
               </div>
               <div className="text-right space-y-1.5">
                 {tier && tier.label !== 'No data' && (

@@ -28,6 +28,14 @@ function makeIcon(brand, color, opacity) {
   return L.divIcon({ html: svg, className: '', iconSize: [32, 32], iconAnchor: [16, 16], tooltipAnchor: [16, -4] })
 }
 
+function distinctPinnedCommunities(assignments, vendorId, pinnedIds) {
+  const ids = new Set()
+  for (const a of assignments) {
+    if (a.vendor_id === vendorId && pinnedIds.has(a.community_id)) ids.add(a.community_id)
+  }
+  return ids.size
+}
+
 function haversineKm(lat1, lng1, lat2, lng2) {
   const R = 6371
   const dLat = (lat2 - lat1) * Math.PI / 180
@@ -101,10 +109,10 @@ export default function MapPage() {
     const catVendors = vendors.filter(v => v.category_id === selectedCategoryId)
     const pinnedIds = new Set(communities.filter(c => c.lat && c.lng).map(c => c.id))
     const rows = catVendors.map(v => {
-      const count = assignments.filter(a => a.vendor_id === v.id && pinnedIds.has(a.community_id)).length
-      return { id: v.id, name: v.name, count }
-    }).sort((a, b) => b.count - a.count)
-    const max = rows[0]?.count || 1
+      const communityCount = distinctPinnedCommunities(assignments, v.id, pinnedIds)
+      return { id: v.id, name: v.name, communityCount }
+    }).sort((a, b) => b.communityCount - a.communityCount)
+    const max = rows[0]?.communityCount || 1
     const totalCovered = new Set(
       assignments.filter(a => catVendors.some(v => v.id === a.vendor_id) && pinnedIds.has(a.community_id)).map(a => a.community_id)
     ).size
@@ -320,7 +328,7 @@ export default function MapPage() {
                     <span style={{ color: '#666', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.full_name}</span>
                   </div>
                   <span style={{ fontWeight: 600, marginLeft: '8px', flexShrink: 0, color: '#444' }}>
-                    {m.covered}/{m.total}
+                    {m.covered}/{m.total} communities
                   </span>
                 </div>
               ))}
@@ -341,9 +349,10 @@ export default function MapPage() {
             <p style={{ fontSize: '11px', color: '#bbb', marginBottom: '10px' }}>tap a vendor to see spread</p>
             <div style={{ display: 'flex', flexDirection: 'column' }}>
               {categoryVendorStats.rows.map(v => {
-                const isLight = v.count <= 1
+                const isLight = v.communityCount <= 1
                 const barColor = isLight ? '#d97706' : '#087482'
-                const barPct = Math.max(6, Math.round((v.count / categoryVendorStats.max) * 100))
+                const barPct = Math.max(6, Math.round((v.communityCount / categoryVendorStats.max) * 100))
+                const communityLabel = v.communityCount === 1 ? '1 community' : `${v.communityCount} communities`
                 return (
                   <button
                     key={v.id}
@@ -361,8 +370,8 @@ export default function MapPage() {
                     <div style={{ width: '52px', flexShrink: 0, height: '4px', background: '#eee', borderRadius: '2px' }}>
                       <div style={{ width: `${barPct}%`, height: '4px', borderRadius: '2px', background: barColor }} />
                     </div>
-                    <span style={{ fontSize: '11px', fontWeight: 600, width: '24px', textAlign: 'right', flexShrink: 0, color: isLight ? '#d97706' : '#555' }}>
-                      {v.count}
+                    <span style={{ fontSize: '11px', fontWeight: 600, minWidth: '88px', textAlign: 'right', flexShrink: 0, color: isLight ? '#d97706' : '#555' }}>
+                      {communityLabel}
                     </span>
                   </button>
                 )
