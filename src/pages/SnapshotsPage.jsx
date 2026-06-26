@@ -3,11 +3,11 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { useLoadGuard } from '../hooks/useLoadGuard'
 import { logActivity } from '../hooks/useActivityLog'
+import { promiseWithTimeout } from '../lib/fetchWithTimeout'
 import { Camera, Eye, GitCompare, Trash2, Save, ChevronDown, ChevronUp } from 'lucide-react'
 
 const INSERT_CHUNK = 500
-const SCORE_PAGE_SIZE = 1000
-const MAX_SCORE_PAGES = 50
+const STEP_TIMEOUT_MS = 60000
 
 async function fetchSnapshotList() {
   const { data: rows, error } = await supabase
@@ -36,22 +36,24 @@ async function fetchSnapshotList() {
 }
 
 async function fetchAllScoreResults() {
-  let all = []
-  let from = 0
-  for (let page = 0; page < MAX_SCORE_PAGES; page++) {
-    const { data, error } = await supabase
-      .from('score_results')
-      .select('*, vendors(name, vendor_categories(name))')
-      .order('weighted_total', { ascending: false, nullsFirst: false })
-      .order('vendor_id', { ascending: true })
-      .range(from, from + SCORE_PAGE_SIZE - 1)
-    if (error) throw new Error('Load scores: ' + error.message)
-    if (!data?.length) break
-    all.push(...data)
-    if (data.length < SCORE_PAGE_SIZE) break
-    from += SCORE_PAGE_SIZE
-  }
-  return all
+  const { data: scores, error } = await supabase
+    .from('score_results')
+    .select('*')
+    .order('overall_rank', { ascending: true, nullsFirst: true })
+
+  if (error) throw new Error('Load scores: ' + error.message)
+  if (!scores?.length) return []
+
+  const vendorIds = [...new Set(scores.map(s => s.vendor_id).filter(Boolean))]
+  const { data: vendors, error: vendorError } = await supabase
+    .from('vendors')
+    .select('id, name, vendor_categories(name)')
+    .in('id', vendorIds)
+
+  if (vendorError) throw new Error('Load vendors: ' + vendorError.message)
+
+  const vendorById = Object.fromEntries((vendors || []).map(v => [v.id, v]))
+  return scores.map(s => ({ ...s, vendors: vendorById[s.vendor_id] || null }))
 }
 
 async function insertInChunks(table, rows, label) {
@@ -128,14 +130,28 @@ export default function SnapshotsPage() {
     if (!createForm.name || !user?.id) return
     setSaving(true)
     setSaveError('')
-    setSaveProgress('Loading current scores…')
+    setSaveProgress('Checking session…')
     let snapshotId = null
     try {
-      const [scores, weightsRes, filesRes] = await Promise.all([
+      const { error: sessionError } = await supabase.auth.getSession()
+      if (sessionError) throw new Error('Session error: ' + sessionError.message)
+
+      setSaveProgress('Loading current scores…')
+      const scores = await promiseWithTimeout(
         fetchAllScoreResults(),
-        supabase.from('score_weights').select('*').eq('is_current', true).maybeSingle(),
-        supabase.from('uploaded_files').select('id, original_filename, file_type').order('uploaded_at', { ascending: false }).limit(100),
-      ])
+        STEP_TIMEOUT_MS,
+        'Loading scores timed out. Please try again.',
+      )
+
+      setSaveProgress('Loading weights and files…')
+      const [weightsRes, filesRes] = await promiseWithTimeout(
+        Promise.all([
+          supabase.from('score_weights').select('*').eq('is_current', true).maybeSingle(),
+          supabase.from('uploaded_files').select('id, original_filename, file_type').order('uploaded_at', { ascending: false }).limit(100),
+        ]),
+        STEP_TIMEOUT_MS,
+        'Loading snapshot metadata timed out. Please try again.',
+      )
 
       if (weightsRes.error) throw new Error('Load weights: ' + weightsRes.error.message)
       if (filesRes.error) throw new Error('Load files: ' + filesRes.error.message)
@@ -143,52 +159,68 @@ export default function SnapshotsPage() {
       const files = filesRes.data || []
 
       setSaveProgress('Creating snapshot…')
-      const { data: snapshot, error: snapError } = await supabase.from('snapshots').insert({
-        name: createForm.name,
-        description: createForm.description || null,
-        notes: createForm.notes || null,
-        created_by: user.id,
-      }).select().single()
+      const { data: snapshot, error: snapError } = await promiseWithTimeout(
+        supabase.from('snapshots').insert({
+          name: createForm.name,
+          description: createForm.description || null,
+          notes: createForm.notes || null,
+          created_by: user.id,
+        }).select().single(),
+        STEP_TIMEOUT_MS,
+        'Creating snapshot timed out. Please try again.',
+      )
 
       if (snapError) throw new Error('Create snapshot: ' + snapError.message)
       snapshotId = snapshot.id
 
       if (scores.length) {
         setSaveProgress(`Saving ${scores.length} vendor scores…`)
-        await insertInChunks(
-          'snapshot_score_results',
-          scores.map(s => mapScoreToSnapshotRow(snapshot.id, s)),
-          'Save vendor scores',
+        await promiseWithTimeout(
+          insertInChunks(
+            'snapshot_score_results',
+            scores.map(s => mapScoreToSnapshotRow(snapshot.id, s)),
+            'Save vendor scores',
+          ),
+          STEP_TIMEOUT_MS,
+          'Saving vendor scores timed out. Please try again.',
         )
       }
 
       if (weights) {
         setSaveProgress('Saving weights…')
-        const { error: weightsError } = await supabase.from('snapshot_weights').insert({
-          snapshot_id: snapshot.id,
-          safety_weight: weights.safety_weight,
-          schedule_weight: weights.schedule_weight,
-          inspections_weight: weights.inspections_weight ?? 0,
-          rework_weight: weights.rework_weight,
-          warranty_weight: weights.warranty_weight ?? 0,
-          feedback_weight: weights.feedback_weight,
-        })
+        const { error: weightsError } = await promiseWithTimeout(
+          supabase.from('snapshot_weights').insert({
+            snapshot_id: snapshot.id,
+            safety_weight: weights.safety_weight,
+            schedule_weight: weights.schedule_weight,
+            inspections_weight: weights.inspections_weight ?? 0,
+            rework_weight: weights.rework_weight,
+            warranty_weight: weights.warranty_weight ?? 0,
+            feedback_weight: weights.feedback_weight,
+          }),
+          STEP_TIMEOUT_MS,
+          'Saving weights timed out. Please try again.',
+        )
         if (weightsError) throw new Error('Save weights: ' + weightsError.message)
       }
 
       if (files.length) {
         setSaveProgress('Saving file references…')
-        await insertInChunks(
-          'snapshot_file_refs',
-          files.map(f => ({
-            snapshot_id: snapshot.id,
-            uploaded_file_id: f.id,
-            file_type: ['schedule', 'safety', 'rework', 'vendor_master', 'community_reference', 'other'].includes(f.file_type)
-              ? f.file_type
-              : null,
-            original_filename: f.original_filename,
-          })),
-          'Save file references',
+        await promiseWithTimeout(
+          insertInChunks(
+            'snapshot_file_refs',
+            files.map(f => ({
+              snapshot_id: snapshot.id,
+              uploaded_file_id: f.id,
+              file_type: ['schedule', 'safety', 'rework', 'vendor_master', 'community_reference', 'other'].includes(f.file_type)
+                ? f.file_type
+                : null,
+              original_filename: f.original_filename,
+            })),
+            'Save file references',
+          ),
+          STEP_TIMEOUT_MS,
+          'Saving file references timed out. Please try again.',
         )
       }
 
@@ -196,12 +228,11 @@ export default function SnapshotsPage() {
 
       setShowCreate(false)
       setCreateForm({ name: '', description: '', notes: '' })
-      setSaveProgress('')
       loadSnapshots()
     } catch (err) {
       console.error('handleCreate error:', err)
       if (snapshotId) {
-        await supabase.from('snapshots').delete().eq('id', snapshotId)
+        await supabase.from('snapshots').delete().eq('id', snapshotId).catch(() => {})
       }
       setSaveError(err.message || 'Failed to create snapshot')
     } finally {
