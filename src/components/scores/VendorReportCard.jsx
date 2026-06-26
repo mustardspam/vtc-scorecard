@@ -54,7 +54,7 @@ export default function VendorReportCard({ scoreRow, getTier, onClose }) {
       setLoadError('')
       setData(null)
       try {
-        const [snapRes, feedRes, safeRes, rwRes] = await Promise.all([
+        const [snapRes, feedRes, safeRes, rwRes, assignRes] = await Promise.all([
           supabase
             .from('snapshot_score_results')
             .select('weighted_total, safety_score, schedule_score, rework_score, feedback_score, snapshots(name, created_at)')
@@ -78,11 +78,24 @@ export default function VendorReportCard({ scoreRow, getTier, onClose }) {
             .eq('vendor_id', vendorId)
             .order('record_date', { ascending: false })
             .limit(6),
+          supabase
+            .from('vendor_community_assignments')
+            .select('community_id, communities(code)')
+            .eq('vendor_id', vendorId),
         ])
 
-        for (const res of [snapRes, feedRes, safeRes, rwRes]) {
+        for (const res of [snapRes, feedRes, safeRes, rwRes, assignRes]) {
           if (res.error) throw res.error
         }
+
+        const communityCodeMap = new Map()
+        for (const row of assignRes.data || []) {
+          const code = row.communities?.code
+          if (code && row.community_id && !communityCodeMap.has(row.community_id)) {
+            communityCodeMap.set(row.community_id, code)
+          }
+        }
+        const communityCodes = [...communityCodeMap.values()].sort((a, b) => a.localeCompare(b))
 
         const snapshots = (snapRes.data || [])
           .filter(s => s.snapshots?.created_at)
@@ -94,13 +107,14 @@ export default function VendorReportCard({ scoreRow, getTier, onClose }) {
             feedback: feedRes.data || [],
             safety: safeRes.data || [],
             rework: rwRes.data || [],
+            communityCodes,
           })
         }
       } catch (err) {
         console.error('VendorReportCard load error:', err)
         if (mounted) {
           setLoadError('Could not load report data. Please try again.')
-          setData({ snapshots: [], feedback: [], safety: [], rework: [] })
+          setData({ snapshots: [], feedback: [], safety: [], rework: [], communityCodes: [] })
         }
       } finally {
         if (mounted) setLoading(false)
@@ -110,7 +124,7 @@ export default function VendorReportCard({ scoreRow, getTier, onClose }) {
     if (vendorId) load()
     else if (mounted) {
       setLoading(false)
-      setData({ snapshots: [], feedback: [], safety: [], rework: [] })
+      setData({ snapshots: [], feedback: [], safety: [], rework: [], communityCodes: [] })
     }
 
     return () => { mounted = false }
@@ -170,6 +184,12 @@ export default function VendorReportCard({ scoreRow, getTier, onClose }) {
                 <p className="text-sm text-gray-500 mt-0.5">
                   {scoreRow.schedule_total_jobs ?? 0} job{(scoreRow.schedule_total_jobs ?? 0) === 1 ? '' : 's'} in score period
                 </p>
+                {data?.communityCodes?.length > 0 && (
+                  <p className="text-sm text-gray-500 mt-1">
+                    <span className="text-gray-600">Communities:</span>{' '}
+                    <span className="font-mono text-xs">{data.communityCodes.join(' · ')}</span>
+                  </p>
+                )}
               </div>
               <div className="text-right space-y-1.5">
                 {tier && tier.label !== 'No data' && (

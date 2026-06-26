@@ -316,7 +316,6 @@ export default function ScoresPage() {
                           {canEdit && (
                             <button type="button" className="w-full text-left px-3 py-2 text-[13px] hover:bg-[var(--g-panel-2)]" style={{ color: 'var(--g-text)' }} onClick={() => { setLogActionTarget(s); setOpenMenuId(null) }}>📋 Log vendor action</button>
                           )}
-                          <button type="button" className="w-full text-left px-3 py-2 text-[13px] hover:bg-[var(--g-panel-2)]" style={{ color: 'var(--g-text)' }} onClick={() => { openVendorDetail(s.vendor_id); setOpenMenuId(null) }}>→ View scorecard</button>
                         </div>
                       )}
                     </td>
