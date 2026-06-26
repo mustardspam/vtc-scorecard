@@ -1,26 +1,55 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
+import { useLoadGuard } from '../hooks/useLoadGuard'
 import { logActivity } from '../hooks/useActivityLog'
 import { Camera, Eye, GitCompare, Trash2, Save, ChevronDown, ChevronUp } from 'lucide-react'
 
 const INSERT_CHUNK = 500
+const SCORE_PAGE_SIZE = 1000
+const MAX_SCORE_PAGES = 50
+
+async function fetchSnapshotList() {
+  const { data: rows, error } = await supabase
+    .from('snapshots')
+    .select('*')
+    .order('created_at', { ascending: false })
+
+  if (error) throw new Error(error.message)
+
+  const snapshots = rows || []
+  const creatorIds = [...new Set(snapshots.map(s => s.created_by).filter(Boolean))]
+  if (!creatorIds.length) return snapshots
+
+  const { data: profiles, error: profileError } = await supabase
+    .from('profiles')
+    .select('id, full_name, email')
+    .in('id', creatorIds)
+
+  if (profileError) {
+    console.warn('Could not load snapshot creators:', profileError.message)
+    return snapshots
+  }
+
+  const byId = Object.fromEntries((profiles || []).map(p => [p.id, p]))
+  return snapshots.map(s => ({ ...s, profiles: byId[s.created_by] || null }))
+}
 
 async function fetchAllScoreResults() {
-  const pageSize = 1000
   let all = []
   let from = 0
-  while (true) {
+  for (let page = 0; page < MAX_SCORE_PAGES; page++) {
     const { data, error } = await supabase
       .from('score_results')
       .select('*, vendors(name, vendor_categories(name))')
       .order('weighted_total', { ascending: false, nullsFirst: false })
-      .range(from, from + pageSize - 1)
+      .order('vendor_id', { ascending: true })
+      .range(from, from + SCORE_PAGE_SIZE - 1)
     if (error) throw new Error('Load scores: ' + error.message)
     if (!data?.length) break
     all.push(...data)
-    if (data.length < pageSize) break
-    from += pageSize
+    if (data.length < SCORE_PAGE_SIZE) break
+    from += SCORE_PAGE_SIZE
   }
   return all
 }
@@ -60,6 +89,7 @@ function mapScoreToSnapshotRow(snapshotId, s) {
 export default function SnapshotsPage() {
   const [snapshots, setSnapshots] = useState([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
   const [showCreate, setShowCreate] = useState(false)
   const [createForm, setCreateForm] = useState({ name: '', description: '', notes: '' })
   const [saving, setSaving] = useState(false)
@@ -70,26 +100,27 @@ export default function SnapshotsPage() {
   const [compareIds, setCompareIds] = useState([])
   const [comparison, setComparison] = useState(null)
   const { user, isAdmin, isManager } = useAuth()
+  const { begin, isCurrent } = useLoadGuard()
 
   useEffect(() => {
-    let mounted = true
-    loadSnapshots(mounted)
-    return () => { mounted = false }
+    loadSnapshots()
   }, [])
 
-  async function loadSnapshots(mounted = true) {
+  async function loadSnapshots() {
+    const seq = begin()
     setLoading(true)
+    setLoadError('')
     try {
-      const { data, error } = await supabase
-        .from('snapshots')
-        .select('*, profiles!snapshots_created_by_fkey(full_name, email)')
-        .order('created_at', { ascending: false })
-      if (error) throw error
-      if (mounted) setSnapshots(data || [])
+      const rows = await fetchSnapshotList()
+      if (!isCurrent(seq)) return
+      setSnapshots(rows)
     } catch (err) {
       console.error('loadSnapshots error:', err)
+      if (!isCurrent(seq)) return
+      setLoadError(err.message || 'Could not load snapshots')
+      setSnapshots([])
     } finally {
-      if (mounted) setLoading(false)
+      if (isCurrent(seq)) setLoading(false)
     }
   }
 
@@ -166,7 +197,7 @@ export default function SnapshotsPage() {
       setShowCreate(false)
       setCreateForm({ name: '', description: '', notes: '' })
       setSaveProgress('')
-      loadSnapshots(true)
+      loadSnapshots()
     } catch (err) {
       console.error('handleCreate error:', err)
       if (snapshotId) {
@@ -226,9 +257,14 @@ export default function SnapshotsPage() {
 
   async function handleDelete(id) {
     if (!confirm('Are you sure you want to delete this snapshot? This cannot be undone.')) return
-    await supabase.from('snapshots').delete().eq('id', id)
-    await logActivity('snapshot_deleted', 'Deleted snapshot', { snapshot_id: id })
-    loadSnapshots(true)
+    try {
+      const { error } = await supabase.from('snapshots').delete().eq('id', id)
+      if (error) throw error
+      logActivity('snapshot_deleted', 'Deleted snapshot', { snapshot_id: id }).catch(() => {})
+      loadSnapshots()
+    } catch (err) {
+      alert('Could not delete snapshot: ' + err.message)
+    }
   }
 
   return (
@@ -308,6 +344,13 @@ export default function SnapshotsPage() {
 
       {loading ? (
         <div className="flex justify-center py-12"><div className="app-loading-spinner" /></div>
+      ) : loadError ? (
+        <div className="glass-panel p-12 text-center space-y-3">
+          <p className="text-sm text-red-600">{loadError}</p>
+          <button type="button" onClick={loadSnapshots} className="glass-btn-secondary text-sm px-4 py-2">
+            Retry
+          </button>
+        </div>
       ) : snapshots.length === 0 ? (
         <div className="glass-panel p-12 text-center">
           <Camera className="w-10 h-10 text-gray-300 mx-auto mb-3" />
