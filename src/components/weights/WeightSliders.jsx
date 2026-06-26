@@ -136,7 +136,7 @@ export default function WeightSliders() {
             <button
               onClick={handleSave}
               disabled={!isValid || saving}
-              className="flex items-center gap-1 px-3 py-1.5 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              className="glass-btn-primary flex items-center gap-1 px-3 py-1.5 text-sm disabled:opacity-50"
             >
               <Save className="w-3.5 h-3.5" />
               {saving ? 'Saving...' : 'Save Weights'}

@@ -1,16 +1,17 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import ScoreSummaryCard from '../components/dashboard/ScoreSummaryCard'
 import ParameterBreakdown from '../components/dashboard/ParameterBreakdown'
 import PerformerCard from '../components/dashboard/PerformerCard'
 import DashboardFilters from '../components/dashboard/DashboardFilters'
-import WeightSliders from '../components/weights/WeightSliders'
 import { useThresholds } from '../hooks/useThresholds'
-import { TrendingUp, TrendingDown, Award, AlertTriangle } from 'lucide-react'
 
 export default function DashboardPage() {
+  const navigate = useNavigate()
   const [scores, setScores] = useState([])
   const [weights, setWeights] = useState(null)
+  const [communityCount, setCommunityCount] = useState(0)
   const [loading, setLoading] = useState(true)
   const [filters, setFilters] = useState({ community: '', category: '' })
   const { getTier } = useThresholds()
@@ -32,14 +33,29 @@ export default function DashboardPage() {
       query = query.eq('category_id', filters.category)
     }
 
+    if (filters.community) {
+      const { data: vendorIds } = await supabase
+        .from('vendor_communities')
+        .select('vendor_id')
+        .eq('community_id', filters.community)
+      const ids = (vendorIds || []).map(v => v.vendor_id)
+      if (ids.length) query = query.in('vendor_id', ids)
+      else {
+        if (mounted) { setScores([]); setLoading(false) }
+        return
+      }
+    }
+
     try {
-      const [scoresRes, weightsRes] = await Promise.all([
+      const [scoresRes, weightsRes, commRes] = await Promise.all([
         query,
-        supabase.from('score_weights').select('*').eq('is_current', true).single()
+        supabase.from('score_weights').select('*').eq('is_current', true).single(),
+        supabase.from('communities').select('id', { count: 'exact', head: true }).eq('is_active', true),
       ])
       if (mounted) {
         setScores(scoresRes.data || [])
         setWeights(weightsRes.data)
+        setCommunityCount(commRes.count || 0)
       }
     } catch (err) {
       console.error('loadData error:', err)
@@ -49,60 +65,75 @@ export default function DashboardPage() {
   }
 
   const validScores = scores.filter(s => s.weighted_total != null)
+  const vendorCount = validScores.length
   const avgScore = validScores.length
     ? (validScores.reduce((sum, s) => sum + Number(s.weighted_total), 0) / validScores.length).toFixed(1)
     : '—'
   const bestPerformers = validScores.slice(0, 5)
   const worstPerformers = [...validScores].reverse().slice(0, 5)
+  const overallTier = avgScore !== '—' ? getTier(Number(avgScore)) : null
 
-  const avgSafety = validScores.length
-    ? (validScores.reduce((sum, s) => sum + (Number(s.safety_score) || 0), 0) / validScores.filter(s => s.safety_score != null).length).toFixed(1)
-    : '—'
-  const avgSchedule = validScores.length
-    ? (validScores.reduce((sum, s) => sum + (Number(s.schedule_score) || 0), 0) / validScores.filter(s => s.schedule_score != null).length).toFixed(1)
-    : '—'
-  const avgRework = validScores.filter(s => s.rework_score != null).length
-    ? (validScores.filter(s => s.rework_score != null).reduce((sum, s) => sum + Number(s.rework_score), 0) / validScores.filter(s => s.rework_score != null).length).toFixed(1)
-    : '—'
-  const avgFeedback = validScores.filter(s => s.feedback_score != null).length
-    ? (validScores.filter(s => s.feedback_score != null).reduce((sum, s) => sum + Number(s.feedback_score), 0) / validScores.filter(s => s.feedback_score != null).length).toFixed(1)
-    : '—'
+  const avgOf = (field) => {
+    const subset = validScores.filter(s => s[field] != null && Number.isFinite(Number(s[field])))
+    if (!subset.length) return '—'
+    const avg = subset.reduce((sum, s) => sum + Number(s[field]), 0) / subset.length
+    return Number.isFinite(avg) ? avg.toFixed(1) : '—'
+  }
+
+  const kpis = [
+    { title: 'Safety', value: avgOf('safety_score'), field: 'safety_score', weightKey: 'safety_weight' },
+    { title: 'Schedule', value: avgOf('schedule_score'), field: 'schedule_score', weightKey: 'schedule_weight' },
+    { title: 'Rework', value: avgOf('rework_score'), field: 'rework_score', weightKey: 'rework_weight' },
+    { title: 'Feedback', value: avgOf('feedback_score'), field: 'feedback_score', weightKey: 'feedback_weight' },
+  ]
 
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+        <div className="app-loading-spinner" />
       </div>
     )
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-3 min-w-0 max-w-full">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-          <p className="text-sm text-gray-500 mt-1">Vendor & Trade Performance Overview</p>
+          <h1 className="glass-page-title">Dashboard</h1>
+          <p className="glass-page-subtitle">
+            Vendor &amp; Trade Performance · {vendorCount} vendors · {communityCount} communities
+          </p>
         </div>
         <DashboardFilters filters={filters} onChange={setFilters} />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-        <ScoreSummaryCard title="Overall Average" value={avgScore} icon={Award} color="blue" />
-        <ScoreSummaryCard title="Safety" value={avgSafety} icon={TrendingUp} color="green" subtitle={weights ? `${(weights.safety_weight * 100).toFixed(1)}% weight` : ''} />
-        <ScoreSummaryCard title="Schedule" value={avgSchedule} icon={TrendingUp} color="purple" subtitle={weights ? `${(weights.schedule_weight * 100).toFixed(1)}% weight` : ''} />
-        <ScoreSummaryCard title="Rework" value={avgRework} icon={TrendingDown} color="orange" subtitle={weights ? `${(weights.rework_weight * 100).toFixed(1)}% weight` : ''} />
-        <ScoreSummaryCard title="Feedback" value={avgFeedback} icon={TrendingUp} color="teal" subtitle={weights ? `${(weights.feedback_weight * 100).toFixed(1)}% weight` : ''} />
+      <div className="grid grid-cols-2 xl:grid-cols-5 gap-3 min-w-0">
+        <div className="col-span-2 xl:col-span-1 min-w-0">
+          <ScoreSummaryCard
+            title="Overall Average"
+            value={avgScore}
+            tier={overallTier}
+            hero
+          />
+        </div>
+        {kpis.map(k => (
+          <div key={k.title} className="min-w-0">
+            <ScoreSummaryCard
+              title={k.title}
+              value={k.value}
+              tier={k.value !== '—' ? getTier(Number(k.value)) : null}
+              subtitle={weights ? `${(weights[k.weightKey] * 100).toFixed(0)}% weight` : ''}
+            />
+          </div>
+        ))}
       </div>
 
       <ParameterBreakdown scores={validScores} />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <Award className="w-5 h-5 text-green-600" />
-            Top Performers
-          </h2>
-          <div className="space-y-3">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 min-w-0">
+        <div className="glass-panel p-4 sm:p-5 min-w-0">
+          <h2 className="glass-section-title mb-4">Top Performers</h2>
+          <div className="space-y-2">
             {bestPerformers.map((s, i) => (
               <PerformerCard
                 key={s.id}
@@ -115,21 +146,18 @@ export default function DashboardPage() {
                 scheduleJobs={s.schedule_total_jobs}
                 reworkCount={s.rework_count}
                 feedbackCount={s.feedback_count}
-                type="best"
+                onClick={() => navigate(`/scores?vendor=${s.vendor_id}`)}
               />
             ))}
             {bestPerformers.length === 0 && (
-              <p className="text-sm text-gray-500">No score data available. Upload data to get started.</p>
+              <p className="text-sm" style={{ color: 'var(--g-dim)' }}>No score data available. Upload data to get started.</p>
             )}
           </div>
         </div>
 
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <AlertTriangle className="w-5 h-5 text-red-600" />
-            Needs Improvement
-          </h2>
-          <div className="space-y-3">
+        <div className="glass-panel p-4 sm:p-5 min-w-0">
+          <h2 className="glass-section-title mb-4">Needs Improvement</h2>
+          <div className="space-y-2">
             {worstPerformers.map((s, i) => (
               <PerformerCard
                 key={s.id}
@@ -142,19 +170,14 @@ export default function DashboardPage() {
                 scheduleJobs={s.schedule_total_jobs}
                 reworkCount={s.rework_count}
                 feedbackCount={s.feedback_count}
-                type="worst"
+                onClick={() => navigate(`/scores?vendor=${s.vendor_id}`)}
               />
             ))}
             {worstPerformers.length === 0 && (
-              <p className="text-sm text-gray-500">No score data available.</p>
+              <p className="text-sm" style={{ color: 'var(--g-dim)' }}>No score data available.</p>
             )}
           </div>
         </div>
-      </div>
-
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Weight Configuration</h2>
-        <WeightSliders />
       </div>
     </div>
   )

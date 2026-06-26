@@ -7,6 +7,7 @@ import { parseJCVendorReport, parseJCVendorReportXLSX } from '../lib/parsers/jc-
 import { logActivity } from '../hooks/useActivityLog'
 import { useAuth } from '../hooks/useAuth'
 import { Upload, FileText, CheckCircle, XCircle, AlertTriangle, ArrowRight, Loader2, Building2, Trash2 } from 'lucide-react'
+import UploadStepper from '../components/ui/UploadStepper'
 
 const FILE_TYPES = [
   { value: 'schedule', label: 'Schedule Data', description: 'Monthly schedule adherence report' },
@@ -601,8 +602,9 @@ export default function UploadsPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-gray-900">Upload Center</h1>
+    <div className="space-y-6 min-w-0">
+      <h1 className="glass-page-title">Upload Center</h1>
+      {canUpload && step !== 'upload' && <UploadStepper step={step} />}
 
       {!canUpload && (
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3">
@@ -619,7 +621,8 @@ export default function UploadsPage() {
           <div
             onDrop={handleFileDrop}
             onDragOver={e => e.preventDefault()}
-            className="border-2 border-dashed border-gray-300 rounded-xl p-12 text-center hover:border-blue-500 transition-colors cursor-pointer"
+            className="border-2 border-dashed rounded-xl p-12 text-center transition-colors cursor-pointer glass-panel"
+            style={{ borderColor: 'var(--g-line)' }}
           >
             <input type="file" accept=".csv,.xls,.xlsx" onChange={handleFileDrop} className="hidden" id="file-input" />
             <label htmlFor="file-input" className="cursor-pointer">
@@ -634,11 +637,10 @@ export default function UploadsPage() {
               <button
                 key={ft.value}
                 onClick={() => setFileType(ft.value)}
-                className={`p-3 rounded-lg border text-left transition-colors ${
-                  fileType === ft.value
-                    ? 'border-blue-500 bg-blue-50 text-blue-700'
-                    : 'border-gray-200 hover:border-gray-300'
+                className={`p-3 rounded-xl border text-left transition-colors glass-panel ${
+                  fileType === ft.value ? 'ring-2' : ''
                 }`}
+                style={fileType === ft.value ? { borderColor: 'var(--g-accent)', boxShadow: '0 0 0 1px var(--g-accent)' } : { borderColor: 'var(--g-line)' }}
               >
                 <p className="text-sm font-medium">{ft.label}</p>
                 <p className="text-xs text-gray-500 mt-0.5">{ft.description}</p>
@@ -666,7 +668,7 @@ export default function UploadsPage() {
           <button
             onClick={handleParse}
             disabled={!file || !fileType}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            className="glass-btn-primary flex items-center gap-2 px-4 py-2 disabled:opacity-50"
           >
             Parse File <ArrowRight className="w-4 h-4" />
           </button>
@@ -675,8 +677,8 @@ export default function UploadsPage() {
 
       {/* Import history — visible to everyone (read-only for viewers) */}
       {step === 'upload' && history.length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-3">Import History</h2>
+        <div className="glass-panel p-6">
+          <h2 className="glass-section-title mb-3">Import History</h2>
           <div className="space-y-2">
             {history.map(h => (
               <div key={h.id} className="flex items-center justify-between text-sm py-2 border-b border-gray-100">
@@ -722,7 +724,7 @@ export default function UploadsPage() {
             <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-5">
               <div>
                 <h2 className="text-lg font-semibold text-gray-900">JC Vendor Report — Preview</h2>
-                <p className="text-sm text-gray-500 mt-1">Brand: <strong>{brand}</strong> · File: {file?.name}</p>
+                <p className="glass-page-subtitle">Brand: <strong>{brand}</strong> · File: {file?.name}</p>
               </div>
 
               <div className="grid grid-cols-3 gap-4">
@@ -777,7 +779,7 @@ export default function UploadsPage() {
                         })}
                         className={`text-xs font-mono px-2 py-1 rounded border transition-colors ${
                           on
-                            ? 'bg-blue-600 text-white border-blue-600'
+                            ? 'glass-nav-active border-transparent'
                             : 'bg-gray-100 text-gray-400 border-gray-200 line-through'
                         }`}
                       >
@@ -902,7 +904,7 @@ export default function UploadsPage() {
 
           <div className="flex gap-3 pt-4">
             <button onClick={() => setStep('upload')} className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Back</button>
-            <button onClick={applyMapping} className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+            <button onClick={applyMapping} className="glass-btn-primary">
               Apply Mapping <ArrowRight className="w-4 h-4 inline ml-1" />
             </button>
           </div>
@@ -1028,7 +1030,7 @@ export default function UploadsPage() {
 
             <div className="flex gap-3">
               <button onClick={() => setStep('map-columns')} className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Back</button>
-              <button onClick={proceedFromMatching} className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+              <button onClick={proceedFromMatching} className="glass-btn-primary">
                 Continue to Preview <ArrowRight className="w-4 h-4 inline ml-1" />
               </button>
             </div>
@@ -1105,7 +1107,7 @@ export default function UploadsPage() {
           <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-4" />
           <h2 className="text-xl font-semibold text-gray-900">Import Complete</h2>
           <p className="text-sm text-gray-500 mt-2">{file?.name}</p>
-          <button onClick={resetUpload} className="mt-6 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+          <button onClick={resetUpload} className="mt-6 glass-btn-primary">
             Upload Another File
           </button>
         </div>

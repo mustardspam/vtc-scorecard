@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { cn } from '../lib/cn'
 import VendorManager from '../components/admin/VendorManager'
 import CommunityManager from '../components/admin/CommunityManager'
 import FeedbackRulesEditor from '../components/admin/FeedbackRulesEditor'
@@ -26,22 +27,19 @@ export default function AdminPage() {
   const [tab, setTab] = useState('vendors')
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-[18px]">
       <div className="flex items-center gap-2">
-        <Settings className="w-6 h-6 text-gray-700" />
-        <h1 className="text-2xl font-bold text-gray-900">Admin Settings</h1>
+        <Settings className="w-6 h-6" style={{ color: 'var(--g-dim)' }} />
+        <h1 className="glass-page-title">Admin Settings</h1>
       </div>
 
-      <div className="flex gap-2 border-b border-gray-200 pb-px">
+      <div className="flex gap-1 border-b overflow-x-auto" style={{ borderColor: 'var(--g-line)' }}>
         {TABS.map(t => (
           <button
             key={t.id}
+            type="button"
             onClick={() => setTab(t.id)}
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-              tab === t.id
-                ? 'border-blue-600 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
+            className={cn('flex items-center gap-2 px-4 py-2.5 text-sm whitespace-nowrap', tab === t.id ? 'glass-tab-active' : 'glass-tab')}
           >
             <t.icon className="w-4 h-4" />
             {t.label}
@@ -49,7 +47,7 @@ export default function AdminPage() {
         ))}
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
+      <div className="glass-panel p-6">
         {tab === 'vendors' && <VendorManager />}
         {tab === 'communities' && <CommunityManager />}
         {tab === 'community-map' && <CommunityMapConfig />}

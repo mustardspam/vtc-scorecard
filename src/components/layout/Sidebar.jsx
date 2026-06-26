@@ -2,11 +2,13 @@ import { NavLink } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { useTheme } from '../../context/ThemeContext'
 import { useState } from 'react'
+import { cn } from '../../lib/cn'
 import {
   LayoutDashboard, Table2, MessageSquare, Upload, Camera,
   Activity, Settings, LogOut, Send, KeyRound, X, Database, Sun, Moon, MapPin, Mail, Map
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import AppBrand from './AppBrand'
 
 const ALL_STAFF = ['admin', 'manager', 'viewer']
 
@@ -24,6 +26,11 @@ const navItems = [
   { to: '/digest', icon: Mail, label: 'Digest Email', roles: ALL_STAFF },
   { to: '/admin', icon: Settings, label: 'Admin', roles: ['admin'] },
 ]
+
+function initials(name, email) {
+  if (name) return name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
+  return (email || '?')[0].toUpperCase()
+}
 
 export default function Sidebar() {
   const { profile, logout } = useAuth()
@@ -52,51 +59,23 @@ export default function Sidebar() {
     setTimeout(() => { setShowChangePassword(false); setPwMsg('') }, 2000)
   }
 
-  const sidebarBg = dark ? '#252522' : '#ffffff'
-  const borderCol = dark ? '#3a3a36' : '#e8e5db'
-  const textCol   = dark ? '#c8c5bc' : '#525249'
-
   return (
-    <aside className="w-64 flex flex-col h-screen fixed left-0 top-0 border-r" style={{ backgroundColor: sidebarBg, borderColor: borderCol }}>
+    <aside className="w-[236px] flex flex-col h-screen fixed left-0 top-0 z-30 glass-sidebar" style={{ padding: '22px 14px' }}>
       {/* Logo */}
-      <div className="px-5 pt-6 pb-5 border-b" style={{ borderColor: borderCol }}>
-        <img
-          src="/aw-stl-logo.jpg"
-          alt="Ashton Woods / Starlight Homes"
-          className="w-full max-w-[172px]"
-        />
-        <p className="text-xs mt-3 truncate" style={{ color: '#888880' }}>
-          {profile?.full_name || profile?.email}
-        </p>
-        <span
-          className="inline-block mt-1 px-2 py-0.5 text-xs font-medium rounded"
-          style={{ backgroundColor: '#e6f3f5', color: '#087482' }}
-        >
-          {profile?.role}
-        </span>
+      <div className="pb-5 mb-1 border-b" style={{ borderColor: 'var(--g-line)' }}>
+        <AppBrand />
       </div>
 
-      <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
+      <nav className="flex-1 overflow-y-auto space-y-0.5 py-2">
         {items.filter(item => item.roles.includes(profile?.role)).map(item => (
           <NavLink
             key={item.to}
             to={item.to}
             end={item.end}
-            className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors"
-            style={({ isActive }) => isActive
-              ? { backgroundColor: '#087482', color: '#fff' }
-              : { color: textCol }
-            }
-            onMouseEnter={e => {
-              if (!e.currentTarget.style.backgroundColor.includes('8, 116')) {
-                e.currentTarget.style.backgroundColor = dark ? '#323230' : '#f3f1ea'
-              }
-            }}
-            onMouseLeave={e => {
-              if (!e.currentTarget.style.backgroundColor.includes('8, 116')) {
-                e.currentTarget.style.backgroundColor = ''
-              }
-            }}
+            className={({ isActive }) => cn(
+              'flex items-center gap-3 px-3 py-2 text-sm font-medium transition-all duration-[120ms]',
+              isActive ? 'glass-nav-active' : 'glass-nav-item'
+            )}
           >
             <item.icon className="w-4 h-4 shrink-0" />
             {item.label}
@@ -104,60 +83,55 @@ export default function Sidebar() {
         ))}
       </nav>
 
-      <div className="p-3 border-t space-y-0.5" style={{ borderColor: borderCol }}>
+      <div className="pt-3 border-t space-y-0.5" style={{ borderColor: 'var(--g-line)' }}>
+        {/* Avatar + profile */}
+        <div className="flex items-center gap-2.5 px-2 py-2 mb-1">
+          <div
+            className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
+            style={{ background: 'var(--g-accent-gradient)', color: '#fff' }}
+          >
+            {initials(profile?.full_name, profile?.email)}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-semibold truncate" style={{ color: 'var(--g-text)' }}>
+              {profile?.full_name || profile?.email}
+            </p>
+            <p className="text-[10px] capitalize" style={{ color: 'var(--g-dim)' }}>{profile?.role}</p>
+          </div>
+        </div>
+
         {showChangePassword && (
-          <div className="mb-3 p-3 rounded-lg border" style={{ backgroundColor: dark ? '#323230' : '#f9f8f5', borderColor: borderCol }}>
+          <div className="mb-2 p-3 rounded-xl border" style={{ background: 'var(--g-panel-2)', borderColor: 'var(--g-line)' }}>
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-medium" style={{ color: textCol }}>Change Password</span>
-              <button onClick={() => { setShowChangePassword(false); setPwError(''); setPwMsg('') }}>
-                <X className="w-3.5 h-3.5 text-gray-400 hover:text-gray-600" />
+              <span className="text-xs font-medium" style={{ color: 'var(--g-text)' }}>Change Password</span>
+              <button type="button" onClick={() => { setShowChangePassword(false); setPwError(''); setPwMsg('') }}>
+                <X className="w-3.5 h-3.5" style={{ color: 'var(--g-dim)' }} />
               </button>
             </div>
             <form onSubmit={handleChangePassword} className="space-y-2">
-              {pwError && <p className="text-xs text-red-600">{pwError}</p>}
-              {pwMsg && <p className="text-xs text-green-600">{pwMsg}</p>}
-              <input
-                type="password"
-                value={newPassword}
-                onChange={e => setNewPassword(e.target.value)}
-                placeholder="New password"
-                className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded outline-none"
-                required
-              />
-              <input
-                type="password"
-                value={confirmPassword}
-                onChange={e => setConfirmPassword(e.target.value)}
-                placeholder="Confirm password"
-                className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded outline-none"
-                required
-              />
-              <button
-                type="submit"
-                disabled={pwLoading}
-                className="w-full py-1.5 text-xs text-white rounded disabled:opacity-50"
-                style={{ backgroundColor: '#087482' }}
-              >
+              {pwError && <p className="text-xs" style={{ color: '#a72727' }}>{pwError}</p>}
+              {pwMsg && <p className="text-xs" style={{ color: '#1f7a44' }}>{pwMsg}</p>}
+              <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="New password" className="glass-input w-full text-xs" required />
+              <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} placeholder="Confirm password" className="glass-input w-full text-xs" required />
+              <button type="submit" disabled={pwLoading} className="glass-btn-primary w-full text-xs py-1.5">
                 {pwLoading ? 'Saving...' : 'Update Password'}
               </button>
             </form>
           </div>
         )}
 
-        {/* Dark mode toggle */}
         <button
+          type="button"
           onClick={toggle}
-          className="flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium w-full transition-colors hover:bg-gray-50"
-          style={{ color: textCol }}
+          className="flex items-center justify-between px-3 py-2 rounded-lg text-sm font-medium w-full glass-nav-item"
         >
           <span className="flex items-center gap-3">
             {dark ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
             {dark ? 'Dark Mode' : 'Light Mode'}
           </span>
-          {/* pill toggle */}
           <span
             className="relative inline-flex h-5 w-9 flex-shrink-0 rounded-full transition-colors duration-200"
-            style={{ backgroundColor: dark ? '#087482' : '#d1d5db' }}
+            style={{ background: dark ? 'var(--g-accent)' : 'var(--g-line)' }}
           >
             <span
               className="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform duration-200 mt-0.5"
@@ -166,19 +140,11 @@ export default function Sidebar() {
           </span>
         </button>
 
-        <button
-          onClick={() => setShowChangePassword(v => !v)}
-          className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium w-full transition-colors hover:bg-gray-50"
-          style={{ color: textCol }}
-        >
+        <button type="button" onClick={() => setShowChangePassword(v => !v)} className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium w-full glass-nav-item">
           <KeyRound className="w-4 h-4" />
           Change Password
         </button>
-        <button
-          onClick={logout}
-          className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium w-full transition-colors hover:bg-gray-50"
-          style={{ color: textCol }}
-        >
+        <button type="button" onClick={logout} className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium w-full glass-nav-item">
           <LogOut className="w-4 h-4" />
           Sign Out
         </button>

@@ -18,14 +18,24 @@ function fmtCurrency(v) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(v)
 }
 
+import { tierPillStyle, tierValueColor } from '../../lib/design/tokens'
+
 function ScoreBox({ label, value, getTier, large }) {
   const tier = getTier(value)
   return (
-    <div className={`rounded-lg border p-3 text-center ${tier ? `${tier.bg} border-transparent` : 'bg-gray-50 border-gray-200'}`}>
-      <p className={`font-bold ${large ? 'text-2xl' : 'text-xl'} ${tier ? tier.color : 'text-gray-400'}`}>
+    <div
+      className="rounded-lg border p-3 text-center"
+      style={tier && tier.label !== 'No data'
+        ? { background: tier.softBg, borderColor: 'transparent' }
+        : { background: 'var(--g-panel-2)', borderColor: 'var(--g-line)' }}
+    >
+      <p
+        className={`font-bold ${large ? 'text-2xl' : 'text-xl'}`}
+        style={{ color: tier && tier.label !== 'No data' ? tierValueColor(tier) : 'var(--g-dim)' }}
+      >
         {fmt(value)}
       </p>
-      <p className="text-xs text-gray-500 mt-0.5">{label}</p>
+      <p className="text-xs mt-0.5" style={{ color: 'var(--g-dim)' }}>{label}</p>
     </div>
   )
 }
@@ -132,8 +142,8 @@ export default function VendorReportCard({ scoreRow, getTier, onClose }) {
                 {category && <p className="text-sm text-gray-500 mt-0.5">{category}</p>}
               </div>
               <div className="text-right space-y-1.5">
-                {tier && (
-                  <div className={`inline-flex items-center px-3 py-1 rounded-lg text-sm font-bold ${tier.bg} ${tier.color}`}>
+                {tier && tier.label !== 'No data' && (
+                  <div className="glass-tier-pill text-sm" style={tierPillStyle(tier)}>
                     {tier.label}
                   </div>
                 )}

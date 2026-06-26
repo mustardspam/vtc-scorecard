@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useAuth } from '../../hooks/useAuth'
-import { MessageCircle, X, Send, Loader2, Sparkles } from 'lucide-react'
+import { MessageSquare, X, Send, Loader2, Sparkles } from 'lucide-react'
 
 export default function AIChatWidget() {
   const [open, setOpen] = useState(false)
@@ -31,9 +31,6 @@ export default function AIChatWidget() {
     setSending(true)
 
     try {
-      // Read the cached session from the auth store instead of calling
-      // supabase.auth.getSession() directly — that call can hang indefinitely
-      // if another browser tab holds the cross-tab token-refresh lock.
       const token = useAuth.getState().session?.access_token
       if (!token) throw new Error('Not signed in')
 
@@ -63,90 +60,62 @@ export default function AIChatWidget() {
   return (
     <>
       {open && (
-        <div style={{
-          position: 'fixed', bottom: '88px', right: '24px', width: '340px', height: '460px',
-          background: '#fff', borderRadius: '12px', border: '1px solid #e5e3db',
-          boxShadow: '0 8px 30px rgba(0,0,0,0.15)', display: 'flex', flexDirection: 'column',
-          zIndex: 1000,
-        }}>
-          <div style={{ padding: '12px 14px', borderBottom: '1px solid #f0ede4', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Sparkles style={{ width: '16px', height: '16px', color: '#087482' }} />
-              <span style={{ fontWeight: 600, fontSize: '13px', color: '#1a1a18' }}>Ask about your data</span>
+        <div className="ai-chat-panel">
+          <div className="ai-chat-header">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4" style={{ color: 'var(--g-accent)' }} />
+              <span className="font-semibold text-[13px]" style={{ color: 'var(--g-text)' }}>Ask about your data</span>
             </div>
-            <button onClick={() => setOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#999' }}>
-              <X style={{ width: '16px', height: '16px' }} />
+            <button type="button" onClick={() => setOpen(false)} className="bg-transparent border-none cursor-pointer" style={{ color: 'var(--g-dim)' }}>
+              <X className="w-4 h-4" />
             </button>
           </div>
 
-          <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <div ref={scrollRef} className="flex-1 overflow-y-auto p-3.5 flex flex-col gap-2.5">
             {messages.length === 0 && (
-              <p style={{ fontSize: '12px', color: '#aaa', lineHeight: 1.5 }}>
-                Ask questions about vendor scores, communities, or feedback — e.g. "which vendors have the lowest scores" or "any recent complaints in Houston."
+              <p className="text-xs leading-relaxed" style={{ color: 'var(--g-dim)' }}>
+                Ask questions about vendor scores, communities, or feedback — e.g. &quot;which vendors have the lowest scores&quot; or &quot;any recent complaints in Houston.&quot;
                 <br /><br />
-                Read-only — this can't change any data.
+                Read-only — this can&apos;t change any data.
               </p>
             )}
             {messages.map((m, i) => (
-              <div key={i} style={{
-                alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
-                maxWidth: '85%', padding: '8px 11px', borderRadius: '10px', fontSize: '13px', lineHeight: 1.45,
-                background: m.role === 'user' ? '#087482' : '#f5f4ef',
-                color: m.role === 'user' ? '#fff' : '#333',
-                whiteSpace: 'pre-wrap',
-              }}>
+              <div key={i} className={m.role === 'user' ? 'ai-chat-bubble-user' : 'ai-chat-bubble-assistant'}>
                 {m.text}
               </div>
             ))}
             {sending && (
-              <div style={{ alignSelf: 'flex-start', padding: '8px 11px' }}>
-                <Loader2 style={{ width: '14px', height: '14px', color: '#aaa', animation: 'spin 0.8s linear infinite' }} />
+              <div className="self-start p-2">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: 'var(--g-dim)' }} />
               </div>
             )}
-            {error && (
-              <p style={{ fontSize: '11px', color: '#c0392b' }}>{error}</p>
-            )}
+            {error && <p className="text-[11px]" style={{ color: '#a72727' }}>{error}</p>}
           </div>
 
-          <div style={{ padding: '10px', borderTop: '1px solid #f0ede4', display: 'flex', gap: '6px' }}>
+          <div className="p-2.5 border-t flex gap-1.5" style={{ borderColor: 'var(--g-line)' }}>
             <input
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && handleSend()}
               placeholder="Ask a question..."
               disabled={sending}
-              style={{ flex: 1, padding: '8px 10px', border: '1px solid #ddd', borderRadius: '8px', fontSize: '13px', outline: 'none' }}
+              className="glass-input flex-1"
             />
             <button
+              type="button"
               onClick={handleSend}
               disabled={sending || !input.trim()}
-              style={{
-                padding: '8px 10px', borderRadius: '8px', border: 'none',
-                background: sending || !input.trim() ? '#e0e0e0' : '#087482',
-                color: '#fff', cursor: sending || !input.trim() ? 'default' : 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}
+              className="glass-btn-primary px-3 flex items-center justify-center disabled:opacity-50"
             >
-              <Send style={{ width: '14px', height: '14px' }} />
+              <Send className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
       )}
 
-      <button
-        onClick={() => setOpen(o => !o)}
-        title="Ask about your data"
-        style={{
-          position: 'fixed', bottom: '24px', right: '24px', width: '52px', height: '52px',
-          borderRadius: '50%', background: '#087482', border: 'none', cursor: 'pointer',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          boxShadow: '0 4px 14px rgba(0,0,0,0.2)', zIndex: 1000,
-        }}
-      >
-        {open ? <X style={{ width: '22px', height: '22px', color: '#fff' }} /> : <MessageCircle style={{ width: '22px', height: '22px', color: '#fff' }} />}
+      <button type="button" onClick={() => setOpen(o => !o)} title="Ask about your data" className="ai-chat-fab">
+        {open ? <X className="w-5 h-5" /> : <MessageSquare className="w-5 h-5" />}
       </button>
-
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </>
   )
 }

@@ -1,30 +1,36 @@
-const colorMap = {
-  blue: 'bg-blue-50 text-blue-700 border-blue-200',
-  green: 'bg-green-50 text-green-700 border-green-200',
-  purple: 'bg-purple-50 text-purple-700 border-purple-200',
-  orange: 'bg-orange-50 text-orange-700 border-orange-200',
-  teal: 'bg-teal-50 text-teal-700 border-teal-200',
-  red: 'bg-red-50 text-red-700 border-red-200',
-}
+import { tierPillStyle, tierValueColor } from '../../lib/design/tokens'
+import { cn } from '../../lib/cn'
 
-const iconColorMap = {
-  blue: 'text-blue-600',
-  green: 'text-green-600',
-  purple: 'text-purple-600',
-  orange: 'text-orange-600',
-  teal: 'text-teal-600',
-  red: 'text-red-600',
-}
-
-export default function ScoreSummaryCard({ title, value, icon: Icon, color = 'blue', subtitle }) {
-  return (
-    <div className={`rounded-xl border p-5 ${colorMap[color]}`}>
-      <div className="flex items-center gap-2 mb-2">
-        {Icon && <Icon className={`w-4 h-4 ${iconColorMap[color]}`} />}
-        <span className="text-xs font-medium uppercase tracking-wide opacity-80">{title}</span>
+export default function ScoreSummaryCard({ title, value, icon: Icon, subtitle, tier, hero = false, className }) {
+  if (hero) {
+    return (
+      <div className={cn('glass-kpi-hero h-full', className)}>
+        <p className="text-[11px] font-bold uppercase tracking-[0.06em] opacity-80 mb-1.5">{title}</p>
+        <div className="flex items-end justify-between gap-2 min-w-0">
+          <div className="glass-kpi-value truncate">{value}</div>
+          {tier && tier.label !== 'No data' && (
+            <span className="glass-tier-pill shrink-0" style={{ ...tierPillStyle(tier), background: 'rgba(255,255,255,0.2)', color: '#fff' }}>
+              {tier.label}
+            </span>
+          )}
+        </div>
       </div>
-      <div className="text-3xl font-bold">{value}</div>
-      {subtitle && <p className="text-xs mt-1 opacity-70">{subtitle}</p>}
+    )
+  }
+
+  const valueColor = tier && tier.label !== 'No data' ? tierValueColor(tier) : 'var(--g-text)'
+
+  return (
+    <div className={cn('glass-panel p-4 min-w-0 h-full', className)}>
+      <div className="flex items-center justify-between gap-1 mb-1.5 min-w-0">
+        <span className="glass-eyebrow truncate">{title}</span>
+        {tier && tier.label !== 'No data' && (
+          <span className="glass-tier-pill shrink-0" style={tierPillStyle(tier)}>{tier.label}</span>
+        )}
+      </div>
+      <div className="glass-kpi-card-value truncate" style={{ color: valueColor }}>{value ?? '—'}</div>
+      {subtitle && <p className="text-xs mt-1" style={{ color: 'var(--g-dim)' }}>{subtitle}</p>}
+      {Icon && <Icon className="hidden" />}
     </div>
   )
 }

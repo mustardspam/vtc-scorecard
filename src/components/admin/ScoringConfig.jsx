@@ -224,7 +224,7 @@ export default function ScoringConfig() {
           <button
             onClick={handleSave}
             disabled={saving}
-            className="flex items-center gap-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            className="flex items-center gap-1 px-4 py-2 text-sm glass-btn-primary disabled:opacity-50"
           >
             <Save className="w-4 h-4" /> {saving ? 'Saving...' : 'Save Multipliers'}
           </button>
@@ -287,7 +287,7 @@ export default function ScoringConfig() {
           <button
             onClick={handleSaveThresholds}
             disabled={savingThresholds || thresholdError}
-            className="flex items-center gap-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            className="flex items-center gap-1 px-4 py-2 text-sm glass-btn-primary disabled:opacity-50"
           >
             <Save className="w-4 h-4" /> {savingThresholds ? 'Saving...' : 'Save Thresholds'}
           </button>
@@ -330,7 +330,7 @@ export default function ScoringConfig() {
           <button
             onClick={handleSaveMin}
             disabled={savingMin}
-            className="flex items-center gap-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            className="flex items-center gap-1 px-4 py-2 text-sm glass-btn-primary disabled:opacity-50"
           >
             <Save className="w-4 h-4" /> {savingMin ? 'Saving...' : 'Save Minimums'}
           </button>
@@ -381,7 +381,7 @@ export default function ScoringConfig() {
           <button
             onClick={handleSaveRisk}
             disabled={savingRisk}
-            className="flex items-center gap-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            className="flex items-center gap-1 px-4 py-2 text-sm glass-btn-primary disabled:opacity-50"
           >
             <Save className="w-4 h-4" /> {savingRisk ? 'Saving...' : 'Save Risk Config'}
           </button>

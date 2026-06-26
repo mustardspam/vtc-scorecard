@@ -112,16 +112,16 @@ export default function SubmitFeedbackPage() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
+    <div className="max-w-[680px] mx-auto space-y-6 min-w-0">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Submit Field Feedback</h1>
-        <p className="text-sm text-gray-500 mt-1">
+        <h1 className="glass-page-title">Submit Field Feedback</h1>
+        <p className="glass-page-subtitle">
           Report vendor and trade performance issues or commendations. All submissions are reviewed by management.
         </p>
       </div>
 
       {/* Submission form */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
+      <div className="glass-panel p-6">
         {success && (
           <div className="mb-5 p-4 bg-green-50 border border-green-200 rounded-lg flex items-center gap-3 text-sm text-green-700">
             <CheckCircle className="w-5 h-5 flex-shrink-0" />
@@ -145,7 +145,7 @@ export default function SubmitFeedbackPage() {
             <select
               value={form.construction_manager_id}
               onChange={e => setForm(f => ({ ...f, construction_manager_id: e.target.value }))}
-              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white"
+              className="glass-input w-full"
             >
               <option value="">— Select construction manager (optional) —</option>
               {managers.map(m => (
@@ -162,7 +162,7 @@ export default function SubmitFeedbackPage() {
             <select
               value={form.vendor_id}
               onChange={e => setForm(f => ({ ...f, vendor_id: e.target.value }))}
-              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white"
+              className="glass-input w-full"
               required
             >
               <option value="">— Select a vendor or trade —</option>
@@ -180,7 +180,7 @@ export default function SubmitFeedbackPage() {
             <select
               value={form.community_id}
               onChange={e => setForm(f => ({ ...f, community_id: e.target.value }))}
-              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white"
+              className="glass-input w-full"
             >
               <option value="">— Select a community (optional) —</option>
               {communities.map(c => (
@@ -213,7 +213,7 @@ export default function SubmitFeedbackPage() {
             <select
               value={form.category}
               onChange={e => setForm(f => ({ ...f, category: e.target.value, severity: '' }))}
-              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white"
+              className="glass-input w-full"
               required
             >
               <option value="">— Kudos or Complaint? —</option>
@@ -231,7 +231,7 @@ export default function SubmitFeedbackPage() {
               <select
                 value={form.severity}
                 onChange={e => setForm(f => ({ ...f, severity: e.target.value }))}
-                className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white"
+                className="glass-input w-full"
                 required
               >
                 <option value="">— Select severity —</option>
@@ -282,7 +282,7 @@ export default function SubmitFeedbackPage() {
           <button
             type="submit"
             disabled={submitting || !isValid}
-            className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            className="flex items-center gap-2 px-6 py-2.5 glass-btn-primary font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             <Send className="w-4 h-4" />
             {submitting ? 'Submitting...' : 'Submit Feedback'}
@@ -291,7 +291,7 @@ export default function SubmitFeedbackPage() {
       </div>
 
       {/* My recent submissions */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
+      <div className="glass-panel p-6">
         <h2 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
           <MessageSquare className="w-4 h-4 text-gray-500" />
           My Recent Submissions

@@ -1,39 +1,41 @@
+import { tierPillStyle, tierValueColor } from '../../lib/design/tokens'
+
 export default function PerformerCard({
   rank, name, category, score, tier,
-  safetyCount, scheduleJobs, reworkCount, feedbackCount, type,
+  safetyCount, scheduleJobs, reworkCount, feedbackCount, type, onClick,
 }) {
-  const borderColor = type === 'best' ? 'border-l-green-500' : 'border-l-red-500'
-  const scoreStyle = tier
-    ? `${tier.bg} ${tier.color}`
-    : score >= 85 ? 'text-green-700 bg-green-50'
-    : score >= 70 ? 'text-yellow-700 bg-yellow-50'
-    : score >= 50 ? 'text-orange-700 bg-orange-50'
-    : 'text-red-700 bg-red-50'
+  const meta = [
+    scheduleJobs > 0 && `${scheduleJobs} jobs`,
+    safetyCount > 0 && `${safetyCount} incidents`,
+    reworkCount > 0 && `${reworkCount} backcharges`,
+    feedbackCount > 0 && `${feedbackCount} feedback`,
+  ].filter(Boolean).join(' · ')
 
   return (
-    <div className={`flex items-center justify-between p-3 rounded-lg border border-gray-100 border-l-4 ${borderColor} bg-gray-50`}>
-      <div className="flex items-center gap-3">
-        <span className="text-sm font-bold text-gray-400 w-6 text-center">#{rank}</span>
-        <div>
-          <p className="text-sm font-semibold text-gray-900">{name}</p>
-          <p className="text-xs text-gray-500">{category}</p>
+    <div
+      className="flex items-center justify-between p-3 rounded-xl cursor-pointer transition-colors duration-[120ms]"
+      style={{ background: 'var(--g-panel-2)', border: '1px solid var(--g-line)' }}
+      onClick={onClick}
+      onKeyDown={e => e.key === 'Enter' && onClick?.()}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+    >
+      <div className="flex items-center gap-3 min-w-0">
+        <span className="text-sm font-bold w-6 text-center shrink-0" style={{ color: 'var(--g-dim)' }}>#{rank}</span>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold truncate" style={{ color: 'var(--g-text)' }}>{name}</p>
+          <p className="text-xs truncate" style={{ color: 'var(--g-dim)' }}>
+            {category}{meta ? ` · ${meta}` : ''}
+          </p>
         </div>
       </div>
-      <div className="flex items-center gap-3">
-        <div className="text-xs text-gray-500 text-right space-y-0.5">
-          {scheduleJobs > 0 && <div>{scheduleJobs} jobs</div>}
-          {safetyCount > 0 && <div>{safetyCount} incidents</div>}
-          {reworkCount > 0 && <div>{reworkCount} backcharges</div>}
-          {feedbackCount > 0 && <div>{feedbackCount} feedback</div>}
-        </div>
-        <div className="flex flex-col items-end gap-0.5">
-          <span className={`text-lg font-bold px-3 py-1 rounded-lg ${scoreStyle}`}>
-            {score != null ? Number(score).toFixed(1) : '—'}
-          </span>
-          {tier && (
-            <span className={`text-xs font-semibold ${tier.color}`}>{tier.label}</span>
-          )}
-        </div>
+      <div className="flex items-center gap-2 shrink-0">
+        <span className="text-lg font-bold" style={{ color: tier ? tierValueColor(tier) : 'var(--g-text)' }}>
+          {score != null ? Number(score).toFixed(1) : '—'}
+        </span>
+        {tier && tier.label !== 'No data' && (
+          <span className="glass-tier-pill" style={tierPillStyle(tier)}>{tier.label}</span>
+        )}
       </div>
     </div>
   )

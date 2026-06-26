@@ -67,7 +67,7 @@ export default function FeedbackRulesEditor() {
       </table>
 
       <div className="flex items-center gap-3">
-        <button onClick={handleSave} disabled={saving} className="flex items-center gap-1 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
+        <button onClick={handleSave} disabled={saving} className="flex items-center gap-1 px-4 py-2 text-sm glass-btn-primary disabled:opacity-50">
           <Save className="w-4 h-4" /> {saving ? 'Saving...' : 'Save Rules'}
         </button>
         {message && <span className="text-xs text-green-600">{message}</span>}

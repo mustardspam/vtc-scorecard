@@ -3,6 +3,7 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from './hooks/useAuth'
 import { ThemeProvider } from './context/ThemeContext'
 import AppLayout from './components/layout/AppLayout'
+import AppLoadingScreen from './components/layout/AppLoadingScreen'
 import ProtectedRoute from './components/layout/ProtectedRoute'
 import LoginPage from './pages/LoginPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
@@ -26,16 +27,7 @@ export default function App() {
     initialize()
   }, [])
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-screen" style={{ backgroundColor: '#f3f1ea' }}>
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-10 w-10 border-b-2 mx-auto" style={{ borderColor: '#087482' }} />
-          <p className="mt-4 text-sm" style={{ color: '#525249', opacity: 0.6 }}>Loading...</p>
-        </div>
-      </div>
-    )
-  }
+  if (loading) return <AppLoadingScreen message="Loading..." />
 
   return (
     <ThemeProvider>
