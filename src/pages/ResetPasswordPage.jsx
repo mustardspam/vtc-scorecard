@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import AppBrand from '../components/layout/AppBrand'
 
 export default function ResetPasswordPage() {
-  const [status, setStatus] = useState('loading') // 'loading' | 'ready' | 'invalid'
+  const [status, setStatus] = useState('loading')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError] = useState('')
@@ -17,25 +18,15 @@ export default function ResetPasswordPage() {
     const hasRecoveryToken = hashParams.get('access_token') || searchParams.get('code')
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'PASSWORD_RECOVERY') {
-        setStatus('ready')
-      } else if (event === 'SIGNED_IN' && hasRecoveryToken) {
-        // Implicit flow may fire SIGNED_IN instead of PASSWORD_RECOVERY
-        setStatus('ready')
-      }
+      if (event === 'PASSWORD_RECOVERY') setStatus('ready')
+      else if (event === 'SIGNED_IN' && hasRecoveryToken) setStatus('ready')
     })
 
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        setStatus('ready')
-      } else if (!hasRecoveryToken) {
-        // No token in URL at all — definitely not a valid reset link
-        setStatus('invalid')
-      }
-      // If hasRecoveryToken but no session yet, stay loading — wait for the auth event
+      if (session) setStatus('ready')
+      else if (!hasRecoveryToken) setStatus('invalid')
     })
 
-    // Safety valve: give up after 8s if Supabase never processes the token
     const timeout = setTimeout(() => {
       setStatus(prev => prev === 'loading' ? 'invalid' : prev)
     }, 8000)
@@ -49,14 +40,8 @@ export default function ResetPasswordPage() {
   async function handleReset(e) {
     e.preventDefault()
     setError('')
-    if (password !== confirmPassword) {
-      setError('Passwords do not match.')
-      return
-    }
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters.')
-      return
-    }
+    if (password !== confirmPassword) { setError('Passwords do not match.'); return }
+    if (password.length < 8) { setError('Password must be at least 8 characters.'); return }
     setLoading(true)
     try {
       const { error: updateError } = await supabase.auth.updateUser({ password })
@@ -70,40 +55,27 @@ export default function ResetPasswordPage() {
     }
   }
 
-  const inputClass = "w-full px-3 py-2 border border-gray-300 rounded-lg outline-none text-sm focus:ring-2 focus:border-transparent transition-colors"
-  const inputStyle = { '--tw-ring-color': '#087482' }
+  const labelClass = 'block text-sm font-medium mb-1'
+  const labelStyle = { color: 'var(--g-text)' }
 
   return (
-    <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: '#f3f1ea' }}>
-      <div className="w-full max-w-md bg-white rounded-xl shadow-sm border border-gray-200 p-8">
-        <div className="text-center mb-7">
-          <img
-            src="/aw-stl-logo.jpg"
-            alt="Ashton Woods / Starlight Homes"
-            className="h-12 mx-auto object-contain"
-          />
-          <p className="text-xs mt-3" style={{ color: '#525249', opacity: 0.65 }}>
-            Vendor &amp; Trade Performance Portal
-          </p>
+    <div className="glass-auth-screen">
+      <div className="glass-auth-card">
+        <div className="mb-6">
+          <AppBrand centered />
         </div>
 
         {status === 'loading' && (
           <div className="text-center py-6">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 mx-auto" style={{ borderColor: '#087482' }} />
+            <div className="app-loading-spinner mx-auto" />
           </div>
         )}
 
         {status === 'invalid' && (
           <div className="text-center py-4">
-            <p className="text-sm font-medium text-gray-900 mb-1">Invalid or expired link</p>
-            <p className="text-sm text-gray-500 mb-4">This password reset link has expired. Please request a new one.</p>
-            <button
-              onClick={() => navigate('/login')}
-              className="text-sm font-medium transition-colors"
-              style={{ color: '#087482' }}
-              onMouseEnter={e => { e.currentTarget.style.color = '#076570' }}
-              onMouseLeave={e => { e.currentTarget.style.color = '#087482' }}
-            >
+            <p className="text-sm font-medium mb-1" style={{ color: 'var(--g-text)' }}>Invalid or expired link</p>
+            <p className="text-sm mb-4" style={{ color: 'var(--g-dim)' }}>This password reset link has expired. Please request a new one.</p>
+            <button type="button" onClick={() => navigate('/login')} className="glass-link text-sm bg-transparent border-none cursor-pointer">
               Back to sign in →
             </button>
           </div>
@@ -111,61 +83,35 @@ export default function ResetPasswordPage() {
 
         {status === 'ready' && success && (
           <div className="text-center py-4">
-            <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
-              <svg className="w-6 h-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <div className="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3" style={{ background: '#dcf2e4' }}>
+              <svg className="w-6 h-6" style={{ color: '#1f7a44' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
             </div>
-            <p className="text-sm font-medium text-gray-900">Password updated!</p>
-            <p className="text-sm text-gray-500 mt-1">Taking you to the dashboard...</p>
+            <p className="text-sm font-medium" style={{ color: 'var(--g-text)' }}>Password updated!</p>
+            <p className="text-sm mt-1" style={{ color: 'var(--g-dim)' }}>Taking you to the dashboard...</p>
           </div>
         )}
 
         {status === 'ready' && !success && (
           <>
             <div className="mb-6">
-              <p className="text-sm font-semibold text-gray-900 mb-1">Set a new password</p>
-              <p className="text-sm text-gray-500">Choose a strong password for your account.</p>
+              <p className="text-sm font-semibold mb-1" style={{ color: 'var(--g-text)' }}>Set a new password</p>
+              <p className="text-sm" style={{ color: 'var(--g-dim)' }}>Choose a strong password for your account.</p>
             </div>
-
             {error && (
-              <div className="mb-4 p-3 bg-red-50 text-red-700 text-sm rounded-lg border border-red-200">
-                {error}
-              </div>
+              <div className="mb-4 p-3 text-sm rounded-xl" style={{ background: '#f8dada', color: '#a72727' }}>{error}</div>
             )}
-
             <form onSubmit={handleReset} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  className={inputClass}
-                  style={inputStyle}
-                  placeholder="Min. 8 characters"
-                  required
-                />
+                <label className={labelClass} style={labelStyle}>New Password</label>
+                <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="glass-input w-full" placeholder="Min. 8 characters" required />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Confirm New Password</label>
-                <input
-                  type="password"
-                  value={confirmPassword}
-                  onChange={e => setConfirmPassword(e.target.value)}
-                  className={inputClass}
-                  style={inputStyle}
-                  required
-                />
+                <label className={labelClass} style={labelStyle}>Confirm New Password</label>
+                <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} className="glass-input w-full" required />
               </div>
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-2.5 text-white font-medium rounded-lg disabled:opacity-50 transition-colors text-sm"
-                style={{ backgroundColor: '#087482' }}
-                onMouseEnter={e => { if (!loading) e.currentTarget.style.backgroundColor = '#076570' }}
-                onMouseLeave={e => { e.currentTarget.style.backgroundColor = '#087482' }}
-              >
+              <button type="submit" disabled={loading} className="glass-btn-primary w-full py-2.5">
                 {loading ? 'Updating...' : 'Update Password'}
               </button>
             </form>

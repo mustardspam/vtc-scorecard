@@ -1,8 +1,10 @@
+import { tierPillStyle } from '../../lib/design/tokens'
+
 export default function TierBadge({ score, getTier }) {
   const tier = getTier(score)
-  if (!tier) return null
+  if (!tier || tier.label === 'No data') return null
   return (
-    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold mt-0.5 ${tier.bg} ${tier.color}`}>
+    <span className="glass-tier-pill" style={tierPillStyle(tier)}>
       {tier.label}
     </span>
   )

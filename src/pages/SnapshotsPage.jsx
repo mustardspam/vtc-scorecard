@@ -169,7 +169,7 @@ export default function SnapshotsPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Snapshots</h1>
+        <h1 className="glass-page-title">Snapshots</h1>
         <div className="flex items-center gap-2">
           {compareIds.length === 2 && (
             <button onClick={runComparison} className="flex items-center gap-1 px-3 py-1.5 text-sm bg-purple-600 text-white rounded-lg hover:bg-purple-700">
@@ -177,7 +177,7 @@ export default function SnapshotsPage() {
             </button>
           )}
           {(isAdmin() || isManager()) && (
-            <button onClick={() => setShowCreate(!showCreate)} className="flex items-center gap-1 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+            <button onClick={() => setShowCreate(!showCreate)} className="flex items-center gap-1 px-3 py-1.5 text-sm glass-btn-primary">
               <Camera className="w-4 h-4" /> Save Snapshot
             </button>
           )}
@@ -185,7 +185,7 @@ export default function SnapshotsPage() {
       </div>
 
       {showCreate && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-3">
+        <div className="glass-panel p-6 space-y-3">
           <h2 className="text-lg font-semibold">Create Snapshot</h2>
           <input type="text" placeholder="Snapshot name *" value={createForm.name} onChange={e => setCreateForm(f => ({ ...f, name: e.target.value }))}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
@@ -236,9 +236,9 @@ export default function SnapshotsPage() {
       )}
 
       {loading ? (
-        <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>
+        <div className="flex justify-center py-12"><div className="app-loading-spinner" /></div>
       ) : snapshots.length === 0 ? (
-        <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
+        <div className="glass-panel p-12 text-center">
           <Camera className="w-10 h-10 text-gray-300 mx-auto mb-3" />
           <p className="text-sm text-gray-500">No snapshots yet. Save one to preserve the current scorecard state.</p>
         </div>

@@ -269,24 +269,24 @@ export default function DigestPage() {
             <Mail className="w-6 h-6 text-teal-600" />
             Digest Email
           </h1>
-          <p className="text-sm text-gray-500 mt-1">Performance summary — sent automatically every Monday at 8am ET</p>
+          <p className="glass-page-subtitle">Performance summary — sent automatically every Monday at 8am ET</p>
         </div>
         <div className="flex flex-col items-end gap-2">
           <div className="flex items-center gap-2">
-            <button onClick={loadData} className="flex items-center gap-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">
+            <button onClick={loadData} className="flex items-center gap-1 glass-btn-secondary text-sm py-1.5">
               <RefreshCw className="w-4 h-4" /> Refresh
             </button>
             <button onClick={handleCopy} className="flex items-center gap-1 px-3 py-1.5 text-sm bg-teal-600 text-white rounded-lg hover:bg-teal-700">
               {copied ? <><Check className="w-4 h-4" /> Copied!</> : <><Copy className="w-4 h-4" /> Copy Text</>}
             </button>
-            <button onClick={() => window.print()} className="flex items-center gap-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 no-print">
+            <button onClick={() => window.print()} className="flex items-center gap-1 glass-btn-secondary text-sm py-1.5 no-print">
               <Printer className="w-4 h-4" /> Print
             </button>
             {canSend && (
               <button
                 onClick={handleSendNow}
                 disabled={sending}
-                className="flex items-center gap-1 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60 no-print"
+                className="flex items-center gap-1 px-3 py-1.5 text-sm glass-btn-primary disabled:opacity-60 no-print"
               >
                 <Send className="w-4 h-4" /> {sending ? 'Sending…' : 'Send Now'}
               </button>
@@ -302,7 +302,7 @@ export default function DigestPage() {
       </div>
 
       {/* Executive Summary */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden no-print">
+      <div className="glass-panel overflow-hidden no-print">
         <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
           <span className="text-sm font-medium text-gray-700">Executive summary</span>
           {priorSnapshotName && <span className="ml-2 text-xs text-gray-400">vs snapshot "{priorSnapshotName}"</span>}
@@ -356,8 +356,8 @@ export default function DigestPage() {
 
       {/* Stat cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 no-print">
-        <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
-          <p className="text-2xl font-bold text-gray-900">{valid.length}</p>
+        <div className="glass-panel p-4 text-center">
+          <p className="glass-page-title">{valid.length}</p>
           <p className="text-xs text-gray-500 mt-1">Vendors Scored</p>
         </div>
         <div className="bg-green-50 rounded-xl border border-green-100 p-4 text-center">
@@ -389,7 +389,7 @@ export default function DigestPage() {
       )}
 
       {/* Plain-text email preview */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div className="glass-panel overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50 no-print">
           <span className="text-sm font-medium text-gray-700">Email preview (plain text)</span>
           <span className="text-xs text-gray-400">This is what recipients receive every Monday</span>

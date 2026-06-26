@@ -43,7 +43,7 @@ export default function CommunityManager() {
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">Communities ({communities.length})</h2>
         <button onClick={() => { setCreating(true); setEditing(null); setForm({ name: '', code: '', brand: '' }) }}
-          className="flex items-center gap-1 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+          className="flex items-center gap-1 px-3 py-1.5 text-sm glass-btn-primary">
           <Plus className="w-4 h-4" /> Add Community
         </button>
       </div>
@@ -61,7 +61,7 @@ export default function CommunityManager() {
           </div>
           <div className="flex gap-2">
             <button onClick={handleSave} className="flex items-center gap-1 px-3 py-1.5 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700"><Save className="w-3.5 h-3.5" /> Save</button>
-            <button onClick={() => { setCreating(false); setEditing(null) }} className="flex items-center gap-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50"><X className="w-3.5 h-3.5" /> Cancel</button>
+            <button onClick={() => { setCreating(false); setEditing(null) }} className="flex items-center gap-1 glass-btn-secondary text-sm py-1.5"><X className="w-3.5 h-3.5" /> Cancel</button>
           </div>
         </div>
       )}

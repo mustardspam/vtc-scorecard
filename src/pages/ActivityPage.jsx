@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { ChevronDown, ChevronUp, Users, Activity, Filter, X, AlertTriangle, ClipboardList } from 'lucide-react'
+import { cn } from '../lib/cn'
 
 const ACTION_COLORS = {
   file_upload: 'bg-blue-100 text-blue-700',
@@ -37,16 +38,15 @@ export default function ActivityPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold text-gray-900">Activity</h1>
+      <h1 className="glass-page-title">Activity</h1>
 
-      <div className="flex gap-1 border-b border-gray-200 pb-px overflow-x-auto">
+      <div className="flex gap-1 border-b overflow-x-auto" style={{ borderColor: 'var(--g-line)' }}>
         {TABS.map(t => (
           <button
             key={t.id}
+            type="button"
             onClick={() => setTab(t.id)}
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
-              tab === t.id ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
+            className={cn('flex items-center gap-2 px-4 py-2.5 text-sm whitespace-nowrap', tab === t.id ? 'glass-tab-active' : 'glass-tab')}
           >
             <t.icon className="w-4 h-4" />
             {t.label}
@@ -137,7 +137,7 @@ function FeedbackSubmissionsTab() {
   return (
     <div className="space-y-4">
       {/* Filters */}
-      <div className="bg-white rounded-xl border border-gray-200 p-4">
+      <div className="glass-panel p-4">
         <div className="flex items-center gap-3 flex-wrap">
           <Filter className="w-4 h-4 text-gray-400 flex-shrink-0" />
 
@@ -212,9 +212,9 @@ function FeedbackSubmissionsTab() {
 
       {/* Table */}
       {loading ? (
-        <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>
+        <div className="flex justify-center py-12"><div className="app-loading-spinner" /></div>
       ) : (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="glass-panel overflow-hidden">
           {submissions.length === 0 ? (
             <div className="p-8 text-center text-sm text-gray-500">No submissions match the current filters.</div>
           ) : (
@@ -352,9 +352,9 @@ function SystemLogTab() {
   }
 
   return loading ? (
-    <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>
+    <div className="flex justify-center py-12"><div className="app-loading-spinner" /></div>
   ) : (
-    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+    <div className="glass-panel overflow-hidden">
       <div className="divide-y divide-gray-100">
         {logs.map(log => (
           <div key={log.id} className="px-4 py-3">
@@ -455,7 +455,7 @@ function CMOutlierTab() {
     }
   }
 
-  if (loading) return <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>
+  if (loading) return <div className="flex justify-center py-16"><div className="app-loading-spinner" /></div>
 
   const outliers = rows.filter(r => Math.abs(r.zScore) >= 1.5)
   const normal = rows.filter(r => Math.abs(r.zScore) < 1.5)
@@ -477,7 +477,7 @@ function CMOutlierTab() {
           <h3 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-1">
             <AlertTriangle className="w-4 h-4 text-amber-500" /> Outlier CMs ({outliers.length})
           </h3>
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="glass-panel overflow-hidden">
             <CMTable rows={outliers} highlight />
           </div>
         </div>
@@ -485,7 +485,7 @@ function CMOutlierTab() {
 
       <div>
         <h3 className="text-sm font-semibold text-gray-700 mb-2">All CMs — Feedback Patterns</h3>
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="glass-panel overflow-hidden">
           <CMTable rows={normal} />
         </div>
       </div>
@@ -582,7 +582,7 @@ function VendorActionsTab() {
     return true
   })
 
-  if (loading) return <div className="flex justify-center py-16"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>
+  if (loading) return <div className="flex justify-center py-16"><div className="app-loading-spinner" /></div>
 
   return (
     <div className="space-y-4">
@@ -612,13 +612,12 @@ function VendorActionsTab() {
       </div>
 
       {filtered.length === 0 ? (
-        <div className="text-center py-16 text-gray-400 bg-white rounded-xl border border-gray-200">
+        <div className="text-center py-16 text-gray-400 glass-panel">
           <ClipboardList className="w-8 h-8 mx-auto mb-2 opacity-30" />
-          <p className="text-sm">No vendor actions logged yet.</p>
-          <p className="text-xs mt-1">Use the "Log Action" button on the Scores page to record actions taken on vendors.</p>
+          <p className="text-sm">No vendor actions logged — log from the Scores table ⋯ menu.</p>
         </div>
       ) : (
-        <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
+        <div className="glass-panel divide-y divide-gray-100">
           {filtered.map(a => {
             const meta = a.metadata || {}
             const user = a.profiles?.full_name || a.profiles?.email || 'Unknown'

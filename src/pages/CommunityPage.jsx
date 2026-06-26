@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useThresholds } from '../hooks/useThresholds'
+import { tierPillStyle, tierValueColor } from '../lib/design/tokens'
 import TierBadge from '../components/scores/TierBadge'
 import { MapPin, ThumbsUp, ThumbsDown, Users, Building2 } from 'lucide-react'
 
@@ -102,12 +103,12 @@ export default function CommunityPage() {
             <MapPin className="w-6 h-6 text-teal-600" />
             Community Breakdown
           </h1>
-          <p className="text-sm text-gray-500 mt-1">Vendor assignments and performance by community</p>
+          <p className="glass-page-subtitle">Vendor assignments and performance by community</p>
         </div>
       </div>
 
       {/* Community selector */}
-      <div className="bg-white rounded-xl border border-gray-200 p-4">
+      <div className="glass-panel p-4">
         <div className="flex items-center gap-4 flex-wrap">
           <label className="text-sm font-medium text-gray-700">Select Community:</label>
           {loadingCommunities ? (
@@ -140,7 +141,7 @@ export default function CommunityPage() {
       </div>
 
       {!selectedId && (
-        <div className="bg-white rounded-xl border border-gray-200 p-16 text-center">
+        <div className="glass-panel p-16 text-center">
           <Building2 className="w-12 h-12 mx-auto mb-3 text-teal-200" />
           <p className="text-sm font-medium text-gray-700">No community selected</p>
           <p className="text-xs text-gray-400 mt-1">Choose a community from the dropdown above to view vendor assignments and performance scores.</p>
@@ -157,17 +158,17 @@ export default function CommunityPage() {
         <>
           {/* Summary cards */}
           <div className="grid grid-cols-3 gap-4">
-            <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
-              <p className="text-2xl font-bold text-gray-900">{vendorRows.length}</p>
+            <div className="glass-panel p-4 text-center">
+              <p className="glass-page-title">{vendorRows.length}</p>
               <p className="text-xs text-gray-500 mt-1 flex items-center justify-center gap-1"><Users className="w-3.5 h-3.5" /> Assigned Vendors</p>
             </div>
-            <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
+            <div className="glass-panel p-4 text-center">
               <p className="text-2xl font-bold text-green-700">
                 {vendorRows.reduce((s, r) => s + r.feedback.kudos, 0)}
               </p>
               <p className="text-xs text-gray-500 mt-1 flex items-center justify-center gap-1"><ThumbsUp className="w-3.5 h-3.5" /> Kudos (total)</p>
             </div>
-            <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
+            <div className="glass-panel p-4 text-center">
               <p className="text-2xl font-bold text-red-600">
                 {vendorRows.reduce((s, r) => s + r.feedback.complaints, 0)}
               </p>
@@ -177,11 +178,11 @@ export default function CommunityPage() {
 
           {/* Vendor table */}
           {vendorRows.length === 0 ? (
-            <div className="text-center py-12 text-gray-400 bg-white rounded-xl border border-gray-200">
+            <div className="text-center py-12 text-gray-400 glass-panel">
               <p className="text-sm">No active vendors assigned to this community.</p>
             </div>
           ) : (
-            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="glass-panel overflow-hidden">
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
@@ -204,8 +205,8 @@ export default function CommunityPage() {
                       <tr key={r.vendor_id || i} className="hover:bg-gray-50">
                         <td className="px-4 py-3">
                           <div className="font-medium text-gray-900">{r.vendor_name}</div>
-                          {tier && (
-                            <span className={`text-xs font-semibold ${tier.color}`}>{tier.label}</span>
+                          {tier && tier.label !== 'No data' && (
+                            <span className="glass-tier-pill" style={tierPillStyle(tier)}>{tier.label}</span>
                           )}
                         </td>
                         <td className="px-4 py-3 text-gray-500">{r.category || '—'}</td>
@@ -224,9 +225,12 @@ export default function CommunityPage() {
                         ))}
                         <td className="px-4 py-3 text-right">
                           {s?.weighted_total != null ? (
-                            <span className={`font-bold font-mono text-sm px-2 py-0.5 rounded ${
-                              tier ? `${tier.bg} ${tier.color}` : 'bg-gray-50 text-gray-500'
-                            }`}>{Number(s.weighted_total).toFixed(1)}</span>
+                            <span
+                              className="font-bold font-mono text-sm px-2 py-0.5 rounded"
+                              style={tier && tier.label !== 'No data'
+                                ? { background: tier.softBg, color: tierValueColor(tier) }
+                                : { background: 'var(--g-panel-2)', color: 'var(--g-dim)' }}
+                            >{Number(s.weighted_total).toFixed(1)}</span>
                           ) : <span className="text-gray-300">—</span>}
                         </td>
                         <td className="px-4 py-3 text-center">

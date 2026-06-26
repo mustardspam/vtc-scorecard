@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../../lib/supabase'
-import { Filter } from 'lucide-react'
 
 export default function DashboardFilters({ filters, onChange }) {
   const [categories, setCategories] = useState([])
@@ -19,12 +18,11 @@ export default function DashboardFilters({ filters, onChange }) {
   }, [])
 
   return (
-    <div className="flex items-center gap-3">
-      <Filter className="w-4 h-4 text-gray-400" />
+    <div className="flex items-center gap-2 flex-wrap">
       <select
         value={filters.category}
         onChange={e => onChange({ ...filters, category: e.target.value })}
-        className="text-sm border border-gray-300 rounded-lg px-3 py-1.5 bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+        className="glass-input text-sm py-1.5"
       >
         <option value="">All Categories</option>
         {categories.map(c => (
@@ -34,7 +32,7 @@ export default function DashboardFilters({ filters, onChange }) {
       <select
         value={filters.community}
         onChange={e => onChange({ ...filters, community: e.target.value })}
-        className="text-sm border border-gray-300 rounded-lg px-3 py-1.5 bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+        className="glass-input text-sm py-1.5"
       >
         <option value="">All Communities</option>
         {communities.map(c => (

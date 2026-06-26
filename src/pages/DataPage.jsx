@@ -2,33 +2,9 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { Search, ChevronDown, ChevronUp, Database, Trash2 } from 'lucide-react'
-
-const CATEGORY_COLORS = {
-  'Painter':        'bg-purple-100 text-purple-700',
-  'Service':        'bg-slate-100 text-slate-600',
-  'SWPPP':          'bg-lime-100 text-lime-700',
-  'Grading':        'bg-amber-100 text-amber-800',
-  'Electrician':    'bg-yellow-100 text-yellow-700',
-  'HVAC':           'bg-cyan-100 text-cyan-700',
-  'Plumber':        'bg-blue-100 text-blue-700',
-  'Framer':         'bg-orange-100 text-orange-700',
-  'Insulation':     'bg-pink-100 text-pink-700',
-  'Fence':          'bg-stone-200 text-stone-700',
-  'Mirror/Glass':   'bg-sky-100 text-sky-700',
-  'Bricker':        'bg-red-100 text-red-700',
-  'Concrete':       'bg-gray-200 text-gray-700',
-  'Landscape':      'bg-green-100 text-green-700',
-  'Garage Door':    'bg-indigo-100 text-indigo-700',
-  'Cleaner':        'bg-teal-100 text-teal-700',
-  'Trash':          'bg-zinc-100 text-zinc-600',
-  'Drywall':        'bg-orange-200 text-orange-800',
-  'Roofer':         'bg-rose-100 text-rose-700',
-  'Flooring':       'bg-amber-200 text-amber-900',
-  'Countertops':    'bg-stone-100 text-stone-700',
-  'Cabinets':       'bg-yellow-200 text-yellow-900',
-  'Supplier':       'bg-violet-100 text-violet-700',
-  'Trim Carpenter': 'bg-orange-300 text-orange-900',
-}
+import { cn } from '../lib/cn'
+import CategoryChip from '../components/ui/CategoryChip'
+import { categoryChipStyle, BRAND_CHIPS, TYPE_CHIPS } from '../lib/design/tokens'
 
 export default function DataPage() {
   const [tab, setTab] = useState('vendors')
@@ -152,78 +128,62 @@ export default function DataPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Database className="w-6 h-6 text-gray-700" />
-          <h1 className="text-2xl font-bold text-gray-900">Vendor & Trade Directory</h1>
+          <Database className="w-6 h-6" style={{ color: 'var(--g-dim)' }} />
+          <h1 className="glass-page-title">Vendor & Trade Directory</h1>
         </div>
-        <span className="text-sm text-gray-400">{vendors.length} vendors · {communities.length} communities</span>
+        <span className="glass-page-subtitle">{vendors.length} vendors · {communities.length} communities</span>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-2 border-b border-gray-200 pb-px">
+      <div className="flex gap-1 border-b overflow-x-auto" style={{ borderColor: 'var(--g-line)' }}>
         {[
           { id: 'vendors', label: 'By Vendor / Trade' },
           { id: 'communities', label: 'By Community' },
         ].map(t => (
           <button
             key={t.id}
+            type="button"
             onClick={() => { setTab(t.id); setSearch('') }}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-              tab === t.id ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
+            className={cn('px-4 py-2.5 text-sm whitespace-nowrap', tab === t.id ? 'glass-tab-active' : 'glass-tab')}
           >
             {t.label}
           </button>
         ))}
       </div>
 
-      {/* Filters */}
       <div className="flex items-center gap-3 flex-wrap">
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: 'var(--g-dim)' }} />
           <input
             type="text"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder={tab === 'vendors' ? 'Search vendor name or JC ID...' : 'Search community name or code...'}
-            className="pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 w-72"
+            placeholder={tab === 'vendors' ? 'Search name, JC ID, or community...' : 'Search community name or code...'}
+            className="glass-input pl-9 w-72"
           />
         </div>
 
-        <select
-          value={filterBrand}
-          onChange={e => setFilterBrand(e.target.value)}
-          className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white outline-none"
-        >
+        <select value={filterBrand} onChange={e => setFilterBrand(e.target.value)} className="glass-input text-sm">
           <option value="">All Brands</option>
           <option value="Ashton Woods">Ashton Woods</option>
           <option value="Starlight">Starlight</option>
         </select>
 
         {tab === 'vendors' && (
-          <select
-            value={filterCategory}
-            onChange={e => setFilterCategory(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white outline-none"
-          >
+          <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} className="glass-input text-sm">
             <option value="">All Categories</option>
             {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
           </select>
         )}
 
         {(search || filterBrand || filterCategory) && (
-          <button
-            onClick={() => { setSearch(''); setFilterBrand(''); setFilterCategory('') }}
-            className="text-xs text-gray-500 hover:text-gray-700 underline"
-          >
+          <button type="button" onClick={() => { setSearch(''); setFilterBrand(''); setFilterCategory('') }} className="glass-link text-xs bg-transparent border-none cursor-pointer">
             Clear filters
           </button>
         )}
       </div>
 
       {loading ? (
-        <div className="flex justify-center py-16">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
-        </div>
+        <div className="flex justify-center py-16"><div className="app-loading-spinner" /></div>
       ) : tab === 'vendors' ? (
         <VendorList
           vendors={filteredVendors}
@@ -248,14 +208,11 @@ function CategoryBadge({ vendorId, categoryName, categories, onCategoryChange, c
   const [saving, setSaving] = useState(false)
   const selectRef = useRef(null)
 
-  const colorClass = CATEGORY_COLORS[categoryName] || 'bg-gray-100 text-gray-600'
+  const chipStyle = categoryChipStyle(categoryName || '')
 
-  // Viewers see a static badge — no editing.
   if (!canEdit) {
-    return (
-      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${colorClass}`}>
-        {categoryName || 'No category'}
-      </span>
+    return categoryName ? <CategoryChip name={categoryName} /> : (
+      <span className="glass-category-chip" style={{ background: 'var(--g-panel-2)', color: 'var(--g-dim)' }}>No category</span>
     )
   }
 
@@ -277,7 +234,7 @@ function CategoryBadge({ vendorId, categoryName, categories, onCategoryChange, c
         onChange={handleChange}
         onBlur={() => setEditing(false)}
         onClick={e => e.stopPropagation()}
-        className="text-xs border-2 border-blue-400 rounded-full px-2 py-0.5 bg-white outline-none cursor-pointer shadow-sm"
+        className="glass-input text-xs rounded-full px-2 py-0.5 cursor-pointer"
         style={{ minWidth: 110 }}
       >
         <option value="" disabled>— pick category —</option>
@@ -292,7 +249,8 @@ function CategoryBadge({ vendorId, categoryName, categories, onCategoryChange, c
     <button
       onClick={e => { e.stopPropagation(); setEditing(true) }}
       title="Click to change category"
-      className={`text-xs px-2 py-0.5 rounded-full font-medium transition-all hover:ring-2 hover:ring-offset-1 hover:ring-blue-400 cursor-pointer ${colorClass}`}
+      className="glass-category-chip cursor-pointer transition-opacity hover:opacity-80"
+      style={chipStyle}
     >
       {saving ? '…' : (categoryName || 'No category')}
     </button>
@@ -309,7 +267,7 @@ function VendorList({ vendors, categories, onCategoryChange, selectedIds, onTogg
 
   if (vendors.length === 0) {
     return (
-      <div className="bg-white rounded-xl border border-gray-200 p-10 text-center">
+      <div className="glass-panel p-10 text-center">
         <p className="text-sm text-gray-500">No vendors found.</p>
         <p className="text-xs text-gray-400 mt-1">Upload a JC Vendor Report in the Uploads section to populate the directory.</p>
       </div>
@@ -317,7 +275,7 @@ function VendorList({ vendors, categories, onCategoryChange, selectedIds, onTogg
   }
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+    <div className="glass-panel overflow-hidden">
 
       {/* Bulk action bar — admins/managers only */}
       {canEdit && (
@@ -506,7 +464,7 @@ function CommunityList({ communities }) {
 
   if (communities.length === 0) {
     return (
-      <div className="bg-white rounded-xl border border-gray-200 p-10 text-center">
+      <div className="glass-panel p-10 text-center">
         <p className="text-sm text-gray-500">No communities found.</p>
         <p className="text-xs text-gray-400 mt-1">Upload a JC Vendor Report to populate the directory.</p>
       </div>
@@ -514,7 +472,7 @@ function CommunityList({ communities }) {
   }
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+    <div className="glass-panel overflow-hidden">
       <div className="divide-y divide-gray-100">
         {communities.map(c => {
           const isExpanded = expandedId === c.id
@@ -573,18 +531,13 @@ function CommunityList({ communities }) {
                       <p className="text-xs font-medium text-gray-500 mb-2">Assigned Vendors & Trades</p>
                       {uniqueVendors.map(v => {
                         const catName = v.vendor_categories?.name
-                        const colorClass = CATEGORY_COLORS[catName] || 'bg-gray-100 text-gray-600'
                         return (
-                          <div key={v.id} className="flex items-center justify-between px-3 py-2 bg-white border border-gray-100 rounded-lg">
+                          <div key={v.id} className="flex items-center justify-between px-3 py-2 rounded-lg" style={{ background: 'var(--g-panel-2)', border: '1px solid var(--g-line)' }}>
                             <div className="min-w-0 flex-1">
-                              <p className="text-xs font-medium text-gray-800 truncate">{v.name}</p>
+                              <p className="text-xs font-medium truncate" style={{ color: 'var(--g-text)' }}>{v.name}</p>
                               <div className="flex items-center gap-1.5 mt-0.5">
-                                {catName && (
-                                  <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${colorClass}`}>
-                                    {catName}
-                                  </span>
-                                )}
-                                <span className="text-xs text-gray-400">
+                                {catName && <CategoryChip name={catName} />}
+                                <span className="glass-category-chip" style={{ background: (v.is_trade ? TYPE_CHIPS.Trade : TYPE_CHIPS.Vendor).bg, color: (v.is_trade ? TYPE_CHIPS.Trade : TYPE_CHIPS.Vendor).text }}>
                                   {v.is_trade ? 'Trade' : 'Vendor'}
                                 </span>
                               </div>
