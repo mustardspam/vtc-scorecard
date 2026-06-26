@@ -174,7 +174,7 @@ export default function VendorReportCard({ scoreRow, getTier, onClose }) {
           <div className="report-card-content p-8 space-y-6">
 
             {/* Header */}
-            <div className="flex items-start justify-between pb-5 border-b-2" style={{ borderColor: '#087482' }}>
+            <div className="report-card-header flex items-start justify-between pb-5 border-b-2" style={{ borderColor: '#087482' }}>
               <div>
                 <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 mb-1">
                   Vendor Performance Report

@@ -689,26 +689,37 @@ h1.text-2xl.font-bold.text-gray-900 {
 /* ── Print styles (report card) ── */
 @media print {
   @page {
-    margin: 0.5in;
+    margin: 0.6in;
     size: letter;
   }
 
-  .no-print { display: none !important; }
-
-  html, body, #root {
+  html, body {
     height: auto !important;
     overflow: visible !important;
     background: white !important;
+    margin: 0 !important;
+    padding: 0 !important;
   }
 
+  .no-print,
+  .glass-sidebar,
+  .ticker-bar,
+  .ai-chat-fab,
+  .ai-chat-panel {
+    display: none !important;
+  }
+
+  /* Hide page chrome; only the report card subtree stays visible */
   body * { visibility: hidden; }
 
   .report-card-print-root,
   .report-card-print-root * { visibility: visible; }
 
   .report-card-print-root {
-    position: static !important;
-    inset: auto !important;
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
     width: 100% !important;
     height: auto !important;
     max-height: none !important;
@@ -716,8 +727,9 @@ h1.text-2xl.font-bold.text-gray-900 {
     background: white !important;
     padding: 0 !important;
     margin: 0 !important;
-    z-index: auto !important;
+    z-index: 2147483647 !important;
     display: block !important;
+    inset: auto !important;
   }
 
   .report-card-inner {
@@ -729,6 +741,7 @@ h1.text-2xl.font-bold.text-gray-900 {
     width: 100% !important;
     max-width: none !important;
     display: block !important;
+    margin: 0 !important;
   }
 
   .report-card-scroll {
@@ -736,17 +749,30 @@ h1.text-2xl.font-bold.text-gray-900 {
     max-height: none !important;
     height: auto !important;
     flex: none !important;
+    display: block !important;
   }
 
   .report-card-content {
     position: static !important;
     width: 100% !important;
     background: white !important;
-    padding: 0 !important;
     overflow: visible !important;
     box-sizing: border-box !important;
+    padding: 0 !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
+  }
+
+  /* Stack header on print so tier/date don't split onto a separate page */
+  .report-card-header {
+    display: block !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .report-card-header > div:last-child {
+    text-align: left !important;
+    margin-top: 0.75rem;
   }
 
   .report-card-content thead {
@@ -762,14 +788,5 @@ h1.text-2xl.font-bold.text-gray-900 {
   .report-card-content .space-y-1\.5 > div {
     break-inside: avoid;
     page-break-inside: avoid;
-  }
-
-  /* App shell must not clip the report card across pages */
-  body .h-screen,
-  body main {
-    overflow: visible !important;
-    height: auto !important;
-    max-height: none !important;
-    position: static !important;
   }
 }
