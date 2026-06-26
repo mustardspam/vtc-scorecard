@@ -1,10 +1,47 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { authErrorMessage } from '../lib/auth-errors'
 import AppBrand from '../components/layout/AppBrand'
+
+async function establishRecoverySession() {
+  const hashParams = new URLSearchParams(window.location.hash.slice(1))
+  const searchParams = new URLSearchParams(window.location.search)
+  const code = searchParams.get('code')
+  const hashType = hashParams.get('type')
+  const hasHashToken = hashParams.has('access_token')
+
+  if (code) {
+    const { error } = await supabase.auth.exchangeCodeForSession(code)
+    if (error) throw error
+    return true
+  }
+
+  const { data: { session }, error } = await supabase.auth.getSession()
+  if (error) throw error
+  if (session && (hashType === 'recovery' || hasHashToken)) return true
+
+  return new Promise((resolve) => {
+    let subscription
+    const timeout = setTimeout(() => {
+      subscription?.unsubscribe()
+      resolve(false)
+    }, 12000)
+
+    const listener = supabase.auth.onAuthStateChange((event, nextSession) => {
+      if (event === 'PASSWORD_RECOVERY' || (event === 'SIGNED_IN' && nextSession && (hashType === 'recovery' || hasHashToken || code))) {
+        clearTimeout(timeout)
+        subscription?.unsubscribe()
+        resolve(true)
+      }
+    })
+    subscription = listener.data.subscription
+  })
+}
 
 export default function ResetPasswordPage() {
   const [status, setStatus] = useState('loading')
+  const [initError, setInitError] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError] = useState('')
@@ -13,28 +50,23 @@ export default function ResetPasswordPage() {
   const navigate = useNavigate()
 
   useEffect(() => {
-    const hashParams = new URLSearchParams(window.location.hash.slice(1))
-    const searchParams = new URLSearchParams(window.location.search)
-    const hasRecoveryToken = hashParams.get('access_token') || searchParams.get('code')
+    let cancelled = false
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'PASSWORD_RECOVERY') setStatus('ready')
-      else if (event === 'SIGNED_IN' && hasRecoveryToken) setStatus('ready')
-    })
-
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) setStatus('ready')
-      else if (!hasRecoveryToken) setStatus('invalid')
-    })
-
-    const timeout = setTimeout(() => {
-      setStatus(prev => prev === 'loading' ? 'invalid' : prev)
-    }, 8000)
-
-    return () => {
-      subscription.unsubscribe()
-      clearTimeout(timeout)
+    async function init() {
+      try {
+        const ready = await establishRecoverySession()
+        if (cancelled) return
+        if (ready) setStatus('ready')
+        else setStatus('invalid')
+      } catch (err) {
+        if (cancelled) return
+        setInitError(authErrorMessage(err))
+        setStatus('invalid')
+      }
     }
+
+    init()
+    return () => { cancelled = true }
   }, [])
 
   async function handleReset(e) {
@@ -47,9 +79,9 @@ export default function ResetPasswordPage() {
       const { error: updateError } = await supabase.auth.updateUser({ password })
       if (updateError) throw updateError
       setSuccess(true)
-      setTimeout(() => navigate('/dashboard'), 2000)
+      setTimeout(() => navigate('/login'), 2500)
     } catch (err) {
-      setError(err.message)
+      setError(authErrorMessage(err))
     } finally {
       setLoading(false)
     }
@@ -68,13 +100,19 @@ export default function ResetPasswordPage() {
         {status === 'loading' && (
           <div className="text-center py-6">
             <div className="app-loading-spinner mx-auto" />
+            <p className="text-sm mt-4" style={{ color: 'var(--g-dim)' }}>Verifying reset link...</p>
           </div>
         )}
 
         {status === 'invalid' && (
           <div className="text-center py-4">
             <p className="text-sm font-medium mb-1" style={{ color: 'var(--g-text)' }}>Invalid or expired link</p>
-            <p className="text-sm mb-4" style={{ color: 'var(--g-dim)' }}>This password reset link has expired. Please request a new one.</p>
+            <p className="text-sm mb-4" style={{ color: 'var(--g-dim)' }}>
+              {initError || 'This password reset link has expired or was already used. Request a new one from the sign-in page.'}
+            </p>
+            <p className="text-xs mb-4" style={{ color: 'var(--g-dim)' }}>
+              Tip: open the reset link on the same device and browser where you clicked &quot;Forgot password?&quot; Links expire after about an hour.
+            </p>
             <button type="button" onClick={() => navigate('/login')} className="glass-link text-sm bg-transparent border-none cursor-pointer">
               Back to sign in →
             </button>
@@ -89,7 +127,7 @@ export default function ResetPasswordPage() {
               </svg>
             </div>
             <p className="text-sm font-medium" style={{ color: 'var(--g-text)' }}>Password updated!</p>
-            <p className="text-sm mt-1" style={{ color: 'var(--g-dim)' }}>Taking you to the dashboard...</p>
+            <p className="text-sm mt-1" style={{ color: 'var(--g-dim)' }}>Taking you to sign in...</p>
           </div>
         )}
 
@@ -105,11 +143,11 @@ export default function ResetPasswordPage() {
             <form onSubmit={handleReset} className="space-y-4">
               <div>
                 <label className={labelClass} style={labelStyle}>New Password</label>
-                <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="glass-input w-full" placeholder="Min. 8 characters" required />
+                <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="glass-input w-full" placeholder="Min. 8 characters" required autoComplete="new-password" />
               </div>
               <div>
                 <label className={labelClass} style={labelStyle}>Confirm New Password</label>
-                <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} className="glass-input w-full" required />
+                <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} className="glass-input w-full" required autoComplete="new-password" />
               </div>
               <button type="submit" disabled={loading} className="glass-btn-primary w-full py-2.5">
                 {loading ? 'Updating...' : 'Update Password'}

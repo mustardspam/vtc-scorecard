@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../lib/supabase'
+import { authErrorMessage, normalizeEmail } from '../lib/auth-errors'
 import { cn } from '../lib/cn'
 import AppBrand from '../components/layout/AppBrand'
 
@@ -23,10 +24,10 @@ export default function LoginPage() {
     setError('')
     setLoading(true)
     try {
-      await login(email, password)
+      await login(normalizeEmail(email), password)
       navigate('/dashboard')
     } catch (err) {
-      setError(err.message)
+      setError(authErrorMessage(err))
     } finally {
       setLoading(false)
     }
@@ -37,13 +38,14 @@ export default function LoginPage() {
     setError('')
     setLoading(true)
     try {
-      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+      const normalized = normalizeEmail(email)
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(normalized, {
         redirectTo: `${window.location.origin}/reset-password`,
       })
       if (resetError) throw resetError
       setForgotSent(true)
     } catch (err) {
-      setError(err.message)
+      setError(authErrorMessage(err))
     } finally {
       setLoading(false)
     }
@@ -63,15 +65,19 @@ export default function LoginPage() {
     if (password.length < 8) { setError('Password must be at least 8 characters.'); return }
     setLoading(true)
     try {
-      const { error: signUpError } = await supabase.auth.signUp({
-        email,
+      const normalized = normalizeEmail(email)
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email: normalized,
         password,
-        options: { data: { full_name: fullName } }
+        options: { data: { full_name: fullName.trim() } },
       })
       if (signUpError) throw signUpError
+      if (data.session) {
+        await supabase.auth.signOut()
+      }
       setSignupSuccess(true)
     } catch (err) {
-      setError(err.message)
+      setError(authErrorMessage(err))
     } finally {
       setLoading(false)
     }
@@ -114,7 +120,7 @@ export default function LoginPage() {
           <form onSubmit={handleSignIn} className="space-y-4">
             <div>
               <label className={labelClass} style={labelStyle}>Email</label>
-              <input type="email" value={email} onChange={e => setEmail(e.target.value)} className="glass-input w-full" required />
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)} className="glass-input w-full" required autoComplete="email" />
             </div>
             <div>
               <div className="flex items-center justify-between mb-1">
@@ -123,14 +129,14 @@ export default function LoginPage() {
                   Forgot password?
                 </button>
               </div>
-              <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="glass-input w-full" required />
+              <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="glass-input w-full" required autoComplete="current-password" />
             </div>
             <button type="submit" disabled={loading} className="glass-btn-primary w-full py-2.5">
               {loading ? 'Signing in...' : 'Sign In'}
             </button>
             <div className="rounded-xl p-3" style={{ background: 'rgba(217,147,22,0.12)', border: '1px solid rgba(217,147,22,0.25)' }}>
               <p className="text-xs mb-2" style={{ color: '#8a5a08' }}>
-                <span className="font-semibold">First time here?</span> Your Okta login will not work on this portal — you need to create a separate account.
+                <span className="font-semibold">First time here?</span> Your Okta login will not work on this portal — you need to create a separate account with a new password.
               </p>
               <button type="button" onClick={() => switchTab('signup')} className="glass-btn-secondary w-full text-sm py-2">
                 Create an Account
@@ -149,7 +155,7 @@ export default function LoginPage() {
               </div>
               <p className="text-sm font-medium" style={{ color: 'var(--g-text)' }}>Account created!</p>
               <p className="text-sm mt-1" style={{ color: 'var(--g-dim)' }}>
-                Your account is pending approval. An admin will assign your access level shortly.
+                You can sign in now. An admin may adjust your role later, but you don&apos;t need to wait for approval to log in.
               </p>
               <button type="button" onClick={() => { switchTab('signin'); setPassword(''); setConfirmPassword('') }} className="glass-link text-sm mt-4 bg-transparent border-none cursor-pointer">
                 Go to Sign In →
@@ -159,25 +165,25 @@ export default function LoginPage() {
             <form onSubmit={handleSignUp} className="space-y-4">
               <div>
                 <label className={labelClass} style={labelStyle}>Full Name</label>
-                <input type="text" value={fullName} onChange={e => setFullName(e.target.value)} className="glass-input w-full" placeholder="John Smith" required />
+                <input type="text" value={fullName} onChange={e => setFullName(e.target.value)} className="glass-input w-full" placeholder="John Smith" required autoComplete="name" />
               </div>
               <div>
-                <label className={labelClass} style={labelStyle}>Email</label>
-                <input type="email" value={email} onChange={e => setEmail(e.target.value)} className="glass-input w-full" required />
+                <label className={labelClass} style={labelStyle}>Work Email</label>
+                <input type="email" value={email} onChange={e => setEmail(e.target.value)} className="glass-input w-full" required autoComplete="email" />
               </div>
               <div>
                 <label className={labelClass} style={labelStyle}>Password</label>
-                <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="glass-input w-full" placeholder="Min. 8 characters" required />
+                <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="glass-input w-full" placeholder="Min. 8 characters" required autoComplete="new-password" />
               </div>
               <div>
                 <label className={labelClass} style={labelStyle}>Confirm Password</label>
-                <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} className="glass-input w-full" required />
+                <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} className="glass-input w-full" required autoComplete="new-password" />
               </div>
               <button type="submit" disabled={loading} className="glass-btn-primary w-full py-2.5">
                 {loading ? 'Creating account...' : 'Create Account'}
               </button>
               <p className="text-xs text-center" style={{ color: 'var(--g-dim)' }}>
-                After creating your account, an admin will set your access level before you can log in.
+                Use your work email. If you already signed up, use Sign In or Forgot password instead.
               </p>
             </form>
           )
@@ -188,7 +194,10 @@ export default function LoginPage() {
             <div className="text-center py-4">
               <p className="text-sm font-medium" style={{ color: 'var(--g-text)' }}>Check your email</p>
               <p className="text-sm mt-1" style={{ color: 'var(--g-dim)' }}>
-                If an account exists for <span className="font-medium">{email}</span>, you&apos;ll receive a reset link shortly.
+                If an account exists for <span className="font-medium">{normalizeEmail(email)}</span>, you&apos;ll receive a reset link shortly.
+              </p>
+              <p className="text-xs mt-3" style={{ color: 'var(--g-dim)' }}>
+                Open the link on the same device and browser where you requested it. Links expire after about an hour and can only be used once.
               </p>
               <button type="button" onClick={() => switchTab('signin')} className="glass-link text-sm mt-4 bg-transparent border-none cursor-pointer">
                 Back to sign in →
@@ -200,7 +209,7 @@ export default function LoginPage() {
                 <p className="text-sm font-semibold mb-1" style={{ color: 'var(--g-text)' }}>Reset your password</p>
                 <p className="text-sm mb-4" style={{ color: 'var(--g-dim)' }}>Enter your email and we&apos;ll send you a reset link.</p>
                 <label className={labelClass} style={labelStyle}>Email</label>
-                <input type="email" value={email} onChange={e => setEmail(e.target.value)} className="glass-input w-full" required />
+                <input type="email" value={email} onChange={e => setEmail(e.target.value)} className="glass-input w-full" required autoComplete="email" />
               </div>
               <button type="submit" disabled={loading} className="glass-btn-primary w-full py-2.5">
                 {loading ? 'Sending...' : 'Send Reset Link'}

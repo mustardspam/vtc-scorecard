@@ -7,6 +7,7 @@ import {
   LayoutDashboard, Table2, MessageSquare, Upload, Camera,
   Activity, Settings, LogOut, Send, KeyRound, X, Database, Sun, Moon, MapPin, Mail, Map
 } from 'lucide-react'
+import { authErrorMessage } from '../../lib/auth-errors'
 import { supabase } from '../../lib/supabase'
 import AppBrand from './AppBrand'
 
@@ -52,7 +53,7 @@ export default function Sidebar() {
     setPwLoading(true)
     const { error } = await supabase.auth.updateUser({ password: newPassword })
     setPwLoading(false)
-    if (error) { setPwError(error.message); return }
+    if (error) { setPwError(authErrorMessage(error)); return }
     setPwMsg('Password updated successfully.')
     setNewPassword('')
     setConfirmPassword('')
