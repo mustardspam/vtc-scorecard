@@ -9,30 +9,48 @@ export default function SeverityRulesEditor() {
   const [reworkRules, setReworkRules] = useState([])
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
   const { user } = useAuth()
 
   useEffect(() => { loadRules() }, [])
 
   async function loadRules() {
-    const [sRes, rRes] = await Promise.all([
-      supabase.from('safety_severity_rules').select('*').order('sort_order'),
-      supabase.from('rework_severity_rules').select('*').order('sort_order'),
-    ])
-    setSafetyRules(sRes.data || [])
-    setReworkRules(rRes.data || [])
+    try {
+      const [sRes, rRes] = await Promise.all([
+        supabase.from('safety_severity_rules').select('*').order('sort_order'),
+        supabase.from('rework_severity_rules').select('*').order('sort_order'),
+      ])
+      if (sRes.error) throw sRes.error
+      if (rRes.error) throw rRes.error
+      setSafetyRules(sRes.data || [])
+      setReworkRules(rRes.data || [])
+    } catch (err) {
+      console.error('Severity rules load error:', err)
+      setError(err.message || 'Could not load severity rules.')
+    }
   }
 
   async function handleSave() {
     setSaving(true)
-    for (const rule of safetyRules) {
-      await supabase.from('safety_severity_rules').update({ points: rule.points, dollar_value: rule.dollar_value, updated_by: user.id, updated_at: new Date().toISOString() }).eq('id', rule.id)
+    setMessage('')
+    setError('')
+    try {
+      for (const rule of safetyRules) {
+        const { error: err } = await supabase.from('safety_severity_rules').update({ points: rule.points, dollar_value: rule.dollar_value, updated_by: user.id, updated_at: new Date().toISOString() }).eq('id', rule.id)
+        if (err) throw err
+      }
+      for (const rule of reworkRules) {
+        const { error: err } = await supabase.from('rework_severity_rules').update({ penalty_points: rule.penalty_points, cost_threshold_low: rule.cost_threshold_low, cost_threshold_high: rule.cost_threshold_high, updated_by: user.id, updated_at: new Date().toISOString() }).eq('id', rule.id)
+        if (err) throw err
+      }
+      await logActivity('rules_updated', 'Updated severity rules')
+      setMessage('Rules saved')
+    } catch (err) {
+      console.error('Severity rules save error:', err)
+      setError(err.message || 'Could not save rules. Please try again.')
+    } finally {
+      setSaving(false)
     }
-    for (const rule of reworkRules) {
-      await supabase.from('rework_severity_rules').update({ penalty_points: rule.penalty_points, cost_threshold_low: rule.cost_threshold_low, cost_threshold_high: rule.cost_threshold_high, updated_by: user.id, updated_at: new Date().toISOString() }).eq('id', rule.id)
-    }
-    await logActivity('rules_updated', 'Updated severity rules')
-    setMessage('Rules saved')
-    setSaving(false)
   }
 
   return (
@@ -90,6 +108,7 @@ export default function SeverityRulesEditor() {
           <Save className="w-4 h-4" /> {saving ? 'Saving...' : 'Save All Rules'}
         </button>
         {message && <span className="text-xs text-green-600">{message}</span>}
+        {error && <span className="text-xs text-red-600">{error}</span>}
       </div>
     </div>
   )

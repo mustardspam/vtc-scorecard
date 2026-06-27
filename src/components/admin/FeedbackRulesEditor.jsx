@@ -8,13 +8,20 @@ export default function FeedbackRulesEditor() {
   const [rules, setRules] = useState([])
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
   const { user } = useAuth()
 
   useEffect(() => { loadRules() }, [])
 
   async function loadRules() {
-    const { data } = await supabase.from('feedback_point_rules').select('*').order('sort_order')
-    setRules(data || [])
+    try {
+      const { data, error: err } = await supabase.from('feedback_point_rules').select('*').order('sort_order')
+      if (err) throw err
+      setRules(data || [])
+    } catch (err) {
+      console.error('Feedback rules load error:', err)
+      setError(err.message || 'Could not load feedback rules.')
+    }
   }
 
   function handleChange(id, value) {
@@ -24,15 +31,24 @@ export default function FeedbackRulesEditor() {
 
   async function handleSave() {
     setSaving(true)
+    setMessage('')
+    setError('')
     const before = rules.map(r => ({ label: r.label, points: r.points }))
-    for (const rule of rules) {
-      await supabase.from('feedback_point_rules').update({
-        points: rule.points, updated_by: user.id, updated_at: new Date().toISOString()
-      }).eq('id', rule.id)
+    try {
+      for (const rule of rules) {
+        const { error: err } = await supabase.from('feedback_point_rules').update({
+          points: rule.points, updated_by: user.id, updated_at: new Date().toISOString()
+        }).eq('id', rule.id)
+        if (err) throw err
+      }
+      await logActivity('rules_updated', 'Updated feedback point rules', { before, after: rules.map(r => ({ label: r.label, points: r.points })) })
+      setMessage('Rules saved')
+    } catch (err) {
+      console.error('Feedback rules save error:', err)
+      setError(err.message || 'Could not save rules. Please try again.')
+    } finally {
+      setSaving(false)
     }
-    await logActivity('rules_updated', 'Updated feedback point rules', { before, after: rules.map(r => ({ label: r.label, points: r.points })) })
-    setMessage('Rules saved')
-    setSaving(false)
   }
 
   return (
@@ -71,6 +87,7 @@ export default function FeedbackRulesEditor() {
           <Save className="w-4 h-4" /> {saving ? 'Saving...' : 'Save Rules'}
         </button>
         {message && <span className="text-xs text-green-600">{message}</span>}
+        {error && <span className="text-xs text-red-600">{error}</span>}
       </div>
     </div>
   )
