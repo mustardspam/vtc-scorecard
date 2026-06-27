@@ -1,16 +1,10 @@
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo, useEffect } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import { useTeamData } from '../hooks/useTeamData'
 import { logActivity } from '../hooks/useActivityLog'
 import { buildAcmColorMap, acmPanelStyle } from '../lib/acm-colors'
-import { Users, GripVertical, MapPin, AlertCircle, RefreshCw } from 'lucide-react'
+import { Users, MapPin, AlertCircle, RefreshCw, X } from 'lucide-react'
 import { cn } from '../lib/cn'
-
-const DRAG_BUILDER = 'application/x-vtc-builder-id'
-
-function getDraggedBuilderId(e) {
-  return e.dataTransfer.getData(DRAG_BUILDER) || e.dataTransfer.getData('text/plain')
-}
 
 export default function TeamsPage() {
   const { profile } = useAuth()
@@ -30,8 +24,7 @@ export default function TeamsPage() {
 
   const [actionError, setActionError] = useState('')
   const [busy, setBusy] = useState(false)
-  const [draggingId, setDraggingId] = useState(null)
-  const [dropTarget, setDropTarget] = useState(null)
+  const [selectedBuilderId, setSelectedBuilderId] = useState(null)
 
   const runAction = useCallback(async (fn, logDesc, logMeta) => {
     setActionError('')
@@ -44,80 +37,72 @@ export default function TeamsPage() {
       setActionError(err.message || 'Something went wrong.')
     } finally {
       setBusy(false)
-      setDraggingId(null)
-      setDropTarget(null)
     }
   }, [])
 
-  function handleDragStart(e, builderId) {
-    if (!canEdit || busy) {
-      e.preventDefault()
-      return
+  const allBuilders = useMemo(() => {
+    const map = new Map()
+    for (const g of teams.grouped) {
+      for (const b of g.builders) map.set(b.id, b)
     }
-    e.stopPropagation()
-    e.dataTransfer.setData(DRAG_BUILDER, builderId)
-    e.dataTransfer.setData('text/plain', builderId)
-    e.dataTransfer.effectAllowed = 'move'
-    setDraggingId(builderId)
-  }
-
-  function handleDragEnd() {
-    setDraggingId(null)
-    setDropTarget(null)
-  }
-
-  function allowDrop(e) {
-    if (!canEdit || busy) return
-    e.preventDefault()
-    e.stopPropagation()
-    e.dataTransfer.dropEffect = 'move'
-  }
-
-  async function handleDropOnAcm(e, acmId, acmName) {
-    e.preventDefault()
-    e.stopPropagation()
-    if (!canEdit || busy) return
-    const builderId = getDraggedBuilderId(e)
-    if (!builderId) return
-    const builder = [...teams.grouped.flatMap(g => g.builders), ...teams.unassigned]
-      .find(b => b.id === builderId)
-    if (!builder || builder.acm_id === acmId) return
-    await runAction(
-      () => moveBuilderToAcm(builderId, acmId),
-      `Moved ${builder.full_name || 'builder'} to ACM ${acmName}`,
-      { builder_id: builderId, acm_id: acmId }
+    for (const b of teams.unassigned) map.set(b.id, b)
+    return [...map.values()].sort((a, b) =>
+      (a.full_name || a.email).localeCompare(b.full_name || b.email)
     )
+  }, [teams])
+
+  const selectedBuilder = allBuilders.find(b => b.id === selectedBuilderId) ?? null
+
+  useEffect(() => {
+    if (selectedBuilderId && !allBuilders.some(b => b.id === selectedBuilderId)) {
+      setSelectedBuilderId(null)
+    }
+  }, [allBuilders, selectedBuilderId])
+
+  useEffect(() => {
+    function onKey(e) {
+      if (e.key === 'Escape') setSelectedBuilderId(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  function toggleBuilder(builderId) {
+    if (!canEdit || busy) return
+    setSelectedBuilderId(prev => (prev === builderId ? null : builderId))
+    setActionError('')
   }
 
-  async function handleDropOnCommunity(e, communityId, communityName) {
-    e.preventDefault()
-    e.stopPropagation()
-    if (!canEdit || busy) return
-    const builderId = getDraggedBuilderId(e)
-    if (!builderId) return
-    const builder = [...teams.grouped.flatMap(g => g.builders), ...teams.unassigned]
-      .find(b => b.id === builderId)
+  async function handlePlaceOnCommunity(communityId, communityName) {
+    if (!canEdit || busy || !selectedBuilderId) return
+    const builder = allBuilders.find(b => b.id === selectedBuilderId)
     if (!builder) return
     if (builder.assignments.some(a => a.community_id === communityId)) return
     await runAction(
-      () => assignCommunity(builderId, communityId),
+      () => assignCommunity(selectedBuilderId, communityId),
       `Assigned ${builder.full_name || 'builder'} to ${communityName}`,
-      { builder_id: builderId, community_id: communityId }
+      { builder_id: selectedBuilderId, community_id: communityId }
     )
   }
 
-  async function handleDropUnassigned(e) {
-    e.preventDefault()
-    e.stopPropagation()
-    if (!canEdit || busy) return
-    const builderId = getDraggedBuilderId(e)
-    if (!builderId) return
-    const builder = teams.grouped.flatMap(g => g.builders).find(b => b.id === builderId)
-    if (!builder) return
+  async function handlePlaceOnAcm(acmId, acmName) {
+    if (!canEdit || busy || !selectedBuilderId) return
+    const builder = allBuilders.find(b => b.id === selectedBuilderId)
+    if (!builder || builder.acm_id === acmId) return
     await runAction(
-      () => clearBuilderAcm(builderId),
-      `Removed ${builder.full_name || 'builder'} from ACM assignment`,
-      { builder_id: builderId }
+      () => moveBuilderToAcm(selectedBuilderId, acmId),
+      `Moved ${builder.full_name || 'builder'} to ACM ${acmName}`,
+      { builder_id: selectedBuilderId, acm_id: acmId }
+    )
+  }
+
+  async function handleClearAcm() {
+    if (!canEdit || busy || !selectedBuilder) return
+    if (!selectedBuilder.acm_id) return
+    await runAction(
+      () => clearBuilderAcm(selectedBuilder.id),
+      `Removed ${selectedBuilder.full_name || 'builder'} from ACM assignment`,
+      { builder_id: selectedBuilder.id }
     )
   }
 
@@ -145,18 +130,8 @@ export default function TeamsPage() {
     )
   }
 
-  const totalBuilders = teams.grouped.reduce((n, g) => n + g.builders.length, 0) + teams.unassigned.length
+  const totalBuilders = allBuilders.length
   const acmColorMap = useMemo(() => buildAcmColorMap(teams.grouped), [teams.grouped])
-  const builderProps = {
-    canEdit,
-    busy,
-    draggingId,
-    onDragStart: handleDragStart,
-    onDragEnd: handleDragEnd,
-    onRemoveCommunity: handleRemoveCommunity,
-    onPromoteToFrontEnd: handlePromoteToFrontEnd,
-    onDemoteFromFrontEnd: handleDemoteFromFrontEnd,
-  }
 
   return (
     <div className="flex flex-col h-full min-h-0 gap-2">
@@ -166,7 +141,7 @@ export default function TeamsPage() {
           <h1 className="text-lg font-bold text-gray-900 truncate">Teams</h1>
           {canEdit && (
             <span className="hidden sm:inline text-[10px] text-gray-400 truncate">
-              Drag builders → ACM or community · Promote for 2nd community
+              Select a builder → click a community code to assign
             </span>
           )}
         </div>
@@ -180,6 +155,33 @@ export default function TeamsPage() {
           Refresh
         </button>
       </div>
+
+      {canEdit && selectedBuilder && (
+        <div className="flex items-center gap-2 px-2 py-1.5 bg-teal-50 border border-teal-200 rounded-lg text-[11px] text-teal-900 flex-shrink-0">
+          <span className="font-medium truncate">
+            Selected: {selectedBuilder.full_name || selectedBuilder.email}
+          </span>
+          <span className="text-teal-600 hidden sm:inline">— click a community box to place</span>
+          {selectedBuilder.acm_id && (
+            <button
+              type="button"
+              onClick={handleClearAcm}
+              disabled={busy}
+              className="ml-auto text-[10px] text-gray-500 hover:text-red-600 underline flex-shrink-0"
+            >
+              Clear ACM
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setSelectedBuilderId(null)}
+            className="p-0.5 text-teal-600 hover:text-teal-800 flex-shrink-0"
+            title="Clear selection (Esc)"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       {(error || actionError) && (
         <div className="flex items-center gap-1.5 px-2 py-1.5 bg-red-50 border border-red-200 rounded text-[11px] text-red-700 flex-shrink-0">
@@ -208,28 +210,25 @@ export default function TeamsPage() {
                 key={acm.id}
                 acm={acm}
                 acmColor={acmColorMap[acm.id]}
-                dropTarget={dropTarget}
-                setDropTarget={setDropTarget}
-                allowDrop={allowDrop}
-                onDropAcm={handleDropOnAcm}
-                onDropCommunity={handleDropOnCommunity}
                 canEdit={canEdit}
-                {...builderProps}
+                busy={busy}
+                hasSelection={!!selectedBuilderId}
+                onPlaceOnAcm={handlePlaceOnAcm}
+                onPlaceOnCommunity={handlePlaceOnCommunity}
               />
             ))}
           </div>
 
-          {(teams.unassigned.length > 0 || canEdit) && (
-            <UnassignedPanel
-              builders={teams.unassigned}
-              dropTarget={dropTarget}
-              setDropTarget={setDropTarget}
-              allowDrop={allowDrop}
-              onDrop={handleDropUnassigned}
-              canEdit={canEdit}
-              {...builderProps}
-            />
-          )}
+          <BuilderPanel
+            builders={allBuilders}
+            selectedBuilderId={selectedBuilderId}
+            canEdit={canEdit}
+            busy={busy}
+            onSelect={toggleBuilder}
+            onRemoveCommunity={handleRemoveCommunity}
+            onPromoteToFrontEnd={handlePromoteToFrontEnd}
+            onDemoteFromFrontEnd={handleDemoteFromFrontEnd}
+          />
         </div>
       )}
     </div>
@@ -240,42 +239,33 @@ function AcmRow({
   acm,
   acmColor,
   canEdit,
-  dropTarget,
-  setDropTarget,
-  allowDrop,
-  onDropAcm,
-  onDropCommunity,
-  ...builderProps
+  busy,
+  hasSelection,
+  onPlaceOnAcm,
+  onPlaceOnCommunity,
 }) {
-  const acmDropId = `acm-${acm.id}`
-  const isAcmTarget = dropTarget === acmDropId
   const panelStyle = acmPanelStyle(acmColor)
 
   return (
     <div
-      className="glass-panel flex gap-0 overflow-hidden min-h-[72px]"
+      className="glass-panel overflow-hidden min-h-[64px]"
       style={{ borderColor: panelStyle.borderColor }}
     >
-      {/* Left: ACM + communities — drop targets only here, not on builder column */}
       <div
-        className={cn(
-          'flex-1 min-w-0 p-2 border-r transition-shadow',
-          isAcmTarget && 'ring-2 ring-inset'
-        )}
-        style={{
-          ...panelStyle,
-          borderRightColor: acmColor ? `${acmColor}33` : undefined,
-          ...(isAcmTarget && acmColor ? { boxShadow: `inset 0 0 0 2px ${acmColor}` } : {}),
-        }}
-        onDragOver={e => { allowDrop(e); if (canEdit) setDropTarget(acmDropId) }}
-        onDragLeave={e => {
-          if (!e.currentTarget.contains(e.relatedTarget)) {
-            if (dropTarget === acmDropId) setDropTarget(null)
-          }
-        }}
-        onDrop={e => { setDropTarget(null); onDropAcm(e, acm.id, acm.full_name || acm.email) }}
+        className="p-2"
+        style={panelStyle}
       >
-        <div className="flex items-center gap-1.5 mb-1.5">
+        <button
+          type="button"
+          disabled={!canEdit || !hasSelection || busy}
+          onClick={() => onPlaceOnAcm(acm.id, acm.full_name || acm.email)}
+          className={cn(
+            'flex items-center gap-1.5 mb-1.5 w-full text-left rounded px-0.5 -mx-0.5 transition-colors',
+            canEdit && hasSelection && !busy && 'hover:bg-white/40 cursor-pointer',
+            !hasSelection && 'cursor-default'
+          )}
+          title={canEdit && hasSelection ? 'Assign selected builder to this ACM (no community yet)' : undefined}
+        >
           {acmColor && (
             <span
               className="w-2 h-2 rounded-full flex-shrink-0"
@@ -289,142 +279,119 @@ function AcmRow({
           <span className="text-[9px] text-gray-400 ml-auto flex-shrink-0">
             {acm.communities.length}c · {acm.builders.length}b
           </span>
-        </div>
+        </button>
 
         {acm.communities.length === 0 ? (
           <p className="text-[10px] text-amber-600 italic">
-            {canEdit ? 'Drop a builder here to assign to this ACM' : 'No communities — assign in Community Map'}
+            {canEdit && hasSelection
+              ? 'Click ACM name above to assign, or add communities in Community Map'
+              : 'No communities — assign in Community Map'}
           </p>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-1">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-1">
             {acm.communities.map(c => (
-              <CommunityDrop
+              <CommunitySlot
                 key={c.id}
                 community={c}
                 builders={acm.builders}
                 acmColor={acmColor}
-                dropTarget={dropTarget}
-                setDropTarget={setDropTarget}
-                allowDrop={allowDrop}
-                onDropCommunity={onDropCommunity}
                 canEdit={canEdit}
+                busy={busy}
+                hasSelection={hasSelection}
+                onPlace={() => onPlaceOnCommunity(c.id, c.name)}
               />
             ))}
           </div>
         )}
       </div>
-
-      {/* Right: builder stack — drag sources only, no drop handlers */}
-      <div className="w-40 sm:w-44 flex-shrink-0 p-1.5 bg-gray-50/60 flex flex-col gap-0.5">
-        <p className="text-[8px] font-semibold uppercase tracking-wider text-gray-400 px-0.5 mb-0.5">
-          Builders
-        </p>
-        {acm.builders.length === 0 ? (
-          <p className="text-[9px] text-gray-400 italic px-0.5 py-1">—</p>
-        ) : (
-          acm.builders.map(builder => (
-            <BuilderTile key={builder.id} builder={builder} compact {...builderProps} />
-          ))
-        )}
-      </div>
     </div>
   )
 }
 
-function CommunityDrop({
+function CommunitySlot({
   community: c,
   builders,
   acmColor,
   canEdit,
-  dropTarget,
-  setDropTarget,
-  allowDrop,
-  onDropCommunity,
+  busy,
+  hasSelection,
+  onPlace,
 }) {
-  const dropId = `comm-${c.id}`
   const assigned = builders.filter(b => b.assignments.some(a => a.community_id === c.id))
   const label = c.code || c.name
-  const isTarget = dropTarget === dropId
+  const clickable = canEdit && hasSelection && !busy
 
   return (
-    <div
-      title={c.name}
-      onDragOver={e => { allowDrop(e); if (canEdit) setDropTarget(dropId) }}
-      onDragLeave={e => {
-        if (!e.currentTarget.contains(e.relatedTarget) && dropTarget === dropId) {
-          setDropTarget(null)
-        }
-      }}
-      onDrop={e => { setDropTarget(null); onDropCommunity(e, c.id, c.name) }}
-      className="rounded border px-1.5 py-1 transition-colors min-h-[40px]"
+    <button
+      type="button"
+      title={clickable ? `Place selected builder in ${c.name}` : c.name}
+      disabled={!clickable}
+      onClick={onPlace}
+      className={cn(
+        'rounded border px-1.5 py-1 text-left transition-all min-h-[40px]',
+        clickable && 'cursor-pointer hover:scale-[1.02] hover:shadow-sm active:scale-[0.98]',
+        !clickable && 'cursor-default'
+      )}
       style={{
-        borderColor: isTarget && acmColor ? acmColor : isTarget ? '#14b8a6' : acmColor ? `${acmColor}44` : undefined,
-        backgroundColor: isTarget && acmColor ? `${acmColor}28` : 'rgba(255,255,255,0.85)',
+        borderColor: clickable && acmColor ? acmColor : acmColor ? `${acmColor}44` : undefined,
+        backgroundColor: clickable && acmColor ? `${acmColor}30` : 'rgba(255,255,255,0.85)',
+        boxShadow: clickable && acmColor ? `0 0 0 1px ${acmColor}55` : undefined,
       }}
     >
       <div className="flex items-center gap-0.5">
         <MapPin className="w-2.5 h-2.5 flex-shrink-0" style={{ color: acmColor || '#087482' }} />
-        <span className="text-[10px] font-medium text-gray-800 truncate leading-tight">{label}</span>
+        <span className="text-[10px] font-semibold text-gray-800 truncate leading-tight">{label}</span>
       </div>
       <div className="mt-0.5 truncate text-[9px] text-gray-500 leading-tight">
         {assigned.length === 0
-          ? <span className="text-gray-300 italic">—</span>
+          ? <span className="text-gray-300 italic">{clickable ? 'click to place' : '—'}</span>
           : assigned.map(b => shortName(b)).join(', ')}
       </div>
-    </div>
+    </button>
   )
 }
 
-function UnassignedPanel({
+function BuilderPanel({
   builders,
+  selectedBuilderId,
   canEdit,
-  dropTarget,
-  setDropTarget,
-  allowDrop,
-  onDrop,
-  ...builderProps
+  busy,
+  onSelect,
+  onRemoveCommunity,
+  onPromoteToFrontEnd,
+  onDemoteFromFrontEnd,
 }) {
-  const dropId = 'unassigned'
-  const isTarget = dropTarget === dropId
-
   if (!canEdit && builders.length === 0) return null
 
   return (
-    <div className="w-40 sm:w-44 flex-shrink-0 flex flex-col min-h-0 glass-panel overflow-hidden">
-      {/* Drop target bar — separate from draggable builder list */}
-      {canEdit && (
-        <div
-          onDragOver={e => { allowDrop(e); setDropTarget(dropId) }}
-          onDragLeave={e => {
-            if (!e.currentTarget.contains(e.relatedTarget) && dropTarget === dropId) {
-              setDropTarget(null)
-            }
-          }}
-          onDrop={e => { setDropTarget(null); onDrop(e) }}
-          className={cn(
-            'flex-shrink-0 px-2 py-1 border-b text-center transition-colors',
-            isTarget ? 'bg-gray-100 border-gray-300' : 'bg-gray-50/80 border-gray-100'
-          )}
-        >
-          <p className="text-[8px] font-semibold uppercase tracking-wider text-gray-400">
-            Drop to unassign ACM
-          </p>
-        </div>
-      )}
-
-      <div className="px-1.5 pt-1.5 pb-1 flex-shrink-0">
-        <p className="text-[8px] font-semibold uppercase tracking-wider text-gray-400">
-          Unassigned ({builders.length})
+    <div className="w-44 sm:w-52 flex-shrink-0 flex flex-col min-h-0 glass-panel overflow-hidden">
+      <div className="px-2 py-1.5 border-b border-gray-100 flex-shrink-0 bg-gray-50/80">
+        <p className="text-[8px] font-semibold uppercase tracking-wider text-gray-500">
+          Builders ({builders.length})
         </p>
+        {canEdit && (
+          <p className="text-[9px] text-gray-400 mt-0.5 leading-tight">
+            Click to select, then click a community
+          </p>
+        )}
       </div>
 
-      {/* Builder list — no drop handlers so drag works reliably */}
-      <div className="flex-1 min-h-0 overflow-y-auto px-1.5 pb-1.5 flex flex-col gap-0.5">
+      <div className="flex-1 min-h-0 overflow-y-auto px-1.5 py-1.5 flex flex-col gap-0.5">
         {builders.length === 0 ? (
           <span className="text-[9px] text-gray-400 italic">None</span>
         ) : (
           builders.map(builder => (
-            <BuilderTile key={builder.id} builder={builder} compact {...builderProps} />
+            <BuilderTile
+              key={builder.id}
+              builder={builder}
+              selected={selectedBuilderId === builder.id}
+              canEdit={canEdit}
+              busy={busy}
+              onSelect={onSelect}
+              onRemoveCommunity={onRemoveCommunity}
+              onPromoteToFrontEnd={onPromoteToFrontEnd}
+              onDemoteFromFrontEnd={onDemoteFromFrontEnd}
+            />
           ))
         )}
       </div>
@@ -434,42 +401,37 @@ function UnassignedPanel({
 
 function BuilderTile({
   builder,
+  selected,
   canEdit,
   busy,
-  draggingId,
-  onDragStart,
-  onDragEnd,
+  onSelect,
   onRemoveCommunity,
   onPromoteToFrontEnd,
   onDemoteFromFrontEnd,
-  compact = false,
 }) {
   const name = builder.full_name || builder.email
   const isFrontEnd = builder.is_front_end_builder
-  const isDragging = draggingId === builder.id
   const commLabels = builder.assignments.map(a => a.community?.code || shortName({ full_name: a.community?.name }))
 
   return (
     <div
-      draggable={canEdit && !busy}
-      onDragStart={e => onDragStart(e, builder.id)}
-      onDragEnd={onDragEnd}
-      title={[name, commLabels.join(', '), isFrontEnd ? 'Front-end' : '', canEdit ? 'Drag to assign' : ''].filter(Boolean).join(' · ')}
+      role={canEdit ? 'button' : undefined}
+      tabIndex={canEdit && !busy ? 0 : undefined}
+      onClick={() => onSelect(builder.id)}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(builder.id) } }}
+      title={[name, commLabels.join(', '), isFrontEnd ? 'Front-end' : '', canEdit ? 'Click to select' : ''].filter(Boolean).join(' · ')}
       className={cn(
-        'group flex items-center gap-1 rounded border bg-white transition-opacity select-none',
-        compact ? 'px-1.5 py-1' : 'px-2 py-1',
-        isFrontEnd ? 'border-violet-200 bg-violet-50/50' : 'border-gray-200',
-        canEdit && !busy && 'cursor-grab active:cursor-grabbing hover:border-teal-400 hover:shadow-sm',
-        isDragging && 'opacity-50 ring-2 ring-teal-400',
-        busy && 'pointer-events-none opacity-60'
+        'flex items-center gap-1 rounded border px-1.5 py-1 transition-all select-none',
+        isFrontEnd && !selected && 'border-violet-200 bg-violet-50/50',
+        !isFrontEnd && !selected && 'border-gray-200 bg-white',
+        selected && 'border-teal-500 bg-teal-50 ring-2 ring-teal-400 shadow-sm',
+        canEdit && !busy && 'cursor-pointer hover:border-teal-400',
+        busy && 'opacity-60 pointer-events-none'
       )}
     >
-      {canEdit && (
-        <GripVertical className="w-3 h-3 text-gray-400 flex-shrink-0 pointer-events-none" />
-      )}
-      <div className="min-w-0 flex-1 pointer-events-none">
+      <div className="min-w-0 flex-1">
         <div className="flex items-center gap-0.5">
-          <span className="text-[10px] font-medium text-gray-900 truncate leading-tight">
+          <span className={cn('text-[10px] truncate leading-tight', selected ? 'font-semibold text-teal-900' : 'font-medium text-gray-900')}>
             {shortName(builder)}
           </span>
           {isFrontEnd && (
@@ -485,13 +447,12 @@ function BuilderTile({
         )}
       </div>
       {canEdit && (
-        <div className="flex flex-col gap-0.5 flex-shrink-0">
+        <div className="flex flex-col gap-0.5 flex-shrink-0" onClick={e => e.stopPropagation()}>
           {builder.assignments.map(a => (
             <button
               key={a.community_id}
               type="button"
-              onMouseDown={e => e.stopPropagation()}
-              onClick={e => { e.stopPropagation(); onRemoveCommunity(builder, a.community_id, a.community?.name) }}
+              onClick={() => onRemoveCommunity(builder, a.community_id, a.community?.name)}
               className="text-[8px] text-gray-300 hover:text-red-500 leading-none px-0.5"
               title={`Remove from ${a.community?.name}`}
             >
@@ -500,11 +461,7 @@ function BuilderTile({
           ))}
           <button
             type="button"
-            onMouseDown={e => e.stopPropagation()}
-            onClick={e => {
-              e.stopPropagation()
-              isFrontEnd ? onDemoteFromFrontEnd(builder) : onPromoteToFrontEnd(builder)
-            }}
+            onClick={() => (isFrontEnd ? onDemoteFromFrontEnd(builder) : onPromoteToFrontEnd(builder))}
             title={isFrontEnd ? 'Remove front-end' : 'Promote to front-end'}
             className={cn(
               'text-[7px] font-semibold px-0.5 rounded leading-tight',
