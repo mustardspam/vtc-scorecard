@@ -35,6 +35,7 @@ function DeferredTickers() {
 export default function AppLayout() {
   const { pathname } = useLocation()
   const isMap = pathname === '/map'
+  const isTeams = pathname === '/teams'
 
   return (
     <div className="h-screen overflow-hidden" style={{ background: 'var(--g-backdrop)' }}>
@@ -47,10 +48,12 @@ export default function AppLayout() {
         <main
           className={cn(
             'flex-1 min-h-0 min-w-0 relative',
-            isMap ? 'overflow-hidden' : 'overflow-y-auto overflow-x-hidden px-5 py-5 sm:px-6 lg:px-7 lg:py-6',
+            isMap || isTeams ? 'overflow-hidden' : 'overflow-y-auto overflow-x-hidden px-5 py-5 sm:px-6 lg:px-7 lg:py-6',
           )}
         >
-          <Outlet />
+          <div className={cn('h-full min-h-0', (isMap || isTeams) && 'px-4 py-3 sm:px-5')}>
+            <Outlet />
+          </div>
         </main>
       </div>
       <AIChatWidget />

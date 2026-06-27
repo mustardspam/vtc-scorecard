@@ -135,116 +135,102 @@ export default function TeamsPage() {
   }
 
   const totalBuilders = teams.grouped.reduce((n, g) => n + g.builders.length, 0) + teams.unassigned.length
+  const builderProps = {
+    isAdmin,
+    busy,
+    draggingId,
+    onDragStart: handleDragStart,
+    onDragEnd: handleDragEnd,
+    onRemoveCommunity: handleRemoveCommunity,
+    onPromoteToFrontEnd: handlePromoteToFrontEnd,
+    onDemoteFromFrontEnd: handleDemoteFromFrontEnd,
+  }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-            <Users className="w-6 h-6 text-teal-600" />
-            Teams
-          </h1>
-          <p className="glass-page-subtitle">
-            Area construction managers and builder community assignments
-          </p>
+    <div className="flex flex-col h-full min-h-0 gap-2">
+      <div className="flex items-center justify-between gap-3 flex-shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <Users className="w-5 h-5 text-teal-600 flex-shrink-0" />
+          <h1 className="text-lg font-bold text-gray-900 truncate">Teams</h1>
+          {isAdmin && (
+            <span className="hidden sm:inline text-[10px] text-gray-400 truncate">
+              Drag builders → ACM or community · Promote for 2nd community
+            </span>
+          )}
         </div>
         <button
           type="button"
           onClick={reload}
           disabled={loading || busy}
-          className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 px-3 py-1.5 rounded-lg border border-gray-200 bg-white"
+          className="flex items-center gap-1 text-[10px] text-gray-500 hover:text-gray-700 px-2 py-1 rounded border border-gray-200 bg-white flex-shrink-0"
         >
-          <RefreshCw className={cn('w-3.5 h-3.5', loading && 'animate-spin')} />
+          <RefreshCw className={cn('w-3 h-3', loading && 'animate-spin')} />
           Refresh
         </button>
       </div>
 
-      {isAdmin && (
-        <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
-          <strong>Admin:</strong> Drag builders onto an ACM or community to reassign.
-          Use <strong>Promote to front-end</strong> to allow a second community. Disable builders in Admin → User Management to remove them from this page.
-        </div>
-      )}
-
       {(error || actionError) && (
-        <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
-          <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-          {actionError || error}
+        <div className="flex items-center gap-1.5 px-2 py-1.5 bg-red-50 border border-red-200 rounded text-[11px] text-red-700 flex-shrink-0">
+          <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+          <span className="truncate">{actionError || error}</span>
         </div>
       )}
 
       {loading ? (
-        <div className="flex items-center justify-center py-20">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-teal-600" />
+        <div className="flex items-center justify-center flex-1">
+          <div className="animate-spin rounded-full h-7 w-7 border-b-2 border-teal-600" />
         </div>
       ) : totalBuilders === 0 && teams.grouped.length === 0 ? (
-        <div className="glass-panel p-16 text-center">
-          <Users className="w-12 h-12 mx-auto mb-3 text-teal-200" />
+        <div className="glass-panel p-8 text-center flex-1 flex flex-col items-center justify-center">
+          <Users className="w-10 h-10 mb-2 text-teal-200" />
           <p className="text-sm font-medium text-gray-700">No teams configured yet</p>
-          <p className="text-xs text-gray-400 mt-1 max-w-md mx-auto">
-            Mark users as Area Managers and Builders in Admin → User Management, then assign communities on the Community Map tab.
+          <p className="text-xs text-gray-400 mt-1 max-w-sm">
+            Mark users as Area Managers and Builders in Admin, then assign communities on Community Map.
           </p>
         </div>
       ) : (
-        <div className="space-y-5">
-          {teams.grouped.map(acm => (
-            <AcmCard
-              key={acm.id}
-              acm={acm}
-              isAdmin={isAdmin}
-              busy={busy}
-              draggingId={draggingId}
-              dropTarget={dropTarget}
-              setDropTarget={setDropTarget}
-              onDragStart={handleDragStart}
-              onDragEnd={handleDragEnd}
-              allowDrop={allowDrop}
-              onDropAcm={handleDropOnAcm}
-              onDropCommunity={handleDropOnCommunity}
-              onRemoveCommunity={handleRemoveCommunity}
-              onPromoteToFrontEnd={handlePromoteToFrontEnd}
-              onDemoteFromFrontEnd={handleDemoteFromFrontEnd}
-            />
-          ))}
-
+        <>
           {(teams.unassigned.length > 0 || isAdmin) && (
-            <UnassignedSection
+            <UnassignedStrip
               builders={teams.unassigned}
-              isAdmin={isAdmin}
-              busy={busy}
-              draggingId={draggingId}
               dropTarget={dropTarget}
               setDropTarget={setDropTarget}
-              onDragStart={handleDragStart}
-              onDragEnd={handleDragEnd}
               allowDrop={allowDrop}
               onDrop={handleDropUnassigned}
-              onRemoveCommunity={handleRemoveCommunity}
-              onPromoteToFrontEnd={handlePromoteToFrontEnd}
-              onDemoteFromFrontEnd={handleDemoteFromFrontEnd}
+              {...builderProps}
             />
           )}
-        </div>
+
+          <div className="flex-1 min-h-0 overflow-y-auto space-y-2 pr-0.5">
+            {teams.grouped.map(acm => (
+              <AcmRow
+                key={acm.id}
+                acm={acm}
+                dropTarget={dropTarget}
+                setDropTarget={setDropTarget}
+                allowDrop={allowDrop}
+                onDropAcm={handleDropOnAcm}
+                onDropCommunity={handleDropOnCommunity}
+                isAdmin={isAdmin}
+                {...builderProps}
+              />
+            ))}
+          </div>
+        </>
       )}
     </div>
   )
 }
 
-function AcmCard({
+function AcmRow({
   acm,
   isAdmin,
-  busy,
-  draggingId,
   dropTarget,
   setDropTarget,
-  onDragStart,
-  onDragEnd,
   allowDrop,
   onDropAcm,
   onDropCommunity,
-  onRemoveCommunity,
-  onPromoteToFrontEnd,
-  onDemoteFromFrontEnd,
+  ...builderProps
 }) {
   const acmDropId = `acm-${acm.id}`
   const isAcmTarget = dropTarget === acmDropId
@@ -252,130 +238,111 @@ function AcmCard({
   return (
     <div
       className={cn(
-        'glass-panel overflow-hidden transition-shadow',
+        'glass-panel flex gap-0 overflow-hidden transition-shadow min-h-[72px]',
         isAcmTarget && 'ring-2 ring-teal-400'
       )}
       onDragOver={e => { allowDrop(e); if (isAdmin) setDropTarget(acmDropId) }}
       onDragLeave={() => { if (dropTarget === acmDropId) setDropTarget(null) }}
       onDrop={e => { setDropTarget(null); onDropAcm(e, acm.id, acm.full_name || acm.email) }}
     >
-      <div className="px-5 py-4 border-b border-gray-100 bg-gradient-to-r from-teal-50/80 to-transparent">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-base font-semibold text-gray-900">
-              {acm.full_name || acm.email}
-            </h2>
-            <p className="text-xs text-gray-500 mt-0.5">Area Construction Manager</p>
-          </div>
-          <div className="flex gap-2 text-xs">
-            <span className="px-2 py-1 rounded-full bg-teal-100 text-teal-800 font-medium">
-              {acm.communities.length} {acm.communities.length === 1 ? 'community' : 'communities'}
-            </span>
-            <span className="px-2 py-1 rounded-full bg-gray-100 text-gray-600 font-medium">
-              {acm.builders.length} {acm.builders.length === 1 ? 'builder' : 'builders'}
-            </span>
-          </div>
+      {/* Left: ACM + communities */}
+      <div className="flex-1 min-w-0 p-2 border-r border-gray-100">
+        <div className="flex items-baseline gap-2 mb-1.5">
+          <h2 className="text-xs font-semibold text-gray-900 truncate">
+            {acm.full_name || acm.email}
+          </h2>
+          <span className="text-[9px] text-gray-400 uppercase tracking-wide flex-shrink-0">ACM</span>
+          <span className="text-[9px] text-gray-400 ml-auto flex-shrink-0">
+            {acm.communities.length}c · {acm.builders.length}b
+          </span>
         </div>
+
+        {acm.communities.length === 0 ? (
+          <p className="text-[10px] text-amber-600 italic">No communities — assign in Community Map</p>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-1">
+            {acm.communities.map(c => (
+              <CommunityDrop
+                key={c.id}
+                community={c}
+                builders={acm.builders}
+                dropTarget={dropTarget}
+                setDropTarget={setDropTarget}
+                allowDrop={allowDrop}
+                onDropCommunity={onDropCommunity}
+                isAdmin={isAdmin}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
-      <div className="p-5 space-y-4">
-        {acm.communities.length > 0 && (
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">
-              Communities {isAdmin && <span className="normal-case font-normal">— drop a builder here</span>}
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {acm.communities.map(c => {
-                const dropId = `comm-${c.id}`
-                const assigned = acm.builders.filter(b =>
-                  b.assignments.some(a => a.community_id === c.id)
-                )
-                return (
-                  <div
-                    key={c.id}
-                    onDragOver={e => { allowDrop(e); if (isAdmin) setDropTarget(dropId) }}
-                    onDragLeave={() => { if (dropTarget === dropId) setDropTarget(null) }}
-                    onDrop={e => { setDropTarget(null); onDropCommunity(e, c.id, c.name) }}
-                    className={cn(
-                      'min-w-[140px] rounded-lg border px-3 py-2 transition-colors',
-                      dropTarget === dropId
-                        ? 'border-teal-400 bg-teal-50'
-                        : 'border-gray-200 bg-gray-50/80'
-                    )}
-                  >
-                    <div className="flex items-center gap-1.5 text-xs font-medium text-gray-800">
-                      <MapPin className="w-3 h-3 text-teal-600 flex-shrink-0" />
-                      <span className="truncate">{c.name}</span>
-                      {c.code && <span className="font-mono text-[10px] text-gray-400">{c.code}</span>}
-                    </div>
-                    <div className="mt-1.5 flex flex-wrap gap-1">
-                      {assigned.length === 0 ? (
-                        <span className="text-[10px] text-gray-400 italic">No builder</span>
-                      ) : (
-                        assigned.map(b => (
-                          <span key={b.id} className="text-[10px] px-1.5 py-0.5 rounded bg-white border border-gray-200 text-gray-700">
-                            {b.full_name || b.email}
-                          </span>
-                        ))
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        )}
-
-        {acm.communities.length === 0 && (
-          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
-            No communities assigned to this ACM yet. Assign communities in Admin → Community Map.
+      {/* Right: compact builder stack */}
+      <div className="w-44 sm:w-52 flex-shrink-0 p-1.5 bg-gray-50/60 flex flex-col gap-0.5">
+        <p className="text-[8px] font-semibold uppercase tracking-wider text-gray-400 px-0.5 mb-0.5">
+          Builders
+        </p>
+        {acm.builders.length === 0 ? (
+          <p className="text-[9px] text-gray-400 italic px-0.5 py-1">
+            {isAdmin ? 'Drop here' : '—'}
           </p>
+        ) : (
+          acm.builders.map(builder => (
+            <BuilderTile key={builder.id} builder={builder} compact {...builderProps} />
+          ))
         )}
-
-        <div>
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Builders</p>
-          {acm.builders.length === 0 ? (
-            <p className="text-xs text-gray-400 italic py-2">
-              {isAdmin ? 'Drag a builder here to assign to this ACM.' : 'No builders assigned.'}
-            </p>
-          ) : (
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {acm.builders.map(builder => (
-                <BuilderCard
-                  key={builder.id}
-                  builder={builder}
-                  isAdmin={isAdmin}
-                  busy={busy}
-                  isDragging={draggingId === builder.id}
-                  onDragStart={onDragStart}
-                  onDragEnd={onDragEnd}
-                  onRemoveCommunity={onRemoveCommunity}
-                  onPromoteToFrontEnd={onPromoteToFrontEnd}
-                  onDemoteFromFrontEnd={onDemoteFromFrontEnd}
-                />
-              ))}
-            </div>
-          )}
-        </div>
       </div>
     </div>
   )
 }
 
-function UnassignedSection({
+function CommunityDrop({
+  community: c,
   builders,
   isAdmin,
-  busy,
-  draggingId,
   dropTarget,
   setDropTarget,
-  onDragStart,
-  onDragEnd,
+  allowDrop,
+  onDropCommunity,
+}) {
+  const dropId = `comm-${c.id}`
+  const assigned = builders.filter(b => b.assignments.some(a => a.community_id === c.id))
+  const label = c.code || c.name
+
+  return (
+    <div
+      title={c.name}
+      onDragOver={e => { allowDrop(e); if (isAdmin) setDropTarget(dropId) }}
+      onDragLeave={() => { if (dropTarget === dropId) setDropTarget(null) }}
+      onDrop={e => { setDropTarget(null); onDropCommunity(e, c.id, c.name) }}
+      className={cn(
+        'rounded border px-1.5 py-1 transition-colors min-h-[40px]',
+        dropTarget === dropId
+          ? 'border-teal-400 bg-teal-50'
+          : 'border-gray-200 bg-white/80'
+      )}
+    >
+      <div className="flex items-center gap-0.5">
+        <MapPin className="w-2.5 h-2.5 text-teal-600 flex-shrink-0" />
+        <span className="text-[10px] font-medium text-gray-800 truncate leading-tight">{label}</span>
+      </div>
+      <div className="mt-0.5 truncate text-[9px] text-gray-500 leading-tight">
+        {assigned.length === 0
+          ? <span className="text-gray-300 italic">—</span>
+          : assigned.map(b => shortName(b)).join(', ')}
+      </div>
+    </div>
+  )
+}
+
+function UnassignedStrip({
+  builders,
+  isAdmin,
+  dropTarget,
+  setDropTarget,
   allowDrop,
   onDrop,
-  onRemoveCommunity,
-  onPromoteToFrontEnd,
-  onDemoteFromFrontEnd,
+  ...builderProps
 }) {
   const dropId = 'unassigned'
   const isTarget = dropTarget === dropId
@@ -385,99 +352,88 @@ function UnassignedSection({
   return (
     <div
       className={cn(
-        'glass-panel p-5 border-dashed transition-shadow',
-        isTarget ? 'ring-2 ring-gray-400 border-gray-300' : 'border-gray-200'
+        'flex-shrink-0 glass-panel px-2 py-1.5 border-dashed transition-shadow',
+        isTarget ? 'ring-2 ring-gray-400' : ''
       )}
       onDragOver={e => { allowDrop(e); if (isAdmin) setDropTarget(dropId) }}
       onDragLeave={() => { if (dropTarget === dropId) setDropTarget(null) }}
       onDrop={e => { setDropTarget(null); onDrop(e) }}
     >
-      <p className="text-sm font-medium text-gray-700 mb-1">Unassigned Builders</p>
-      <p className="text-xs text-gray-400 mb-3">
-        {isAdmin
-          ? 'Builders not linked to an ACM, or drag here to remove ACM assignment.'
-          : 'Builders waiting for ACM assignment.'}
+      <p className="text-[8px] font-semibold uppercase tracking-wider text-gray-400 mb-1">
+        Unassigned {isAdmin && '· drop to unassign ACM'}
       </p>
-      {builders.length === 0 ? (
-        <p className="text-xs text-gray-400 italic">None</p>
-      ) : (
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {builders.map(builder => (
-            <BuilderCard
-              key={builder.id}
-              builder={builder}
-              isAdmin={isAdmin}
-              busy={busy}
-              isDragging={draggingId === builder.id}
-              onDragStart={onDragStart}
-              onDragEnd={onDragEnd}
-              onRemoveCommunity={onRemoveCommunity}
-              onPromoteToFrontEnd={onPromoteToFrontEnd}
-              onDemoteFromFrontEnd={onDemoteFromFrontEnd}
-            />
-          ))}
-        </div>
-      )}
+      <div className="flex flex-wrap gap-1 max-h-[52px] overflow-y-auto">
+        {builders.length === 0 ? (
+          <span className="text-[9px] text-gray-400 italic">None</span>
+        ) : (
+          builders.map(builder => (
+            <BuilderTile key={builder.id} builder={builder} inline {...builderProps} />
+          ))
+        )}
+      </div>
     </div>
   )
 }
 
-function BuilderCard({
+function BuilderTile({
   builder,
   isAdmin,
   busy,
-  isDragging,
+  draggingId,
   onDragStart,
   onDragEnd,
   onRemoveCommunity,
   onPromoteToFrontEnd,
   onDemoteFromFrontEnd,
+  compact = false,
+  inline = false,
 }) {
   const name = builder.full_name || builder.email
   const isFrontEnd = builder.is_front_end_builder
+  const isDragging = draggingId === builder.id
+  const commLabels = builder.assignments.map(a => a.community?.code || shortName({ full_name: a.community?.name }))
 
   return (
     <div
       draggable={isAdmin && !busy}
       onDragStart={e => onDragStart(e, builder.id)}
       onDragEnd={onDragEnd}
+      title={[name, commLabels.join(', '), isFrontEnd ? 'Front-end' : ''].filter(Boolean).join(' · ')}
       className={cn(
-        'flex items-start gap-2 rounded-lg border bg-white px-3 py-2.5 transition-opacity',
-        isFrontEnd && 'border-violet-200 bg-violet-50/30',
-        isAdmin && !busy && 'cursor-grab active:cursor-grabbing hover:border-teal-300 hover:shadow-sm',
+        'group flex items-center gap-0.5 rounded border bg-white transition-opacity',
+        compact ? 'px-1 py-0.5' : 'px-1.5 py-0.5',
+        inline && 'max-w-[140px]',
+        isFrontEnd ? 'border-violet-200 bg-violet-50/50' : 'border-gray-200',
+        isAdmin && !busy && 'cursor-grab active:cursor-grabbing hover:border-teal-300',
         isDragging && 'opacity-40',
         busy && 'pointer-events-none opacity-60'
       )}
     >
-      {isAdmin && <GripVertical className="w-4 h-4 text-gray-300 flex-shrink-0 mt-0.5" />}
+      {isAdmin && (
+        <GripVertical className="w-2.5 h-2.5 text-gray-300 flex-shrink-0 group-active:text-teal-500" />
+      )}
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <p className="text-sm font-medium text-gray-900 truncate">{name}</p>
+        <div className="flex items-center gap-0.5">
+          <span className="text-[10px] font-medium text-gray-900 truncate leading-tight">
+            {shortName(builder)}
+          </span>
           {isFrontEnd && (
-            <span className="text-[9px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-violet-100 text-violet-700">
-              Front-end
+            <span className="text-[7px] font-bold text-violet-600 bg-violet-100 px-0.5 rounded flex-shrink-0">
+              FE
             </span>
           )}
         </div>
-        {builder.assignments.length === 0 ? (
-          <p className="text-[10px] text-gray-400 mt-1 italic">No community assigned</p>
-        ) : (
-          <div className="flex flex-wrap gap-1 mt-1.5">
-            {builder.assignments.map(a => (
-              <span
-                key={a.community_id}
-                className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full bg-teal-50 text-teal-800 border border-teal-100"
-              >
-                {a.community?.name}
-                {a.assignment_type === 'secondary' && (
-                  <span className="text-violet-500 font-medium">(2nd)</span>
-                )}
+        {commLabels.length > 0 && (
+          <div className="flex items-center gap-0.5 truncate">
+            {builder.assignments.map((a, i) => (
+              <span key={a.community_id} className="inline-flex items-center text-[8px] text-teal-700 leading-none">
+                {i > 0 && <span className="text-gray-300 mx-0.5">·</span>}
+                <span className="truncate max-w-[48px]">{a.community?.code || shortName({ full_name: a.community?.name })}</span>
                 {isAdmin && (
                   <button
                     type="button"
-                    onClick={() => onRemoveCommunity(builder, a.community_id, a.community?.name)}
-                    className="ml-0.5 text-teal-400 hover:text-red-500 leading-none"
-                    title="Remove from community"
+                    onClick={e => { e.stopPropagation(); onRemoveCommunity(builder, a.community_id, a.community?.name) }}
+                    className="text-gray-300 hover:text-red-500 ml-px leading-none"
                   >
                     ×
                   </button>
@@ -486,28 +442,30 @@ function BuilderCard({
             ))}
           </div>
         )}
-        {isAdmin && (
-          <div className="mt-2">
-            {isFrontEnd ? (
-              <button
-                type="button"
-                onClick={() => onDemoteFromFrontEnd(builder)}
-                className="text-[10px] text-violet-600 hover:text-violet-800 underline"
-              >
-                Remove front-end status
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => onPromoteToFrontEnd(builder)}
-                className="text-[10px] text-teal-600 hover:text-teal-800 underline"
-              >
-                Promote to front-end
-              </button>
-            )}
-          </div>
-        )}
       </div>
+      {isAdmin && (
+        <button
+          type="button"
+          onClick={e => {
+            e.stopPropagation()
+            isFrontEnd ? onDemoteFromFrontEnd(builder) : onPromoteToFrontEnd(builder)
+          }}
+          title={isFrontEnd ? 'Remove front-end' : 'Promote to front-end'}
+          className={cn(
+            'flex-shrink-0 text-[7px] font-semibold px-0.5 rounded leading-tight opacity-0 group-hover:opacity-100 transition-opacity',
+            isFrontEnd ? 'text-violet-500 hover:bg-violet-100' : 'text-teal-600 hover:bg-teal-50'
+          )}
+        >
+          {isFrontEnd ? '−FE' : '+FE'}
+        </button>
+      )}
     </div>
   )
+}
+
+function shortName(person) {
+  const name = person.full_name || person.email || ''
+  const parts = name.trim().split(/\s+/)
+  if (parts.length >= 2) return `${parts[0]} ${parts[parts.length - 1][0]}.`
+  return name.split('@')[0]
 }
