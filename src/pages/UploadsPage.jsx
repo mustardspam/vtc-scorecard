@@ -404,10 +404,20 @@ export default function UploadsPage() {
     try {
       const activeCommunities = jcParsed.communities.filter(c => selectedCommunities.has(c.code))
 
-      // 1. Upsert communities by short code parsed from JC column headers
+      // 1. Upsert communities — preserve existing brand when code already exists
+      setImportProgress('Fetching existing communities...')
+      const existingCommRes = await supabase.from('communities').select('code, brand')
+      if (existingCommRes.error) throw new Error('Fetch communities failed: ' + existingCommRes.error.message)
+      const existingBrandByCode = new Map((existingCommRes.data || []).map(c => [c.code, c.brand]))
+
       setImportProgress(`Upserting ${activeCommunities.length} communities...`)
       const { error: upsertCommErr } = await supabase.from('communities').upsert(
-        activeCommunities.map(c => ({ name: c.name, code: c.code, brand, is_active: true })),
+        activeCommunities.map(c => ({
+          name: c.name,
+          code: c.code,
+          brand: existingBrandByCode.get(c.code) || brand,
+          is_active: true,
+        })),
         { onConflict: 'code' }
       )
       if (upsertCommErr) throw new Error('Communities upsert failed: ' + upsertCommErr.message)
@@ -415,7 +425,7 @@ export default function UploadsPage() {
       // 2. Fetch lookup maps
       setImportProgress('Fetching communities...')
       console.log('[JC] Step 2a: fetching all communities')
-      const commRes = await supabase.from('communities').select('id, code')
+      const commRes = await supabase.from('communities').select('id, code, brand')
       console.log('[JC] Step 2a result:', commRes.data?.length, commRes.error)
       if (commRes.error) throw new Error('Fetch communities failed: ' + commRes.error.message)
 
@@ -441,6 +451,7 @@ export default function UploadsPage() {
       const allBrandRefs = refRes.data || []
 
       const communityCodeMap = new Map((commRes.data || []).map(c => [c.code, c.id]))
+      const communityBrandByCode = new Map((commRes.data || []).map(c => [c.code, c.brand]))
       const existingRefSet = new Set(allBrandRefs.map(r => `${r.brand}:${r.jc_vendor_id}`))
       const refVendorByBrandJc = new Map(allBrandRefs.map(r => [`${r.brand}:${r.jc_vendor_id}`, r.vendor_id]))
       const aliasesToSave = new Map()
@@ -450,10 +461,28 @@ export default function UploadsPage() {
         aliasesToSave.set(aliasName, vendorId)
       }
 
+      // 3. Determine which vendors have active assignments
+      const activeVendors = jcParsed.vendors.map(v => ({
+        ...v,
+        filteredAssignments: v.assignments.filter(a => selectedCommunities.has(a.communityCode))
+      })).filter(v => v.filteredAssignments.length > 0)
+
+      /** Brands inferred from assigned communities (vendors can span AW + SL with different JC IDs). */
+      function brandsForVendor(jcVendor) {
+        const brands = new Set()
+        for (const a of jcVendor.filteredAssignments || []) {
+          const commBrand = communityBrandByCode.get(a.communityCode)
+          if (commBrand) brands.add(commBrand)
+        }
+        if (brands.size === 0) brands.add(brand)
+        return [...brands]
+      }
+
       function resolveJCVendor(jcVendor) {
-        const brandKey = `${brand}:${jcVendor.jcVendorId}`
-        const existingRefVendorId = refVendorByBrandJc.get(brandKey)
-        if (existingRefVendorId) return existingRefVendorId
+        for (const refBrand of brandsForVendor(jcVendor)) {
+          const existingRefVendorId = refVendorByBrandJc.get(`${refBrand}:${jcVendor.jcVendorId}`)
+          if (existingRefVendorId) return existingRefVendorId
+        }
 
         const withId = `${jcVendor.jcVendorId} ${jcVendor.name}`
         for (const rawName of [withId, jcVendor.name]) {
@@ -467,12 +496,6 @@ export default function UploadsPage() {
         }
         return null
       }
-
-      // 3. Determine which vendors have active assignments
-      const activeVendors = jcParsed.vendors.map(v => ({
-        ...v,
-        filteredAssignments: v.assignments.filter(a => selectedCommunities.has(a.communityCode))
-      })).filter(v => v.filteredAssignments.length > 0)
 
       // 4. Fetch default category for new vendors (vendors table requires category_id NOT NULL)
       const { data: cats } = await supabase.from('vendor_categories').select('id, name').eq('name', 'Supplier').maybeSingle()
@@ -514,14 +537,23 @@ export default function UploadsPage() {
         return resolveJCVendor(jcVendor) || vendorList.find(v => v.name === jcVendor.name)?.id
       }
 
-      // 6. Batch insert new brand references
-      const newRefs = activeVendors
-        .filter(v => !existingRefSet.has(`${brand}:${v.jcVendorId}`))
-        .map(v => ({
-          vendor_id: vendorIdFor(v),
-          brand, jc_vendor_id: v.jcVendorId, jc_vendor_name: v.name,
-        }))
-        .filter(r => r.vendor_id)
+      // 6. Batch insert new brand references (one per brand when vendor spans AW + SL)
+      const newRefs = []
+      for (const v of activeVendors) {
+        const vendorId = vendorIdFor(v)
+        if (!vendorId) continue
+        for (const refBrand of brandsForVendor(v)) {
+          const refKey = `${refBrand}:${v.jcVendorId}`
+          if (existingRefSet.has(refKey)) continue
+          existingRefSet.add(refKey)
+          newRefs.push({
+            vendor_id: vendorId,
+            brand: refBrand,
+            jc_vendor_id: v.jcVendorId,
+            jc_vendor_name: v.name,
+          })
+        }
+      }
       if (newRefs.length > 0) {
         setImportProgress(`Inserting ${newRefs.length} brand references...`)
         const { error } = await supabase.from('vendor_brand_references').insert(newRefs)
@@ -538,7 +570,7 @@ export default function UploadsPage() {
             vendor_id: vendorId,
             community_id: communityCodeMap.get(a.communityCode),
             cost_code: a.costCode,
-            brand,
+            brand: communityBrandByCode.get(a.communityCode) || brand,
           }))
       })
       const CHUNK = 500

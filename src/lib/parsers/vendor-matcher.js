@@ -17,10 +17,14 @@ function extractJCParts(rawName) {
   return { jcId: match[1], name: match[2].trim() }
 }
 
-export function matchVendors(rawNames, vendorList, aliases = [], brandRefs = []) {
+export function matchVendors(rawNames, vendorList, aliases = [], brandRefs = [], { importBrand = null } = {}) {
   const results = []
   const aliasMap = new Map(aliases.map(a => [normalize(a.alias_name), a.vendor_id]))
-  const jcIdMap = new Map(brandRefs.map(r => [r.jc_vendor_id, r.vendor_id]))
+  const jcIdMap = new Map()
+  for (const r of brandRefs) {
+    const key = importBrand ? `${r.brand}:${r.jc_vendor_id}` : r.jc_vendor_id
+    if (!jcIdMap.has(key)) jcIdMap.set(key, r.vendor_id)
+  }
 
   for (const rawName of rawNames) {
     if (!rawName) continue
@@ -28,7 +32,9 @@ export function matchVendors(rawNames, vendorList, aliases = [], brandRefs = [])
     // JC format: "{jcId} {vendor name}" — match by JC ID first
     const jcParts = extractJCParts(rawName)
     if (jcParts) {
-      const vendorId = jcIdMap.get(jcParts.jcId)
+      const scopedKey = importBrand ? `${importBrand}:${jcParts.jcId}` : jcParts.jcId
+      let vendorId = jcIdMap.get(scopedKey)
+      if (!vendorId && importBrand) vendorId = jcIdMap.get(jcParts.jcId)
       if (vendorId) {
         const vendor = vendorList.find(v => v.id === vendorId)
         if (vendor) {
@@ -92,8 +98,8 @@ export function matchVendors(rawNames, vendorList, aliases = [], brandRefs = [])
 }
 
 /** Auto-resolve a vendor during imports (JC reports, etc.) without manual review. */
-export function resolveVendorForImport(rawName, vendorList, aliases = [], brandRefs = [], { fuzzyThreshold = 0.85 } = {}) {
-  const [match] = matchVendors([rawName], vendorList, aliases, brandRefs)
+export function resolveVendorForImport(rawName, vendorList, aliases = [], brandRefs = [], { fuzzyThreshold = 0.85, importBrand = null } = {}) {
+  const [match] = matchVendors([rawName], vendorList, aliases, brandRefs, { importBrand })
   if (!match?.matchedVendor) return { vendor: null, match }
   if (!match.needsConfirmation) return { vendor: match.matchedVendor, match }
   if (match.confidence >= fuzzyThreshold) return { vendor: match.matchedVendor, match }

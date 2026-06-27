@@ -51,16 +51,25 @@ export default function CommunityPage() {
       if (!f.is_approved && f.reviewed_at === null) fbByVendor[f.vendor_id].pending++
     }
 
-    const rows = (assignRes.data || [])
-      .filter(a => a.vendors?.is_active)
-      .map(a => ({
-        vendor_id: a.vendors?.id,
-        vendor_name: a.vendors?.name,
-        category: a.vendors?.vendor_categories?.name,
-        cost_code: a.cost_code,
-        score: scoreMap[a.vendors?.id] || null,
-        feedback: fbByVendor[a.vendors?.id] || { kudos: 0, complaints: 0, pending: 0 },
-      }))
+    const vendorMap = new Map()
+    for (const a of (assignRes.data || [])) {
+      if (!a.vendors?.is_active || !a.vendors?.id) continue
+      const id = a.vendors.id
+      if (!vendorMap.has(id)) {
+        vendorMap.set(id, {
+          vendor_id: id,
+          vendor_name: a.vendors.name,
+          category: a.vendors.vendor_categories?.name,
+          cost_codes: [],
+          score: scoreMap[id] || null,
+          feedback: fbByVendor[id] || { kudos: 0, complaints: 0, pending: 0 },
+        })
+      }
+      if (a.cost_code) vendorMap.get(id).cost_codes.push(a.cost_code)
+    }
+
+    const rows = Array.from(vendorMap.values())
+      .map(r => ({ ...r, cost_codes: [...new Set(r.cost_codes)].sort() }))
       .sort((a, b) => {
         const aScore = a.score?.weighted_total ?? -1
         const bScore = b.score?.weighted_total ?? -1
@@ -177,7 +186,7 @@ export default function CommunityPage() {
                   <tr>
                     <th className="text-left px-4 py-3 font-medium text-gray-600">Vendor</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-600">Category</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-600 font-mono text-xs">Cost Code</th>
+                    <th className="text-left px-4 py-3 font-medium text-gray-600 font-mono text-xs">Cost Codes</th>
                     <th className="text-right px-4 py-3 font-medium text-gray-600">Safety</th>
                     <th className="text-right px-4 py-3 font-medium text-gray-600">Schedule</th>
                     <th className="text-right px-4 py-3 font-medium text-gray-600">Rework</th>
@@ -187,11 +196,11 @@ export default function CommunityPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {vendorRows.map((r, i) => {
+                  {vendorRows.map(r => {
                     const s = r.score
                     const tier = getTier(s?.weighted_total)
                     return (
-                      <tr key={r.vendor_id || i} className="hover:bg-gray-50">
+                      <tr key={r.vendor_id} className="hover:bg-gray-50">
                         <td className="px-4 py-3">
                           <div className="font-medium text-gray-900">{r.vendor_name}</div>
                           {tier && tier.label !== 'No data' && (
@@ -199,7 +208,22 @@ export default function CommunityPage() {
                           )}
                         </td>
                         <td className="px-4 py-3 text-gray-500">{r.category || '—'}</td>
-                        <td className="px-4 py-3 font-mono text-xs text-gray-400">{r.cost_code || '—'}</td>
+                        <td className="px-4 py-3">
+                          {r.cost_codes.length > 0 ? (
+                            <div className="flex gap-1 flex-wrap">
+                              {r.cost_codes.slice(0, 4).map(cc => (
+                                <span key={cc} className="text-xs font-mono bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">
+                                  {cc}
+                                </span>
+                              ))}
+                              {r.cost_codes.length > 4 && (
+                                <span className="text-xs text-gray-400">+{r.cost_codes.length - 4}</span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-gray-300">—</span>
+                          )}
+                        </td>
                         {['safety_score', 'schedule_score', 'rework_score', 'feedback_score'].map(field => (
                           <td key={field} className="px-4 py-3 text-right font-mono text-xs">
                             {s?.[field] != null ? (
