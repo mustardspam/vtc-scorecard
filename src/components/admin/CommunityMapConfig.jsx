@@ -14,7 +14,7 @@ export default function CommunityMapConfig() {
       try {
         const [commRes, manRes] = await Promise.all([
           supabase.from('communities').select('*').order('name'),
-          supabase.from('profiles').select('id, full_name').eq('is_area_manager', true).order('full_name'),
+          supabase.from('profiles').select('id, full_name').eq('is_area_manager', true).eq('is_active', true).order('full_name'),
         ])
         if (mounted) {
           setCommunities(commRes.data || [])

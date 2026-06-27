@@ -52,7 +52,7 @@ export function useMapData() {
           supabase.from('communities').select('*').order('name'),
           supabase.from('vendors').select('id, name, category_id').eq('is_active', true).order('name'),
           supabase.from('vendor_categories').select('id, name').order('name'),
-          supabase.from('profiles').select('id, full_name').eq('is_area_manager', true).order('full_name'),
+          supabase.from('profiles').select('id, full_name').eq('is_area_manager', true).eq('is_active', true).order('full_name'),
         ])
         if (!mounted) return
 

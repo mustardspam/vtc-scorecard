@@ -53,9 +53,25 @@ export default function UserManager() {
   }
 
   async function handleToggleActive(userId, email, currentActive) {
-    await supabase.from('profiles')
-      .update({ is_active: !currentActive })
-      .eq('id', userId)
+    if (currentActive) {
+      const user = users.find(u => u.id === userId)
+      await supabase.from('profiles')
+        .update({
+          is_active: false,
+          is_area_manager: false,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', userId)
+      if (user?.is_area_manager) {
+        await supabase.from('communities')
+          .update({ area_manager_id: null })
+          .eq('area_manager_id', userId)
+      }
+    } else {
+      await supabase.from('profiles')
+        .update({ is_active: true, updated_at: new Date().toISOString() })
+        .eq('id', userId)
+    }
     await logActivity(
       currentActive ? 'user_disabled' : 'user_enabled',
       `${currentActive ? 'Disabled' : 'Enabled'} user ${email}`
@@ -65,6 +81,31 @@ export default function UserManager() {
 
   async function handleToggleAreaManager(userId, email, current) {
     await supabase.from('profiles').update({ is_area_manager: !current }).eq('id', userId)
+    if (current) {
+      await supabase.from('communities')
+        .update({ area_manager_id: null })
+        .eq('area_manager_id', userId)
+    }
+    loadUsers()
+  }
+
+  async function handleToggleBuilder(userId, email, current) {
+    const updates = {
+      is_builder: !current,
+      updated_at: new Date().toISOString(),
+    }
+    if (current) {
+      updates.acm_id = null
+      updates.is_front_end_builder = false
+    }
+    await supabase.from('profiles').update(updates).eq('id', userId)
+    if (current) {
+      await supabase.from('builder_community_assignments').delete().eq('profile_id', userId)
+    }
+    await logActivity(
+      current ? 'builder_removed' : 'builder_added',
+      `${current ? 'Removed' : 'Marked'} ${email} as builder`
+    )
     loadUsers()
   }
 
@@ -141,6 +182,7 @@ export default function UserManager() {
                 <th className="px-3 py-2 text-xs font-medium text-gray-500">Name</th>
                 <th className="px-3 py-2 text-xs font-medium text-gray-500">Role</th>
                 <th className="px-3 py-2 text-xs font-medium text-gray-500">Map Mgr</th>
+                <th className="px-3 py-2 text-xs font-medium text-gray-500">Builder</th>
                 <th className="px-3 py-2 text-xs font-medium text-gray-500">Status</th>
                 <th className="px-3 py-2 text-xs font-medium text-gray-500">Joined</th>
                 <th className="px-3 py-2 text-xs font-medium text-gray-500">Last Login</th>
@@ -155,6 +197,7 @@ export default function UserManager() {
                   onRoleChange={handleRoleChange}
                   onToggleActive={handleToggleActive}
                   onToggleAreaManager={handleToggleAreaManager}
+                  onToggleBuilder={handleToggleBuilder}
                 />
               ))}
             </tbody>
@@ -209,7 +252,7 @@ function PendingUserRow({ u, isSelf, onRoleChange, onNameSave, onToggleActive })
   )
 }
 
-function UserRow({ u, isSelf, onRoleChange, onToggleActive, onToggleAreaManager }) {
+function UserRow({ u, isSelf, onRoleChange, onToggleActive, onToggleAreaManager, onToggleBuilder }) {
   return (
     <tr className={!u.is_active ? 'opacity-40' : ''}>
       <td className="px-3 py-2 text-xs text-gray-700">{u.email}</td>
@@ -242,6 +285,26 @@ function UserRow({ u, isSelf, onRoleChange, onToggleActive, onToggleAreaManager 
           <span style={{
             position: 'absolute', top: '2px',
             left: u.is_area_manager ? '18px' : '2px',
+            width: '16px', height: '16px', borderRadius: '50%',
+            background: 'white', boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+            transition: 'left 0.2s', display: 'block',
+          }} />
+        </button>
+      </td>
+      <td className="px-3 py-2">
+        <button
+          onClick={() => onToggleBuilder(u.id, u.email, u.is_builder)}
+          title="Toggle builder (shows on Teams page)"
+          style={{
+            width: '36px', height: '20px', borderRadius: '10px', border: 'none',
+            background: u.is_builder ? '#0d9488' : '#d1d5db',
+            cursor: 'pointer', position: 'relative', display: 'block',
+            transition: 'background 0.2s', flexShrink: 0,
+          }}
+        >
+          <span style={{
+            position: 'absolute', top: '2px',
+            left: u.is_builder ? '18px' : '2px',
             width: '16px', height: '16px', borderRadius: '50%',
             background: 'white', boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
             transition: 'left 0.2s', display: 'block',
