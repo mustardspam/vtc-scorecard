@@ -181,14 +181,6 @@ export default function ScoresPage() {
     return sortDir === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />
   }
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="app-loading-spinner" />
-      </div>
-    )
-  }
-
   if (vendorId && detailRow) {
     return (
       <div className="space-y-4 min-w-0">
@@ -196,6 +188,14 @@ export default function ScoresPage() {
           <ArrowLeft className="w-4 h-4" /> Back to Scores
         </button>
         <VendorReportCard key={detailRow.vendor_id} scoreRow={detailRow} getTier={getTier} onClose={() => setSearchParams({})} />
+      </div>
+    )
+  }
+
+  if (loading && !reportCard) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="app-loading-spinner" />
       </div>
     )
   }

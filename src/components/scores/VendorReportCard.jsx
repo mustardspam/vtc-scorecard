@@ -4,6 +4,11 @@ import { supabase } from '../../lib/supabase'
 import { X, Printer } from 'lucide-react'
 import { tierPillStyle, tierValueColor } from '../../lib/design/tokens'
 import { formatJcVendorIds } from '../../lib/formatJcVendorIds'
+import { useLoadGuard } from '../../hooks/useLoadGuard'
+import { promiseWithTimeout } from '../../lib/fetchWithTimeout'
+import { useThresholds } from '../../hooks/useThresholds'
+
+const LOAD_TIMEOUT_MS = 25000
 
 const SEVERITY_BADGE = {
   kudos: 'bg-green-100 text-green-700',
@@ -31,120 +36,144 @@ function communityAbbreviation(community) {
   return space > 0 ? code.slice(0, space) : code
 }
 
-function ScoreBox({ label, value, getTier, large }) {
+function ScoreBox({ label, value, getTier, large, lowData }) {
   const tier = getTier(value)
+  const noData = value == null || lowData
   return (
     <div
       className="rounded-lg border p-3 text-center"
-      style={tier && tier.label !== 'No data'
+      style={!noData && tier && tier.label !== 'No data'
         ? { background: tier.softBg, borderColor: 'transparent' }
         : { background: 'var(--g-panel-2)', borderColor: 'var(--g-line)' }}
     >
       <p
         className={`font-bold ${large ? 'text-2xl' : 'text-xl'}`}
-        style={{ color: tier && tier.label !== 'No data' ? tierValueColor(tier) : 'var(--g-dim)' }}
+        style={{ color: !noData && tier && tier.label !== 'No data' ? tierValueColor(tier) : 'var(--g-dim)' }}
       >
         {fmt(value)}
       </p>
-      <p className="text-xs mt-0.5" style={{ color: 'var(--g-dim)' }}>{label}</p>
+      <p className="text-xs mt-0.5" style={{ color: 'var(--g-dim)' }}>
+        {label}
+        {lowData && <span className="block text-[10px] opacity-80">No data</span>}
+      </p>
     </div>
   )
+}
+
+const EMPTY_REPORT_DATA = {
+  snapshots: [],
+  feedback: [],
+  safety: [],
+  rework: [],
+  communityCodes: [],
+  brandRefs: [],
+}
+
+async function fetchVendorReportData(vendorId) {
+  const [snapRes, feedRes, safeRes, rwRes, assignRes, brandRes] = await Promise.all([
+    supabase
+      .from('snapshot_score_results')
+      .select('weighted_total, safety_score, schedule_score, rework_score, feedback_score, snapshots(name, created_at)')
+      .eq('vendor_id', vendorId)
+      .limit(24),
+    supabase
+      .from('builder_feedback')
+      .select('category, severity, points, description, submitted_at, communities(name, code)')
+      .eq('vendor_id', vendorId)
+      .eq('is_approved', true)
+      .order('submitted_at', { ascending: false })
+      .limit(10),
+    supabase
+      .from('safety_records')
+      .select('record_date, severity, severity_points, incident_type')
+      .eq('vendor_id', vendorId)
+      .order('record_date', { ascending: false })
+      .limit(6),
+    supabase
+      .from('rework_records')
+      .select('record_date, cost, severity, description')
+      .eq('vendor_id', vendorId)
+      .order('record_date', { ascending: false })
+      .limit(6),
+    supabase
+      .from('vendor_community_assignments')
+      .select('community_id, communities(name, code)')
+      .eq('vendor_id', vendorId),
+    supabase
+      .from('vendor_brand_references')
+      .select('brand, jc_vendor_id')
+      .eq('vendor_id', vendorId),
+  ])
+
+  for (const res of [snapRes, feedRes, safeRes, rwRes, assignRes, brandRes]) {
+    if (res.error) throw res.error
+  }
+
+  const communityCodeMap = new Map()
+  for (const row of assignRes.data || []) {
+    const abbrev = communityAbbreviation(row.communities)
+    if (abbrev && row.community_id && !communityCodeMap.has(row.community_id)) {
+      communityCodeMap.set(row.community_id, abbrev)
+    }
+  }
+
+  const snapshots = (snapRes.data || [])
+    .filter(s => s.snapshots?.created_at)
+    .sort((a, b) => new Date(a.snapshots.created_at) - new Date(b.snapshots.created_at))
+
+  return {
+    snapshots,
+    feedback: feedRes.data || [],
+    safety: safeRes.data || [],
+    rework: rwRes.data || [],
+    communityCodes: [...new Set(communityCodeMap.values())].sort((a, b) => a.localeCompare(b)),
+    brandRefs: brandRes.data || [],
+  }
 }
 
 export default function VendorReportCard({ scoreRow, getTier, onClose }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
+  const { hasEnoughData } = useThresholds()
+  const { begin, isCurrent } = useLoadGuard()
 
   useEffect(() => {
-    let mounted = true
     const vendorId = scoreRow.vendor_id
+    const seq = begin()
 
     async function load() {
       setLoading(true)
       setLoadError('')
       setData(null)
+
+      if (!vendorId) {
+        if (!isCurrent(seq)) return
+        setData(EMPTY_REPORT_DATA)
+        setLoading(false)
+        return
+      }
+
       try {
-        const [snapRes, feedRes, safeRes, rwRes, assignRes, brandRes] = await Promise.all([
-          supabase
-            .from('snapshot_score_results')
-            .select('weighted_total, safety_score, schedule_score, rework_score, feedback_score, snapshots(name, created_at)')
-            .eq('vendor_id', vendorId),
-          supabase
-            .from('builder_feedback')
-            .select('category, severity, points, description, submitted_at, communities(name, code)')
-            .eq('vendor_id', vendorId)
-            .eq('is_approved', true)
-            .order('submitted_at', { ascending: false })
-            .limit(10),
-          supabase
-            .from('safety_records')
-            .select('record_date, severity, severity_points, incident_type')
-            .eq('vendor_id', vendorId)
-            .order('record_date', { ascending: false })
-            .limit(6),
-          supabase
-            .from('rework_records')
-            .select('record_date, cost, severity, description')
-            .eq('vendor_id', vendorId)
-            .order('record_date', { ascending: false })
-            .limit(6),
-          supabase
-            .from('vendor_community_assignments')
-            .select('community_id, communities(name, code)')
-            .eq('vendor_id', vendorId),
-          supabase
-            .from('vendor_brand_references')
-            .select('brand, jc_vendor_id')
-            .eq('vendor_id', vendorId),
-        ])
-
-        for (const res of [snapRes, feedRes, safeRes, rwRes, assignRes, brandRes]) {
-          if (res.error) throw res.error
-        }
-
-        const communityCodeMap = new Map()
-        for (const row of assignRes.data || []) {
-          const abbrev = communityAbbreviation(row.communities)
-          if (abbrev && row.community_id && !communityCodeMap.has(row.community_id)) {
-            communityCodeMap.set(row.community_id, abbrev)
-          }
-        }
-        const communityCodes = [...new Set(communityCodeMap.values())].sort((a, b) => a.localeCompare(b))
-
-        const snapshots = (snapRes.data || [])
-          .filter(s => s.snapshots?.created_at)
-          .sort((a, b) => new Date(a.snapshots.created_at) - new Date(b.snapshots.created_at))
-
-        if (mounted) {
-          setData({
-            snapshots,
-            feedback: feedRes.data || [],
-            safety: safeRes.data || [],
-            rework: rwRes.data || [],
-            communityCodes,
-            brandRefs: brandRes.data || [],
-          })
-        }
+        const reportData = await promiseWithTimeout(
+          fetchVendorReportData(vendorId),
+          LOAD_TIMEOUT_MS,
+          'Loading report data timed out. Please try again.',
+        )
+        if (!isCurrent(seq)) return
+        setData(reportData)
       } catch (err) {
         console.error('VendorReportCard load error:', err)
-        if (mounted) {
-          setLoadError('Could not load report data. Please try again.')
-          setData({ snapshots: [], feedback: [], safety: [], rework: [], communityCodes: [], brandRefs: [] })
-        }
+        if (!isCurrent(seq)) return
+        setLoadError(err.message || 'Could not load report data. Please try again.')
+        setData(EMPTY_REPORT_DATA)
       } finally {
-        if (mounted) setLoading(false)
+        if (isCurrent(seq)) setLoading(false)
       }
     }
 
-    if (vendorId) load()
-    else if (mounted) {
-      setLoading(false)
-      setData({ snapshots: [], feedback: [], safety: [], rework: [], communityCodes: [], brandRefs: [] })
-    }
-
-    return () => { mounted = false }
-  }, [scoreRow.vendor_id])
+    load()
+  }, [scoreRow.vendor_id, begin, isCurrent])
 
   const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
   const vendorName = scoreRow.vendors?.name || 'Unknown Vendor'
@@ -233,7 +262,14 @@ export default function VendorReportCard({ scoreRow, getTier, onClose }) {
               <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3">Current Scores</h2>
               <div className="grid grid-cols-5 gap-3 report-card-score-grid">
                 {SCORE_FIELDS.map(({ label, key, large }) => (
-                  <ScoreBox key={key} label={label} value={scoreRow[key]} getTier={getTier} large={large} />
+                  <ScoreBox
+                    key={key}
+                    label={label}
+                    value={scoreRow[key]}
+                    getTier={getTier}
+                    large={large}
+                    lowData={key !== 'weighted_total' && !hasEnoughData(scoreRow, key)}
+                  />
                 ))}
               </div>
             </div>

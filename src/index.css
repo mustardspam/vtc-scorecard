@@ -167,6 +167,9 @@ html {
   padding: 2px 10px;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  line-height: 1.25;
 }
 
 .glass-mono-chip {
@@ -632,6 +635,7 @@ html {
 .scores-grid col:nth-child(1) { width: 38px; }
 .scores-grid th:nth-child(1), .scores-grid td:nth-child(1) { width: 38px; }
 .scores-grid th:nth-child(2), .scores-grid td:nth-child(2) { min-width: 190px; }
+.scores-grid th:nth-child(3), .scores-grid td:nth-child(3) { width: 124px; min-width: 124px; }
 .scores-grid th:last-child, .scores-grid td:last-child { width: 52px; }
 
 /* ── Migration: auto-glass common legacy patterns ── */
