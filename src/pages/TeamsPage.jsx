@@ -1,15 +1,20 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import { useTeamData } from '../hooks/useTeamData'
 import { logActivity } from '../hooks/useActivityLog'
+import { buildAcmColorMap, acmPanelStyle } from '../lib/acm-colors'
 import { Users, GripVertical, MapPin, AlertCircle, RefreshCw } from 'lucide-react'
 import { cn } from '../lib/cn'
 
 const DRAG_BUILDER = 'application/x-vtc-builder-id'
 
+function getDraggedBuilderId(e) {
+  return e.dataTransfer.getData(DRAG_BUILDER) || e.dataTransfer.getData('text/plain')
+}
+
 export default function TeamsPage() {
   const { profile } = useAuth()
-  const isAdmin = profile?.role === 'admin'
+  const canEdit = profile?.role === 'admin'
   const {
     teams,
     loading,
@@ -45,11 +50,13 @@ export default function TeamsPage() {
   }, [])
 
   function handleDragStart(e, builderId) {
-    if (!isAdmin || busy) {
+    if (!canEdit || busy) {
       e.preventDefault()
       return
     }
+    e.stopPropagation()
     e.dataTransfer.setData(DRAG_BUILDER, builderId)
+    e.dataTransfer.setData('text/plain', builderId)
     e.dataTransfer.effectAllowed = 'move'
     setDraggingId(builderId)
   }
@@ -60,15 +67,17 @@ export default function TeamsPage() {
   }
 
   function allowDrop(e) {
-    if (!isAdmin || busy) return
+    if (!canEdit || busy) return
     e.preventDefault()
+    e.stopPropagation()
     e.dataTransfer.dropEffect = 'move'
   }
 
   async function handleDropOnAcm(e, acmId, acmName) {
     e.preventDefault()
-    if (!isAdmin || busy) return
-    const builderId = e.dataTransfer.getData(DRAG_BUILDER)
+    e.stopPropagation()
+    if (!canEdit || busy) return
+    const builderId = getDraggedBuilderId(e)
     if (!builderId) return
     const builder = [...teams.grouped.flatMap(g => g.builders), ...teams.unassigned]
       .find(b => b.id === builderId)
@@ -82,8 +91,9 @@ export default function TeamsPage() {
 
   async function handleDropOnCommunity(e, communityId, communityName) {
     e.preventDefault()
-    if (!isAdmin || busy) return
-    const builderId = e.dataTransfer.getData(DRAG_BUILDER)
+    e.stopPropagation()
+    if (!canEdit || busy) return
+    const builderId = getDraggedBuilderId(e)
     if (!builderId) return
     const builder = [...teams.grouped.flatMap(g => g.builders), ...teams.unassigned]
       .find(b => b.id === builderId)
@@ -98,8 +108,9 @@ export default function TeamsPage() {
 
   async function handleDropUnassigned(e) {
     e.preventDefault()
-    if (!isAdmin || busy) return
-    const builderId = e.dataTransfer.getData(DRAG_BUILDER)
+    e.stopPropagation()
+    if (!canEdit || busy) return
+    const builderId = getDraggedBuilderId(e)
     if (!builderId) return
     const builder = teams.grouped.flatMap(g => g.builders).find(b => b.id === builderId)
     if (!builder) return
@@ -135,8 +146,9 @@ export default function TeamsPage() {
   }
 
   const totalBuilders = teams.grouped.reduce((n, g) => n + g.builders.length, 0) + teams.unassigned.length
+  const acmColorMap = useMemo(() => buildAcmColorMap(teams.grouped), [teams.grouped])
   const builderProps = {
-    isAdmin,
+    canEdit,
     busy,
     draggingId,
     onDragStart: handleDragStart,
@@ -152,7 +164,7 @@ export default function TeamsPage() {
         <div className="flex items-center gap-2 min-w-0">
           <Users className="w-5 h-5 text-teal-600 flex-shrink-0" />
           <h1 className="text-lg font-bold text-gray-900 truncate">Teams</h1>
-          {isAdmin && (
+          {canEdit && (
             <span className="hidden sm:inline text-[10px] text-gray-400 truncate">
               Drag builders → ACM or community · Promote for 2nd community
             </span>
@@ -189,34 +201,36 @@ export default function TeamsPage() {
           </p>
         </div>
       ) : (
-        <>
-          {(teams.unassigned.length > 0 || isAdmin) && (
-            <UnassignedStrip
-              builders={teams.unassigned}
-              dropTarget={dropTarget}
-              setDropTarget={setDropTarget}
-              allowDrop={allowDrop}
-              onDrop={handleDropUnassigned}
-              {...builderProps}
-            />
-          )}
-
-          <div className="flex-1 min-h-0 overflow-y-auto space-y-2 pr-0.5">
+        <div className="flex flex-1 min-h-0 gap-2">
+          <div className="flex-1 min-w-0 overflow-y-auto space-y-2 pr-0.5">
             {teams.grouped.map(acm => (
               <AcmRow
                 key={acm.id}
                 acm={acm}
+                acmColor={acmColorMap[acm.id]}
                 dropTarget={dropTarget}
                 setDropTarget={setDropTarget}
                 allowDrop={allowDrop}
                 onDropAcm={handleDropOnAcm}
                 onDropCommunity={handleDropOnCommunity}
-                isAdmin={isAdmin}
+                canEdit={canEdit}
                 {...builderProps}
               />
             ))}
           </div>
-        </>
+
+          {(teams.unassigned.length > 0 || canEdit) && (
+            <UnassignedPanel
+              builders={teams.unassigned}
+              dropTarget={dropTarget}
+              setDropTarget={setDropTarget}
+              allowDrop={allowDrop}
+              onDrop={handleDropUnassigned}
+              canEdit={canEdit}
+              {...builderProps}
+            />
+          )}
+        </div>
       )}
     </div>
   )
@@ -224,7 +238,8 @@ export default function TeamsPage() {
 
 function AcmRow({
   acm,
-  isAdmin,
+  acmColor,
+  canEdit,
   dropTarget,
   setDropTarget,
   allowDrop,
@@ -234,58 +249,78 @@ function AcmRow({
 }) {
   const acmDropId = `acm-${acm.id}`
   const isAcmTarget = dropTarget === acmDropId
+  const panelStyle = acmPanelStyle(acmColor)
 
   return (
     <div
-      className={cn(
-        'glass-panel flex gap-0 overflow-hidden transition-shadow min-h-[72px]',
-        isAcmTarget && 'ring-2 ring-teal-400'
-      )}
-      onDragOver={e => { allowDrop(e); if (isAdmin) setDropTarget(acmDropId) }}
-      onDragLeave={() => { if (dropTarget === acmDropId) setDropTarget(null) }}
-      onDrop={e => { setDropTarget(null); onDropAcm(e, acm.id, acm.full_name || acm.email) }}
+      className="glass-panel flex gap-0 overflow-hidden min-h-[72px]"
+      style={{ borderColor: panelStyle.borderColor }}
     >
-      {/* Left: ACM + communities */}
-      <div className="flex-1 min-w-0 p-2 border-r border-gray-100">
-        <div className="flex items-baseline gap-2 mb-1.5">
+      {/* Left: ACM + communities — drop targets only here, not on builder column */}
+      <div
+        className={cn(
+          'flex-1 min-w-0 p-2 border-r transition-shadow',
+          isAcmTarget && 'ring-2 ring-inset'
+        )}
+        style={{
+          ...panelStyle,
+          borderRightColor: acmColor ? `${acmColor}33` : undefined,
+          ...(isAcmTarget && acmColor ? { boxShadow: `inset 0 0 0 2px ${acmColor}` } : {}),
+        }}
+        onDragOver={e => { allowDrop(e); if (canEdit) setDropTarget(acmDropId) }}
+        onDragLeave={e => {
+          if (!e.currentTarget.contains(e.relatedTarget)) {
+            if (dropTarget === acmDropId) setDropTarget(null)
+          }
+        }}
+        onDrop={e => { setDropTarget(null); onDropAcm(e, acm.id, acm.full_name || acm.email) }}
+      >
+        <div className="flex items-center gap-1.5 mb-1.5">
+          {acmColor && (
+            <span
+              className="w-2 h-2 rounded-full flex-shrink-0"
+              style={{ backgroundColor: acmColor }}
+            />
+          )}
           <h2 className="text-xs font-semibold text-gray-900 truncate">
             {acm.full_name || acm.email}
           </h2>
-          <span className="text-[9px] text-gray-400 uppercase tracking-wide flex-shrink-0">ACM</span>
+          <span className="text-[9px] text-gray-500 uppercase tracking-wide flex-shrink-0">ACM</span>
           <span className="text-[9px] text-gray-400 ml-auto flex-shrink-0">
             {acm.communities.length}c · {acm.builders.length}b
           </span>
         </div>
 
         {acm.communities.length === 0 ? (
-          <p className="text-[10px] text-amber-600 italic">No communities — assign in Community Map</p>
+          <p className="text-[10px] text-amber-600 italic">
+            {canEdit ? 'Drop a builder here to assign to this ACM' : 'No communities — assign in Community Map'}
+          </p>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-1">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-1">
             {acm.communities.map(c => (
               <CommunityDrop
                 key={c.id}
                 community={c}
                 builders={acm.builders}
+                acmColor={acmColor}
                 dropTarget={dropTarget}
                 setDropTarget={setDropTarget}
                 allowDrop={allowDrop}
                 onDropCommunity={onDropCommunity}
-                isAdmin={isAdmin}
+                canEdit={canEdit}
               />
             ))}
           </div>
         )}
       </div>
 
-      {/* Right: compact builder stack */}
-      <div className="w-44 sm:w-52 flex-shrink-0 p-1.5 bg-gray-50/60 flex flex-col gap-0.5">
+      {/* Right: builder stack — drag sources only, no drop handlers */}
+      <div className="w-40 sm:w-44 flex-shrink-0 p-1.5 bg-gray-50/60 flex flex-col gap-0.5">
         <p className="text-[8px] font-semibold uppercase tracking-wider text-gray-400 px-0.5 mb-0.5">
           Builders
         </p>
         {acm.builders.length === 0 ? (
-          <p className="text-[9px] text-gray-400 italic px-0.5 py-1">
-            {isAdmin ? 'Drop here' : '—'}
-          </p>
+          <p className="text-[9px] text-gray-400 italic px-0.5 py-1">—</p>
         ) : (
           acm.builders.map(builder => (
             <BuilderTile key={builder.id} builder={builder} compact {...builderProps} />
@@ -299,7 +334,8 @@ function AcmRow({
 function CommunityDrop({
   community: c,
   builders,
-  isAdmin,
+  acmColor,
+  canEdit,
   dropTarget,
   setDropTarget,
   allowDrop,
@@ -308,22 +344,26 @@ function CommunityDrop({
   const dropId = `comm-${c.id}`
   const assigned = builders.filter(b => b.assignments.some(a => a.community_id === c.id))
   const label = c.code || c.name
+  const isTarget = dropTarget === dropId
 
   return (
     <div
       title={c.name}
-      onDragOver={e => { allowDrop(e); if (isAdmin) setDropTarget(dropId) }}
-      onDragLeave={() => { if (dropTarget === dropId) setDropTarget(null) }}
+      onDragOver={e => { allowDrop(e); if (canEdit) setDropTarget(dropId) }}
+      onDragLeave={e => {
+        if (!e.currentTarget.contains(e.relatedTarget) && dropTarget === dropId) {
+          setDropTarget(null)
+        }
+      }}
       onDrop={e => { setDropTarget(null); onDropCommunity(e, c.id, c.name) }}
-      className={cn(
-        'rounded border px-1.5 py-1 transition-colors min-h-[40px]',
-        dropTarget === dropId
-          ? 'border-teal-400 bg-teal-50'
-          : 'border-gray-200 bg-white/80'
-      )}
+      className="rounded border px-1.5 py-1 transition-colors min-h-[40px]"
+      style={{
+        borderColor: isTarget && acmColor ? acmColor : isTarget ? '#14b8a6' : acmColor ? `${acmColor}44` : undefined,
+        backgroundColor: isTarget && acmColor ? `${acmColor}28` : 'rgba(255,255,255,0.85)',
+      }}
     >
       <div className="flex items-center gap-0.5">
-        <MapPin className="w-2.5 h-2.5 text-teal-600 flex-shrink-0" />
+        <MapPin className="w-2.5 h-2.5 flex-shrink-0" style={{ color: acmColor || '#087482' }} />
         <span className="text-[10px] font-medium text-gray-800 truncate leading-tight">{label}</span>
       </div>
       <div className="mt-0.5 truncate text-[9px] text-gray-500 leading-tight">
@@ -335,9 +375,9 @@ function CommunityDrop({
   )
 }
 
-function UnassignedStrip({
+function UnassignedPanel({
   builders,
-  isAdmin,
+  canEdit,
   dropTarget,
   setDropTarget,
   allowDrop,
@@ -347,27 +387,44 @@ function UnassignedStrip({
   const dropId = 'unassigned'
   const isTarget = dropTarget === dropId
 
-  if (!isAdmin && builders.length === 0) return null
+  if (!canEdit && builders.length === 0) return null
 
   return (
-    <div
-      className={cn(
-        'flex-shrink-0 glass-panel px-2 py-1.5 border-dashed transition-shadow',
-        isTarget ? 'ring-2 ring-gray-400' : ''
+    <div className="w-40 sm:w-44 flex-shrink-0 flex flex-col min-h-0 glass-panel overflow-hidden">
+      {/* Drop target bar — separate from draggable builder list */}
+      {canEdit && (
+        <div
+          onDragOver={e => { allowDrop(e); setDropTarget(dropId) }}
+          onDragLeave={e => {
+            if (!e.currentTarget.contains(e.relatedTarget) && dropTarget === dropId) {
+              setDropTarget(null)
+            }
+          }}
+          onDrop={e => { setDropTarget(null); onDrop(e) }}
+          className={cn(
+            'flex-shrink-0 px-2 py-1 border-b text-center transition-colors',
+            isTarget ? 'bg-gray-100 border-gray-300' : 'bg-gray-50/80 border-gray-100'
+          )}
+        >
+          <p className="text-[8px] font-semibold uppercase tracking-wider text-gray-400">
+            Drop to unassign ACM
+          </p>
+        </div>
       )}
-      onDragOver={e => { allowDrop(e); if (isAdmin) setDropTarget(dropId) }}
-      onDragLeave={() => { if (dropTarget === dropId) setDropTarget(null) }}
-      onDrop={e => { setDropTarget(null); onDrop(e) }}
-    >
-      <p className="text-[8px] font-semibold uppercase tracking-wider text-gray-400 mb-1">
-        Unassigned {isAdmin && '· drop to unassign ACM'}
-      </p>
-      <div className="flex flex-wrap gap-1 max-h-[52px] overflow-y-auto">
+
+      <div className="px-1.5 pt-1.5 pb-1 flex-shrink-0">
+        <p className="text-[8px] font-semibold uppercase tracking-wider text-gray-400">
+          Unassigned ({builders.length})
+        </p>
+      </div>
+
+      {/* Builder list — no drop handlers so drag works reliably */}
+      <div className="flex-1 min-h-0 overflow-y-auto px-1.5 pb-1.5 flex flex-col gap-0.5">
         {builders.length === 0 ? (
           <span className="text-[9px] text-gray-400 italic">None</span>
         ) : (
           builders.map(builder => (
-            <BuilderTile key={builder.id} builder={builder} inline {...builderProps} />
+            <BuilderTile key={builder.id} builder={builder} compact {...builderProps} />
           ))
         )}
       </div>
@@ -377,7 +434,7 @@ function UnassignedStrip({
 
 function BuilderTile({
   builder,
-  isAdmin,
+  canEdit,
   busy,
   draggingId,
   onDragStart,
@@ -386,7 +443,6 @@ function BuilderTile({
   onPromoteToFrontEnd,
   onDemoteFromFrontEnd,
   compact = false,
-  inline = false,
 }) {
   const name = builder.full_name || builder.email
   const isFrontEnd = builder.is_front_end_builder
@@ -395,24 +451,23 @@ function BuilderTile({
 
   return (
     <div
-      draggable={isAdmin && !busy}
+      draggable={canEdit && !busy}
       onDragStart={e => onDragStart(e, builder.id)}
       onDragEnd={onDragEnd}
-      title={[name, commLabels.join(', '), isFrontEnd ? 'Front-end' : ''].filter(Boolean).join(' · ')}
+      title={[name, commLabels.join(', '), isFrontEnd ? 'Front-end' : '', canEdit ? 'Drag to assign' : ''].filter(Boolean).join(' · ')}
       className={cn(
-        'group flex items-center gap-0.5 rounded border bg-white transition-opacity',
-        compact ? 'px-1 py-0.5' : 'px-1.5 py-0.5',
-        inline && 'max-w-[140px]',
+        'group flex items-center gap-1 rounded border bg-white transition-opacity select-none',
+        compact ? 'px-1.5 py-1' : 'px-2 py-1',
         isFrontEnd ? 'border-violet-200 bg-violet-50/50' : 'border-gray-200',
-        isAdmin && !busy && 'cursor-grab active:cursor-grabbing hover:border-teal-300',
-        isDragging && 'opacity-40',
+        canEdit && !busy && 'cursor-grab active:cursor-grabbing hover:border-teal-400 hover:shadow-sm',
+        isDragging && 'opacity-50 ring-2 ring-teal-400',
         busy && 'pointer-events-none opacity-60'
       )}
     >
-      {isAdmin && (
-        <GripVertical className="w-2.5 h-2.5 text-gray-300 flex-shrink-0 group-active:text-teal-500" />
+      {canEdit && (
+        <GripVertical className="w-3 h-3 text-gray-400 flex-shrink-0 pointer-events-none" />
       )}
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 pointer-events-none">
         <div className="flex items-center gap-0.5">
           <span className="text-[10px] font-medium text-gray-900 truncate leading-tight">
             {shortName(builder)}
@@ -424,40 +479,41 @@ function BuilderTile({
           )}
         </div>
         {commLabels.length > 0 && (
-          <div className="flex items-center gap-0.5 truncate">
-            {builder.assignments.map((a, i) => (
-              <span key={a.community_id} className="inline-flex items-center text-[8px] text-teal-700 leading-none">
-                {i > 0 && <span className="text-gray-300 mx-0.5">·</span>}
-                <span className="truncate max-w-[48px]">{a.community?.code || shortName({ full_name: a.community?.name })}</span>
-                {isAdmin && (
-                  <button
-                    type="button"
-                    onClick={e => { e.stopPropagation(); onRemoveCommunity(builder, a.community_id, a.community?.name) }}
-                    className="text-gray-300 hover:text-red-500 ml-px leading-none"
-                  >
-                    ×
-                  </button>
-                )}
-              </span>
-            ))}
+          <div className="truncate text-[8px] text-teal-700 leading-tight mt-px">
+            {commLabels.join(' · ')}
           </div>
         )}
       </div>
-      {isAdmin && (
-        <button
-          type="button"
-          onClick={e => {
-            e.stopPropagation()
-            isFrontEnd ? onDemoteFromFrontEnd(builder) : onPromoteToFrontEnd(builder)
-          }}
-          title={isFrontEnd ? 'Remove front-end' : 'Promote to front-end'}
-          className={cn(
-            'flex-shrink-0 text-[7px] font-semibold px-0.5 rounded leading-tight opacity-0 group-hover:opacity-100 transition-opacity',
-            isFrontEnd ? 'text-violet-500 hover:bg-violet-100' : 'text-teal-600 hover:bg-teal-50'
-          )}
-        >
-          {isFrontEnd ? '−FE' : '+FE'}
-        </button>
+      {canEdit && (
+        <div className="flex flex-col gap-0.5 flex-shrink-0">
+          {builder.assignments.map(a => (
+            <button
+              key={a.community_id}
+              type="button"
+              onMouseDown={e => e.stopPropagation()}
+              onClick={e => { e.stopPropagation(); onRemoveCommunity(builder, a.community_id, a.community?.name) }}
+              className="text-[8px] text-gray-300 hover:text-red-500 leading-none px-0.5"
+              title={`Remove from ${a.community?.name}`}
+            >
+              ×
+            </button>
+          ))}
+          <button
+            type="button"
+            onMouseDown={e => e.stopPropagation()}
+            onClick={e => {
+              e.stopPropagation()
+              isFrontEnd ? onDemoteFromFrontEnd(builder) : onPromoteToFrontEnd(builder)
+            }}
+            title={isFrontEnd ? 'Remove front-end' : 'Promote to front-end'}
+            className={cn(
+              'text-[7px] font-semibold px-0.5 rounded leading-tight',
+              isFrontEnd ? 'text-violet-500 hover:bg-violet-100' : 'text-teal-600 hover:bg-teal-50'
+            )}
+          >
+            {isFrontEnd ? '−FE' : '+FE'}
+          </button>
+        </div>
       )}
     </div>
   )

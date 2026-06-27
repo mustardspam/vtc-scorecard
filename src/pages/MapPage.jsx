@@ -2,15 +2,8 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { useMapData } from '../hooks/useMapData'
+import { ACM_PALETTE, buildAcmColorMap } from '../lib/acm-colors'
 import { MapPin } from 'lucide-react'
-
-const PALETTE = ['#087482', '#2196f3', '#f9a825', '#e91e63']
-
-function buildColorMap(managers) {
-  const map = {}
-  managers.forEach((m, i) => { map[m.id] = PALETTE[i % PALETTE.length] })
-  return map
-}
 
 function makeIcon(brand, color, opacity) {
   const isSL = brand?.toLowerCase().includes('starlight')
@@ -150,7 +143,7 @@ export default function MapPage() {
     if (!mapReady || loading) return
     markersRef.current.forEach(m => m.remove())
     markersRef.current = []
-    const colorMap = buildColorMap(managers)
+    const colorMap = buildAcmColorMap(managers)
     const managerNames = Object.fromEntries(managers.map(m => [m.id, m.full_name]))
     const isFiltered = coveredIds !== null
     communities.forEach(c => {
@@ -221,7 +214,7 @@ export default function MapPage() {
 
   const pinnedCount = communities.filter(c => c.lat && c.lng).length
   const unpinnedCount = communities.length - pinnedCount
-  const colorMap = useMemo(() => buildColorMap(managers), [managers])
+  const colorMap = useMemo(() => buildAcmColorMap(managers), [managers])
 
   function toggleManager(id) {
     setHiddenManagers(prev => {
@@ -267,7 +260,7 @@ export default function MapPage() {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
               {managers.map((m, i) => {
-                const color = PALETTE[i % PALETTE.length]
+                const color = ACM_PALETTE[i % ACM_PALETTE.length]
                 const isHidden = hiddenManagers.has(m.id)
                 const mineCount = communities.filter(c => c.area_manager_id === m.id && c.lat && c.lng).length
                 return (
@@ -324,7 +317,7 @@ export default function MapPage() {
               {stats.byManager.map((m, i) => (
                 <div key={m.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '12px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden' }}>
-                    <span style={{ width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0, background: PALETTE[i % PALETTE.length] }} />
+                    <span style={{ width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0, background: ACM_PALETTE[i % ACM_PALETTE.length] }} />
                     <span style={{ color: '#666', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.full_name}</span>
                   </div>
                   <span style={{ fontWeight: 600, marginLeft: '8px', flexShrink: 0, color: '#444' }}>
