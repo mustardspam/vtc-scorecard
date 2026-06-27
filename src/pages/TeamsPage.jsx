@@ -20,6 +20,8 @@ export default function TeamsPage() {
     removeCommunity,
     promoteToFrontEnd,
     demoteFromFrontEnd,
+    clearAllAssignments,
+    removeFromTeams,
   } = useTeamData()
 
   const [actionError, setActionError] = useState('')
@@ -73,11 +75,19 @@ export default function TeamsPage() {
     setActionError('')
   }
 
-  async function handlePlaceOnCommunity(communityId, communityName) {
+  async function handleToggleCommunity(communityId, communityName) {
     if (!canEdit || busy || !selectedBuilderId) return
     const builder = allBuilders.find(b => b.id === selectedBuilderId)
     if (!builder) return
-    if (builder.assignments.some(a => a.community_id === communityId)) return
+    const existing = builder.assignments.find(a => a.community_id === communityId)
+    if (existing) {
+      await runAction(
+        () => removeCommunity(selectedBuilderId, communityId),
+        `Removed ${builder.full_name || 'builder'} from ${communityName}`,
+        { builder_id: selectedBuilderId, community_id: communityId }
+      )
+      return
+    }
     await runAction(
       () => assignCommunity(selectedBuilderId, communityId),
       `Assigned ${builder.full_name || 'builder'} to ${communityName}`,
@@ -104,6 +114,28 @@ export default function TeamsPage() {
       `Removed ${selectedBuilder.full_name || 'builder'} from ACM assignment`,
       { builder_id: selectedBuilder.id }
     )
+  }
+
+  async function handleClearAllAssignments() {
+    if (!canEdit || busy || !selectedBuilder) return
+    if (!selectedBuilder.acm_id && selectedBuilder.assignments.length === 0) return
+    await runAction(
+      () => clearAllAssignments(selectedBuilder.id),
+      `Cleared all assignments for ${selectedBuilder.full_name || 'builder'}`,
+      { builder_id: selectedBuilder.id }
+    )
+  }
+
+  async function handleRemoveFromTeams() {
+    if (!canEdit || busy || !selectedBuilder) return
+    const label = selectedBuilder.full_name || selectedBuilder.email
+    if (!confirm(`Remove ${label} from Teams? They will no longer appear as a builder.`)) return
+    await runAction(
+      () => removeFromTeams(selectedBuilder.id),
+      `Removed ${label} from Teams`,
+      { builder_id: selectedBuilder.id }
+    )
+    setSelectedBuilderId(null)
   }
 
   async function handleRemoveCommunity(builder, communityId, communityName) {
@@ -141,7 +173,7 @@ export default function TeamsPage() {
           <h1 className="text-lg font-bold text-gray-900 truncate">Teams</h1>
           {canEdit && (
             <span className="hidden sm:inline text-[10px] text-gray-400 truncate">
-              Select a builder → click a community code to assign
+              Select a builder → click a community to assign or remove
             </span>
           )}
         </div>
@@ -157,29 +189,64 @@ export default function TeamsPage() {
       </div>
 
       {canEdit && selectedBuilder && (
-        <div className="flex items-center gap-2 px-2 py-1.5 bg-teal-50 border border-teal-200 rounded-lg text-[11px] text-teal-900 flex-shrink-0">
-          <span className="font-medium truncate">
-            Selected: {selectedBuilder.full_name || selectedBuilder.email}
-          </span>
-          <span className="text-teal-600 hidden sm:inline">— click a community box to place</span>
-          {selectedBuilder.acm_id && (
+        <div className="flex flex-col gap-1.5 px-2 py-1.5 bg-teal-50 border border-teal-200 rounded-lg text-[11px] text-teal-900 flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <span className="font-medium truncate">
+              Selected: {selectedBuilder.full_name || selectedBuilder.email}
+            </span>
+            <span className="text-teal-600 hidden sm:inline flex-shrink-0">
+              — click community to assign / remove
+            </span>
             <button
               type="button"
-              onClick={handleClearAcm}
-              disabled={busy}
-              className="ml-auto text-[10px] text-gray-500 hover:text-red-600 underline flex-shrink-0"
+              onClick={() => setSelectedBuilderId(null)}
+              className="p-0.5 text-teal-600 hover:text-teal-800 flex-shrink-0 ml-auto"
+              title="Clear selection (Esc)"
             >
-              Clear ACM
+              <X className="w-3.5 h-3.5" />
             </button>
-          )}
-          <button
-            type="button"
-            onClick={() => setSelectedBuilderId(null)}
-            className="p-0.5 text-teal-600 hover:text-teal-800 flex-shrink-0"
-            title="Clear selection (Esc)"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
+          </div>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            {selectedBuilder.assignments.map(a => (
+              <button
+                key={a.community_id}
+                type="button"
+                disabled={busy}
+                onClick={() => handleRemoveCommunity(selectedBuilder, a.community_id, a.community?.name)}
+                className="text-[10px] text-red-600 hover:text-red-800 underline"
+              >
+                Remove {a.community?.code || a.community?.name}
+              </button>
+            ))}
+            {(selectedBuilder.acm_id || selectedBuilder.assignments.length > 0) && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={handleClearAllAssignments}
+                className="text-[10px] text-gray-600 hover:text-gray-800 underline"
+              >
+                Clear all assignments
+              </button>
+            )}
+            {selectedBuilder.acm_id && !selectedBuilder.assignments.length && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={handleClearAcm}
+                className="text-[10px] text-gray-600 hover:text-gray-800 underline"
+              >
+                Clear ACM only
+              </button>
+            )}
+            <button
+              type="button"
+              disabled={busy}
+              onClick={handleRemoveFromTeams}
+              className="text-[10px] text-red-700 hover:text-red-900 font-medium"
+            >
+              Remove from Teams
+            </button>
+          </div>
         </div>
       )}
 
@@ -213,8 +280,9 @@ export default function TeamsPage() {
                 canEdit={canEdit}
                 busy={busy}
                 hasSelection={!!selectedBuilderId}
+                selectedBuilder={selectedBuilder}
                 onPlaceOnAcm={handlePlaceOnAcm}
-                onPlaceOnCommunity={handlePlaceOnCommunity}
+                onPlaceOnCommunity={handleToggleCommunity}
               />
             ))}
           </div>
@@ -241,6 +309,7 @@ function AcmRow({
   canEdit,
   busy,
   hasSelection,
+  selectedBuilder,
   onPlaceOnAcm,
   onPlaceOnCommunity,
 }) {
@@ -298,6 +367,7 @@ function AcmRow({
                 canEdit={canEdit}
                 busy={busy}
                 hasSelection={hasSelection}
+                selectedBuilder={selectedBuilder}
                 onPlace={() => onPlaceOnCommunity(c.id, c.name)}
               />
             ))}
@@ -315,37 +385,74 @@ function CommunitySlot({
   canEdit,
   busy,
   hasSelection,
+  selectedBuilder,
   onPlace,
 }) {
   const assigned = builders.filter(b => b.assignments.some(a => a.community_id === c.id))
   const label = c.code || c.name
+  const selectedHere = selectedBuilder?.assignments.some(a => a.community_id === c.id)
   const clickable = canEdit && hasSelection && !busy
+  const isRemove = clickable && selectedHere
 
   return (
     <button
       type="button"
-      title={clickable ? `Place selected builder in ${c.name}` : c.name}
+      title={
+        isRemove
+          ? `Remove ${selectedBuilder.full_name || 'builder'} from ${c.name}`
+          : clickable
+            ? `Assign ${selectedBuilder?.full_name || 'builder'} to ${c.name}`
+            : c.name
+      }
       disabled={!clickable}
       onClick={onPlace}
       className={cn(
-        'rounded border px-1.5 py-1 text-left transition-all min-h-[40px]',
+        'rounded border px-2 py-1.5 text-left transition-all min-h-[48px]',
         clickable && 'cursor-pointer hover:scale-[1.02] hover:shadow-sm active:scale-[0.98]',
         !clickable && 'cursor-default'
       )}
       style={{
-        borderColor: clickable && acmColor ? acmColor : acmColor ? `${acmColor}44` : undefined,
-        backgroundColor: clickable && acmColor ? `${acmColor}30` : 'rgba(255,255,255,0.85)',
-        boxShadow: clickable && acmColor ? `0 0 0 1px ${acmColor}55` : undefined,
+        borderColor: isRemove
+          ? '#dc2626'
+          : clickable && acmColor
+            ? acmColor
+            : acmColor
+              ? `${acmColor}44`
+              : undefined,
+        backgroundColor: isRemove
+          ? '#fef2f2'
+          : clickable && acmColor
+            ? `${acmColor}30`
+            : 'rgba(255,255,255,0.85)',
+        boxShadow: isRemove
+          ? '0 0 0 1px #fca5a5'
+          : clickable && acmColor
+            ? `0 0 0 1px ${acmColor}55`
+            : undefined,
       }}
     >
-      <div className="flex items-center gap-0.5">
-        <MapPin className="w-2.5 h-2.5 flex-shrink-0" style={{ color: acmColor || '#087482' }} />
-        <span className="text-[10px] font-semibold text-gray-800 truncate leading-tight">{label}</span>
+      <div className="flex items-center gap-1">
+        <MapPin className="w-3 h-3 flex-shrink-0" style={{ color: isRemove ? '#dc2626' : acmColor || '#087482' }} />
+        <span className="text-xs font-bold text-gray-900 truncate leading-tight">{label}</span>
       </div>
-      <div className="mt-0.5 truncate text-[9px] text-gray-500 leading-tight">
-        {assigned.length === 0
-          ? <span className="text-gray-300 italic">{clickable ? 'click to place' : '—'}</span>
-          : assigned.map(b => shortName(b)).join(', ')}
+      <div className="mt-1 leading-tight">
+        {isRemove ? (
+          <span className="text-[10px] italic font-semibold text-red-700">click to remove</span>
+        ) : assigned.length === 0 ? (
+          <span className="text-[10px] text-gray-400 italic">{clickable ? 'click to place' : '—'}</span>
+        ) : (
+          <div className="flex flex-wrap gap-0.5">
+            {assigned.map(b => (
+              <span
+                key={b.id}
+                className="inline-block text-[10px] font-semibold text-gray-900 bg-white px-1.5 py-0.5 rounded border border-gray-200 shadow-sm"
+                title={b.full_name || b.email}
+              >
+                {shortName(b)}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
     </button>
   )
@@ -371,7 +478,7 @@ function BuilderPanel({
         </p>
         {canEdit && (
           <p className="text-[9px] text-gray-400 mt-0.5 leading-tight">
-            Click to select, then click a community
+            Click to select · +FE = front-end
           </p>
         )}
       </div>
@@ -442,7 +549,12 @@ function BuilderTile({
         </div>
         {commLabels.length > 0 && (
           <div className="truncate text-[8px] text-teal-700 leading-tight mt-px">
-            {commLabels.join(' · ')}
+            {builder.assignments.map((a, i) => (
+              <span key={a.community_id}>
+                {i > 0 && ' · '}
+                {a.community?.code || a.community?.name}
+              </span>
+            ))}
           </div>
         )}
       </div>

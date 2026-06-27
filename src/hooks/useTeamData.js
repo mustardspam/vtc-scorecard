@@ -203,6 +203,43 @@ export function useTeamData() {
     await reload()
   }, [assignments, reload])
 
+  const clearAllAssignments = useCallback(async (builderId) => {
+    const { error: delErr } = await supabase
+      .from('builder_community_assignments')
+      .delete()
+      .eq('profile_id', builderId)
+    if (delErr) throw delErr
+    const { error: updErr } = await supabase
+      .from('profiles')
+      .update({
+        acm_id: null,
+        is_front_end_builder: false,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', builderId)
+    if (updErr) throw updErr
+    await reload()
+  }, [reload])
+
+  const removeFromTeams = useCallback(async (builderId) => {
+    const { error: delErr } = await supabase
+      .from('builder_community_assignments')
+      .delete()
+      .eq('profile_id', builderId)
+    if (delErr) throw delErr
+    const { error: updErr } = await supabase
+      .from('profiles')
+      .update({
+        is_builder: false,
+        acm_id: null,
+        is_front_end_builder: false,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', builderId)
+    if (updErr) throw updErr
+    await reload()
+  }, [reload])
+
   return {
     acms,
     builders,
@@ -219,5 +256,7 @@ export function useTeamData() {
     removeCommunity,
     promoteToFrontEnd,
     demoteFromFrontEnd,
+    clearAllAssignments,
+    removeFromTeams,
   }
 }
