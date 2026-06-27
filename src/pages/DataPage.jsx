@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { Search, ChevronDown, ChevronUp, Database, Trash2 } from 'lucide-react'
@@ -220,8 +220,6 @@ export default function DataPage() {
 
 function CategoryBadge({ vendorId, categoryName, categories, onCategoryChange, canEdit = true }) {
   const [editing, setEditing] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const selectRef = useRef(null)
 
   const chipStyle = categoryChipStyle(categoryName || '')
 
@@ -234,20 +232,17 @@ function CategoryBadge({ vendorId, categoryName, categories, onCategoryChange, c
   async function handleChange(e) {
     const cat = categories.find(c => c.name === e.target.value)
     if (!cat || cat.name === categoryName) { setEditing(false); return }
-    setSaving(true)
-    await onCategoryChange(vendorId, cat.id, cat.name)
-    setSaving(false)
     setEditing(false)
+    await onCategoryChange(vendorId, cat.id, cat.name)
   }
 
   if (editing) {
     return (
       <select
-        ref={selectRef}
         autoFocus
         defaultValue={categoryName || ''}
         onChange={handleChange}
-        onBlur={() => setEditing(false)}
+        onBlur={() => setTimeout(() => setEditing(false), 0)}
         onClick={e => e.stopPropagation()}
         className="glass-input text-xs rounded-full px-2 py-0.5 cursor-pointer"
         style={{ minWidth: 110 }}
@@ -267,7 +262,7 @@ function CategoryBadge({ vendorId, categoryName, categories, onCategoryChange, c
       className="glass-category-chip cursor-pointer transition-opacity hover:opacity-80"
       style={chipStyle}
     >
-      {saving ? '…' : (categoryName || 'No category')}
+      {categoryName || 'No category'}
     </button>
   )
 }
@@ -396,7 +391,7 @@ function VendorList({ vendors, categories, onCategoryChange, selectedIds, onTogg
                       <p className="text-xs font-medium text-gray-500 mb-1.5">JC Vendor IDs</p>
                       <div className="flex gap-2 flex-wrap">
                         {brandRefs.map(r => (
-                          <div key={r.jc_vendor_id} className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs">
+                          <div key={`${r.brand}:${r.jc_vendor_id}`} className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs">
                             <span className={`font-medium ${r.brand === 'Starlight' ? 'text-yellow-700' : 'text-blue-700'}`}>
                               {r.brand}
                             </span>
