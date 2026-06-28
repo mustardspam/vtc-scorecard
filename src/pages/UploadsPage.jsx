@@ -9,9 +9,19 @@ const FILE_TYPES = [
   { value: 'schedule', label: 'Schedule Data', description: 'Monthly schedule adherence report' },
   { value: 'safety', label: 'Safety Data', description: 'Safety incident records' },
   { value: 'rework', label: 'Rework / Backcharges', description: 'Backcharge records with costs' },
-  { value: 'vendor_master', label: 'Vendor Master List', description: 'Master list of vendors/trades' },
   { value: 'jc_vendor_report', label: 'JC Vendor Report', description: 'JC Preferred Vendors pivot report (auto-parses vendors + communities)' },
 ]
+
+/** Color-coded freshness badge for "days since last upload". */
+function uploadFreshness(days) {
+  if (days == null) return { label: 'No uploads yet', bg: '#f3f4f6', dot: '#9ca3af', text: '#6b7280' }
+  const ago = days === 0 ? 'today' : days === 1 ? '1 day ago' : `${days} days ago`
+  const label = `Last upload: ${ago}`
+  if (days <= 14) return { label, bg: '#dcfce7', dot: '#16a34a', text: '#15803d' }   // green
+  if (days <= 27) return { label, bg: '#fef9c3', dot: '#eab308', text: '#a16207' }   // yellow
+  if (days <= 30) return { label, bg: '#ffedd5', dot: '#f97316', text: '#c2410c' }   // orange
+  return { label, bg: '#fee2e2', dot: '#dc2626', text: '#b91c1c' }                    // red
+}
 
 const REQUIRED_FIELDS = {
   schedule: ['vendor_name', 'total_jobs', 'no_shows'],
@@ -57,6 +67,7 @@ export default function UploadsPage() {
   const [importProgress, setImportProgress] = useState('')
   const [selectedUnmatched, setSelectedUnmatched] = useState(new Set())
   const [deleting, setDeleting] = useState(null)
+  const [lastUploads, setLastUploads] = useState({})
   const { user, isManager, isAdmin } = useAuth()
   const canUpload = isManager()
 
@@ -64,8 +75,49 @@ export default function UploadsPage() {
     let mounted = true
     loadVendors()
     loadHistory(mounted)
+    loadLastUploads(mounted)
     return () => { mounted = false }
   }, [])
+
+  // Most recent upload date per file type, for the freshness badges on the type tiles.
+  async function loadLastUploads(mounted = true) {
+    try {
+      const dataTypes = ['schedule', 'safety', 'rework']
+      const queries = dataTypes.map(t =>
+        supabase.from('import_batches')
+          .select('created_at')
+          .eq('file_type', t)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+      )
+      // JC Vendor Report is stored as file_type 'other' with column_mapping.source = 'jc_vendor_report'
+      queries.push(
+        supabase.from('import_batches')
+          .select('created_at')
+          .eq('column_mapping->>source', 'jc_vendor_report')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+      )
+
+      const results = await Promise.all(queries)
+      const keys = [...dataTypes, 'jc_vendor_report']
+      const map = {}
+      results.forEach((res, i) => {
+        map[keys[i]] = res.data?.created_at || null
+      })
+      if (mounted) setLastUploads(map)
+    } catch (err) {
+      console.error('loadLastUploads error:', err)
+    }
+  }
+
+  function daysSince(dateStr) {
+    if (!dateStr) return null
+    const ms = Date.now() - new Date(dateStr).getTime()
+    return Math.max(0, Math.floor(ms / 86400000))
+  }
 
   async function loadVendors() {
     try {
@@ -167,6 +219,7 @@ export default function UploadsPage() {
 
       await logActivity('import_deleted', `Deleted import: ${batch.uploaded_files?.original_filename}`, { batch_id: batchId, file_type: batch.file_type })
       await loadHistory()
+      loadLastUploads()
     } catch (err) {
       console.error('Delete import error:', err)
       alert('Failed to delete import: ' + err.message)
@@ -381,6 +434,7 @@ export default function UploadsPage() {
 
       setStep('done')
       loadHistory()
+      loadLastUploads()
     } catch (err) {
       alert('Import error: ' + err.message)
     } finally {
@@ -624,6 +678,7 @@ export default function UploadsPage() {
       setStep('done')
       loadHistory()
       loadVendors()
+      loadLastUploads()
     } catch (err) {
       setImportError(err.message)
     } finally {
@@ -762,19 +817,29 @@ export default function UploadsPage() {
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-            {FILE_TYPES.map(ft => (
-              <button
-                key={ft.value}
-                onClick={() => setFileType(ft.value)}
-                className={`p-3 rounded-xl border text-left transition-colors glass-panel ${
-                  fileType === ft.value ? 'ring-2' : ''
-                }`}
-                style={fileType === ft.value ? { borderColor: 'var(--g-accent)', boxShadow: '0 0 0 1px var(--g-accent)' } : { borderColor: 'var(--g-line)' }}
-              >
-                <p className="text-sm font-medium">{ft.label}</p>
-                <p className="text-xs text-gray-500 mt-0.5">{ft.description}</p>
-              </button>
-            ))}
+            {FILE_TYPES.map(ft => {
+              const fresh = uploadFreshness(daysSince(lastUploads[ft.value]))
+              return (
+                <button
+                  key={ft.value}
+                  onClick={() => setFileType(ft.value)}
+                  className={`p-3 rounded-xl border text-left transition-colors glass-panel ${
+                    fileType === ft.value ? 'ring-2' : ''
+                  }`}
+                  style={fileType === ft.value ? { borderColor: 'var(--g-accent)', boxShadow: '0 0 0 1px var(--g-accent)' } : { borderColor: 'var(--g-line)' }}
+                >
+                  <p className="text-sm font-medium">{ft.label}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">{ft.description}</p>
+                  <span
+                    className="inline-flex items-center gap-1.5 mt-2 px-2 py-0.5 rounded-full text-xs font-medium"
+                    style={{ backgroundColor: fresh.bg, color: fresh.text }}
+                  >
+                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: fresh.dot }} />
+                    {fresh.label}
+                  </span>
+                </button>
+              )
+            })}
           </div>
 
           {/* Brand selector for JC reports */}
