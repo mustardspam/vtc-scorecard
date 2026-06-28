@@ -12,11 +12,21 @@ const FILE_TYPES = [
   { value: 'jc_vendor_report', label: 'JC Vendor Report', description: 'JC Preferred Vendors pivot report (auto-parses vendors + communities)' },
 ]
 
+/** Upload cadence per type: 'weekly' = green ≤7d / red after; default = tiered. */
+const UPLOAD_CADENCE = {
+  safety: 'weekly',
+  rework: 'weekly',
+}
+
 /** Color-coded freshness badge for "days since last upload". */
-function uploadFreshness(days) {
+function uploadFreshness(days, cadence) {
   if (days == null) return { label: 'No uploads yet', bg: '#f3f4f6', dot: '#9ca3af', text: '#6b7280' }
   const ago = days === 0 ? 'today' : days === 1 ? '1 day ago' : `${days} days ago`
   const label = `Last upload: ${ago}`
+  if (cadence === 'weekly') {
+    if (days <= 7) return { label, bg: '#dcfce7', dot: '#16a34a', text: '#15803d' }  // green
+    return { label, bg: '#fee2e2', dot: '#dc2626', text: '#b91c1c' }                  // red
+  }
   if (days <= 14) return { label, bg: '#dcfce7', dot: '#16a34a', text: '#15803d' }   // green
   if (days <= 27) return { label, bg: '#fef9c3', dot: '#eab308', text: '#a16207' }   // yellow
   if (days <= 30) return { label, bg: '#ffedd5', dot: '#f97316', text: '#c2410c' }   // orange
@@ -818,7 +828,7 @@ export default function UploadsPage() {
 
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
             {FILE_TYPES.map(ft => {
-              const fresh = uploadFreshness(daysSince(lastUploads[ft.value]))
+              const fresh = uploadFreshness(daysSince(lastUploads[ft.value]), UPLOAD_CADENCE[ft.value])
               return (
                 <button
                   key={ft.value}
