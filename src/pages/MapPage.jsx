@@ -38,6 +38,18 @@ function haversineKm(lat1, lng1, lat2, lng2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
 
+// Sanity bounding box for the greater Houston service area. A coordinate outside
+// this box is almost certainly bad data — a flipped longitude sign, a swapped
+// lat/lng pair, or a typo — and would silently blow up the spread stats, so we
+// flag it instead of trusting it. Generous enough to cover every outlying suburb.
+const SANE_BOX = { latMin: 28.0, latMax: 31.5, lngMin: -97.5, lngMax: -93.5 }
+function isSaneCoord(lat, lng) {
+  const a = +lat, n = +lng
+  return Number.isFinite(a) && Number.isFinite(n) &&
+    a >= SANE_BOX.latMin && a <= SANE_BOX.latMax &&
+    n >= SANE_BOX.lngMin && n <= SANE_BOX.lngMax
+}
+
 export default function MapPage() {
   const { communities, vendors, categories, managers, assignments, loading, assignmentsLoading, error } = useMapData()
 
@@ -115,7 +127,9 @@ export default function MapPage() {
   // Spread stats — only computed when filtering by a specific vendor
   const spreadStats = useMemo(() => {
     if (!selectedVendorId || !coveredIds) return null
-    const covered = communities.filter(c => c.lat && c.lng && coveredIds.has(c.id))
+    const mapped = communities.filter(c => c.lat && c.lng && coveredIds.has(c.id))
+    // Drop bad coordinates so one corrupt row can't blow up the spread stats.
+    const covered = mapped.filter(c => isSaneCoord(c.lat, c.lng))
     if (covered.length < 2) return { covered, maxMi: 0, avgMi: 0, level: 'Low', levelColor: '#087482', farthestA: null, farthestB: null }
 
     let maxDist = 0, farthestA = null, farthestB = null
@@ -148,6 +162,7 @@ export default function MapPage() {
     const isFiltered = coveredIds !== null
     communities.forEach(c => {
       if (!c.lat || !c.lng) return
+      if (!isSaneCoord(c.lat, c.lng)) return // bad data — surfaced via the header warning instead
       if (c.area_manager_id && hiddenManagers.has(c.area_manager_id)) return
       const color = colorMap[c.area_manager_id] ?? '#9e9e9e'
       const isCovered = !isFiltered || coveredIds.has(c.id)
@@ -214,6 +229,12 @@ export default function MapPage() {
 
   const pinnedCount = communities.filter(c => c.lat && c.lng).length
   const unpinnedCount = communities.length - pinnedCount
+  // Pinned communities whose coordinates fall outside the Houston service area —
+  // bad data that would otherwise distort spread stats and place pins off-map.
+  const badCoordCommunities = useMemo(
+    () => communities.filter(c => c.lat && c.lng && !isSaneCoord(c.lat, c.lng)),
+    [communities]
+  )
   const colorMap = useMemo(() => buildAcmColorMap(managers), [managers])
 
   function toggleManager(id) {
@@ -245,6 +266,11 @@ export default function MapPage() {
             {!loading && unpinnedCount > 0 ? ` · ${unpinnedCount} unmapped` : ''}
             {!loading && assignmentsLoading ? ' · loading coverage…' : ''}
           </p>
+          {!loading && badCoordCommunities.length > 0 && (
+            <p style={{ fontSize: '11px', color: '#c0392b', marginTop: '6px', fontWeight: 600, lineHeight: 1.4 }}>
+              ⚠ {badCoordCommunities.length} {badCoordCommunities.length === 1 ? 'community has' : 'communities have'} invalid coordinates and {badCoordCommunities.length === 1 ? 'is' : 'are'} excluded from the map: {badCoordCommunities.map(c => c.code || c.name).join(', ')}. Fix in Admin → Community Map.
+            </p>
+          )}
           {error && (
             <p style={{ fontSize: '11px', color: '#c0392b', marginTop: '4px' }}>{error}</p>
           )}
