@@ -258,11 +258,12 @@ function buildEmail({ scores, feedback, weights, priorScores, priorSnapshotName 
   return lines.join('\n')
 }
 
-// Resend caps each email's `to` field at 50 addresses. Send in batches so the
-// digest scales past 50 recipients. Each recipient is placed in `bcc` (with a
-// single `to` of the from-address) so recipients can't see each other's emails —
-// important since recipients span competing builders.
-const RESEND_MAX_RECIPIENTS = 50
+// Resend caps the combined to + cc + bcc recipients at 50 per email. Send in
+// batches so the digest scales past that. Each recipient is placed in `bcc`
+// (with a single `to` of the from-address) so recipients can't see each other's
+// emails — important since recipients span competing builders. The `to` slot
+// counts toward the 50, so cap bcc at 49.
+const RESEND_MAX_RECIPIENTS = 49
 
 function chunk(arr, size) {
   const out = []
