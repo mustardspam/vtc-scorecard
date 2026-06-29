@@ -14,7 +14,7 @@ import {
 
 const CHUNK = 500
 const LS_KEY = 'permitPulse.filters'
-const SIGMA_OPTIONS = [1.5, 2, 2.5]
+const SIGMA_OPTIONS = [0.5, 1, 1.5, 2, 2.5]
 
 // anomaly palette
 const C_HIGH = { bar: '#d97b16', text: '#8a5a08', soft: '#f8ecc9' }   // surge
