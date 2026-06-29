@@ -258,15 +258,38 @@ function buildEmail({ scores, feedback, weights, priorScores, priorSnapshotName 
   return lines.join('\n')
 }
 
-async function sendEmail(subject, text, recipients) {
+// Resend caps each email's `to` field at 50 addresses. Send in batches so the
+// digest scales past 50 recipients. Each recipient is placed in `bcc` (with a
+// single `to` of the from-address) so recipients can't see each other's emails —
+// important since recipients span competing builders.
+const RESEND_MAX_RECIPIENTS = 50
+
+function chunk(arr, size) {
+  const out = []
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size))
+  return out
+}
+
+async function sendBatch(subject, text, recipients) {
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from: FROM_ADDRESS, to: recipients, subject, text }),
+    body: JSON.stringify({ from: FROM_ADDRESS, to: FROM_ADDRESS, bcc: recipients, subject, text }),
   })
   const data = await res.json()
   if (!res.ok) throw new Error(`Resend error ${res.status}: ${JSON.stringify(data)}`)
   return data
+}
+
+async function sendEmail(subject, text, recipients) {
+  const batches = chunk(recipients, RESEND_MAX_RECIPIENTS)
+  const ids = []
+  for (let i = 0; i < batches.length; i++) {
+    const result = await sendBatch(subject, text, batches[i])
+    console.log(`Batch ${i + 1}/${batches.length} sent (${batches[i].length} recipients): ${result.id}`)
+    ids.push(result.id)
+  }
+  return { id: ids.join(', ') }
 }
 
 async function main() {
