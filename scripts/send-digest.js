@@ -93,13 +93,133 @@ async function loadData() {
 
   console.log(`${allScores.length} total vendors, ${filteredScores.length} meet minimum data requirements`)
 
+  const permit = await loadPermitData()
+
   return {
     scores: filteredScores,
     feedback: feedbackRes.data || [],
     weights: weightsRes.data,
     priorScores,
     priorSnapshotName: snapshots[0]?.name || null,
+    permit,
   }
+}
+
+// ---- Permit outlook (workload leading indicator) ----------------------------
+// Loads the most recent permit import + its normalized series. The latest import
+// carries the full trailing window, so it is the source of truth for the brief.
+async function loadPermitData() {
+  try {
+    const { data: imports } = await supabase
+      .from('permit_imports')
+      .select('id, source_label, report_month')
+      .order('report_month', { ascending: false })
+      .order('created_at', { ascending: false })
+      .limit(1)
+    const latest = imports?.[0]
+    if (!latest) return null
+
+    const { data: series } = await supabase
+      .from('permit_series')
+      .select('scope_type, scope_name, period_month, permits')
+      .eq('import_id', latest.id)
+    if (!series?.length) return null
+    return { meta: latest, series }
+  } catch (err) {
+    console.warn('loadPermitData failed (non-fatal):', err.message)
+    return null
+  }
+}
+
+function fmtMonthLong(monthStr) {
+  const [y, m] = String(monthStr).split('-').map(Number)
+  const names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+  return `${names[m - 1]} ${y}`
+}
+
+function pctStr(v) {
+  if (v == null || !Number.isFinite(v)) return ''
+  return `${v >= 0 ? '+' : ''}${(v * 100).toFixed(0)}%`
+}
+
+// Trailing-12 / prior-12 / YoY for one scope (total | region | builder).
+function summarizePermitScope(series, scopeType) {
+  const months = [...new Set(series.map(s => s.period_month))].sort()
+  const last12 = new Set(months.slice(-12))
+  const prior12 = new Set(months.slice(-24, -12))
+  const byName = {}
+  for (const r of series) {
+    if (r.scope_type !== scopeType) continue
+    const e = byName[r.scope_name] || (byName[r.scope_name] = { name: r.scope_name, t12: 0, p12: 0 })
+    if (last12.has(r.period_month)) e.t12 += r.permits
+    else if (prior12.has(r.period_month)) e.p12 += r.permits
+  }
+  return Object.values(byName).map(e => ({
+    ...e,
+    yoy: e.p12 > 0 ? (e.t12 / e.p12) - 1 : null,
+  }))
+}
+
+// Latest-month deviation vs the normal band — the "out of the norm" signal that
+// tells trade managers to add or claw back capacity. Mirrors the app's σ method.
+function permitDeviation(series) {
+  const months = [...new Set(series.map(s => s.period_month))].sort()
+  const byMonth = new Map(series.filter(s => s.scope_type === 'total').map(s => [s.period_month, s.permits]))
+  const arr = months.map(mo => byMonth.get(mo) || 0)
+  if (arr.length < 5) return null
+  const base = arr.slice(0, -1)
+  const mu = base.reduce((a, x) => a + x, 0) / base.length
+  const sd = Math.sqrt(base.reduce((a, x) => a + (x - mu) ** 2, 0) / (base.length - 1))
+  if (!sd) return null
+  const latest = arr[arr.length - 1]
+  return { month: months[months.length - 1], latest, mean: mu, z: (latest - mu) / sd }
+}
+
+function buildPermitBrief(permit) {
+  if (!permit) return null
+  const { series, meta } = permit
+  const total = summarizePermitScope(series, 'total')[0]
+  if (!total || total.t12 === 0) return null
+
+  const momentum = total.p12 > 0 ? Math.min(2, Math.max(0.5, total.t12 / total.p12)) : 1
+  const forecast12 = Math.round(total.t12 * momentum)
+
+  const regions = summarizePermitScope(series, 'region').filter(r => r.t12 >= 1000 && r.yoy != null)
+  regions.sort((a, b) => b.yoy - a.yoy)
+  const strongest = regions[0]
+  const softest = regions[regions.length - 1]
+
+  const builders = summarizePermitScope(series, 'builder').filter(b => b.t12 >= 500 && b.yoy != null)
+  builders.sort((a, b) => b.yoy - a.yoy)
+  const movers = builders.slice(0, 2)
+
+  const lines = []
+  lines.push('PERMIT PULSE — TRADE-BASE CAPACITY')
+  lines.push('-'.repeat(40))
+  lines.push(`Through ${fmtMonthLong(meta.report_month)}: ${total.t12.toLocaleString()} permits in the trailing 12 months (${pctStr(total.yoy) || 'n/a'} YoY). Forecast next 12 months ~${forecast12.toLocaleString()}.`)
+
+  // Deviation / anomaly call-out — the actionable signal.
+  const dev = permitDeviation(series)
+  if (dev) {
+    const sigmas = Math.abs(dev.z).toFixed(1)
+    if (dev.z >= 2) {
+      lines.push(`SURGE: ${fmtMonthLong(dev.month)} starts came in ${dev.latest.toLocaleString()} — ${sigmas}σ ABOVE normal. Book more trade capacity now before crews get stretched and walk.`)
+    } else if (dev.z <= -2) {
+      lines.push(`SLOWDOWN: ${fmtMonthLong(dev.month)} starts came in ${dev.latest.toLocaleString()} — ${sigmas}σ BELOW normal. Renegotiate / claw back trade commitments before the gap hits site.`)
+    } else {
+      lines.push(`Latest month (${fmtMonthLong(dev.month)}): ${dev.latest.toLocaleString()} starts, ${dev.z >= 0 ? '+' : '-'}${sigmas}σ vs normal (within range).`)
+    }
+  }
+
+  if (strongest && softest && strongest.name !== softest.name) {
+    lines.push(`Strongest region: ${strongest.name} ${strongest.t12.toLocaleString()} (${pctStr(strongest.yoy)}); softest: ${softest.name} ${softest.t12.toLocaleString()} (${pctStr(softest.yoy)}).`)
+  }
+  if (movers.length > 0) {
+    lines.push(`Builder momentum: ${movers.map(m => `${m.name} ${m.t12.toLocaleString()} (${pctStr(m.yoy)})`).join(', ')} ramping up.`)
+  }
+  lines.push('A permit today is trade work over the next ~6-9 months — data lags ~1 month but still leads on-site demand. Filter by your peer builders + region in the app for a sharper read.')
+  lines.push('')
+  return lines.join('\n')
 }
 
 function buildExecutiveSummary({ scores, feedback, priorScores, priorSnapshotName }) {
@@ -178,7 +298,7 @@ function buildExecutiveSummary({ scores, feedback, priorScores, priorSnapshotNam
   return lines.join('\n')
 }
 
-function buildEmail({ scores, feedback, weights, priorScores, priorSnapshotName }) {
+function buildEmail({ scores, feedback, weights, priorScores, priorSnapshotName, permit }) {
   const valid = scores.filter(s => s.weighted_total != null)
   const tierCounts = { Good: 0, Watch: 0, Probation: 0, Critical: 0 }
   for (const s of valid) { const t = getTier(Number(s.weighted_total)); if (t) tierCounts[t]++ }
@@ -203,6 +323,9 @@ function buildEmail({ scores, feedback, weights, priorScores, priorSnapshotName 
 
   const summary = buildExecutiveSummary({ scores, feedback, priorScores, priorSnapshotName })
   if (summary) lines.push(summary)
+
+  const permitBrief = buildPermitBrief(permit)
+  if (permitBrief) lines.push(permitBrief)
 
   lines.push('VENDOR/TRADE SUMMARY')
   lines.push('-'.repeat(40))

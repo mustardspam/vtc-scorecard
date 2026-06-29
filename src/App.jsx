@@ -46,6 +46,8 @@ const MapPage = lazy(() => import('./pages/MapPage'))
 
 const TeamsPage = lazy(() => import('./pages/TeamsPage'))
 
+const PermitsPage = lazy(() => import('./pages/PermitsPage'))
+
 
 
 function LazyPage({ children }) {
@@ -117,6 +119,8 @@ export default function App() {
         <Route path="/teams" element={<LazyPage><TeamsPage /></LazyPage>} />
 
         <Route path="/map" element={<LazyPage><MapPage /></LazyPage>} />
+
+        <Route path="/permits" element={<LazyPage><PermitsPage /></LazyPage>} />
 
         <Route path="/digest" element={<LazyPage><DigestPage /></LazyPage>} />
 

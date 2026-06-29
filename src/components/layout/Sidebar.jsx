@@ -23,6 +23,7 @@ const navItems = [
   { to: '/community', icon: MapPin, label: 'Communities', roles: ALL_STAFF },
   { to: '/teams', icon: Users, label: 'Teams', roles: ALL_STAFF },
   { to: '/map', icon: Map, label: 'Coverage Map', roles: ALL_STAFF },
+  { to: '/permits', icon: Activity, label: 'Permit Pulse', roles: ALL_STAFF },
   { to: '/snapshots', icon: Camera, label: 'Snapshots', roles: ALL_STAFF },
   { to: '/activity', icon: Activity, label: 'Activity', roles: ALL_STAFF },
   { to: '/digest', icon: Mail, label: 'Digest Email', roles: ALL_STAFF },
