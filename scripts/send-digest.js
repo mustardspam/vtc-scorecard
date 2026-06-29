@@ -24,9 +24,31 @@ function getTier(score) {
 }
 
 async function loadRecipients() {
-  const { data } = await supabase.from('system_config').select('value').eq('key', 'digest_recipients').single()
-  if (!data?.value) return []
-  try { return JSON.parse(data.value) } catch { return [] }
+  // Recipients = every active user (auto-enrolled on signup) + any manually
+  // added external addresses from system_config.digest_recipients.
+  const [profilesRes, configRes] = await Promise.all([
+    supabase.from('profiles').select('email').eq('is_active', true),
+    supabase.from('system_config').select('value').eq('key', 'digest_recipients').single(),
+  ])
+
+  const set = new Set()
+
+  for (const p of (profilesRes.data || [])) {
+    const email = (p.email || '').trim().toLowerCase()
+    if (email.includes('@')) set.add(email)
+  }
+
+  let manual = []
+  const raw = configRes.data?.value
+  if (raw) {
+    try { manual = typeof raw === 'string' ? JSON.parse(raw) : raw } catch { manual = [] }
+  }
+  for (const e of (Array.isArray(manual) ? manual : [])) {
+    const email = String(e || '').trim().toLowerCase()
+    if (email.includes('@')) set.add(email)
+  }
+
+  return [...set]
 }
 
 async function loadData() {

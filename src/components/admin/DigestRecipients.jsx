@@ -77,7 +77,7 @@ export default function DigestRecipients() {
           <Mail className="w-4 h-4 text-teal-600" />
           Digest Email Recipients
         </h3>
-        <p className="text-xs text-gray-500 mt-0.5">These addresses receive the automated weekly digest every Monday at 8am ET.</p>
+        <p className="text-xs text-gray-500 mt-0.5">Every signed-in user automatically receives the weekly digest (sent Mondays at 8am ET). Use the box below only to add <span className="font-medium">extra</span> external addresses that don't have an account.</p>
       </div>
 
       <div className="flex gap-2">
