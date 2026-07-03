@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { supabase } from '../../lib/supabase'
-import { X, Printer } from 'lucide-react'
+import { X, Printer, Paperclip } from 'lucide-react'
 import { tierPillStyle, tierValueColor } from '../../lib/design/tokens'
 import { formatJcVendorIds } from '../../lib/formatJcVendorIds'
 import { useLoadGuard } from '../../hooks/useLoadGuard'
@@ -78,7 +78,7 @@ async function fetchVendorReportData(vendorId) {
       .limit(24),
     supabase
       .from('builder_feedback')
-      .select('category, severity, points, description, submitted_at, communities(name, code)')
+      .select('category, severity, points, description, submitted_at, evidence_photos, communities(name, code)')
       .eq('vendor_id', vendorId)
       .eq('is_approved', true)
       .order('submitted_at', { ascending: false })
@@ -386,6 +386,11 @@ export default function VendorReportCard({ scoreRow, getTier, onClose }) {
                                 <span className="text-xs font-mono text-gray-500">{f.points} pts</span>
                                 {communityCode && (
                                   <span className="text-xs font-mono text-gray-400">{communityCode}</span>
+                                )}
+                                {Array.isArray(f.evidence_photos) && f.evidence_photos.length > 0 && (
+                                  <span className="flex items-center gap-0.5 text-xs text-gray-400" title={`${f.evidence_photos.length} attachment${f.evidence_photos.length === 1 ? '' : 's'}`}>
+                                    <Paperclip className="w-3 h-3" />{f.evidence_photos.length}
+                                  </span>
                                 )}
                               </div>
                               <span className="text-xs text-gray-400 whitespace-nowrap">

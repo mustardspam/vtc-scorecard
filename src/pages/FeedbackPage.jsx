@@ -4,6 +4,7 @@ import { useAuth } from '../hooks/useAuth'
 import { logActivity } from '../hooks/useActivityLog'
 import { CheckCircle, XCircle, Search, MessageSquare, X } from 'lucide-react'
 import { cn } from '../lib/cn'
+import EvidenceGallery from '../components/feedback/EvidenceGallery'
 
 const FILTERS = [
   { value: 'pending', label: 'Pending' },
@@ -190,6 +191,7 @@ export default function FeedbackPage() {
                       <span>{new Date(f.submitted_at).toLocaleString()}</span>
                     </div>
                     {f.review_notes && <p className="text-xs mt-2 italic" style={{ color: 'var(--g-dim)' }}>Note: {f.review_notes}</p>}
+                    <EvidenceGallery photos={f.evidence_photos} />
                   </div>
                   {!f.reviewed_at && canReview && (
                     <div className="flex items-center gap-2 shrink-0">

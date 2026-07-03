@@ -1,8 +1,18 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { logActivity } from '../hooks/useActivityLog'
-import { MessageSquare, CheckCircle, Clock, Send, ThumbsUp, AlertTriangle } from 'lucide-react'
+import { MessageSquare, CheckCircle, Clock, Send, ThumbsUp, AlertTriangle, Paperclip, X, FileText, Image as ImageIcon } from 'lucide-react'
+
+const MAX_FILES = 5
+const MAX_FILE_BYTES = 10 * 1024 * 1024 // 10 MB per file
+const ACCEPTED_TYPES = 'image/*,application/pdf'
+
+function formatBytes(bytes) {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
 
 export default function SubmitFeedbackPage() {
   const { user, profile } = useAuth()
@@ -20,9 +30,11 @@ export default function SubmitFeedbackPage() {
     lot_or_address: '',
     description: '',
   })
+  const [files, setFiles] = useState([])
   const [submitting, setSubmitting] = useState(false)
   const [success, setSuccess] = useState(false)
   const [error, setError] = useState('')
+  const fileInputRef = useRef(null)
 
   useEffect(() => {
     let mounted = true
@@ -70,12 +82,63 @@ export default function SubmitFeedbackPage() {
     form.lot_or_address.trim() &&
     form.description.trim()
 
+  function handleFilesSelected(e) {
+    const picked = Array.from(e.target.files || [])
+    if (fileInputRef.current) fileInputRef.current.value = '' // allow re-selecting the same file
+    setError('')
+    setFiles(prev => {
+      const next = [...prev]
+      for (const file of picked) {
+        if (next.length >= MAX_FILES) {
+          setError(`You can attach at most ${MAX_FILES} files.`)
+          break
+        }
+        if (file.size > MAX_FILE_BYTES) {
+          setError(`"${file.name}" is larger than ${formatBytes(MAX_FILE_BYTES)} and was skipped.`)
+          continue
+        }
+        // Skip exact duplicates by name+size
+        if (next.some(f => f.name === file.name && f.size === file.size)) continue
+        next.push(file)
+      }
+      return next
+    })
+  }
+
+  function removeFile(index) {
+    setFiles(prev => prev.filter((_, i) => i !== index))
+  }
+
   async function handleSubmit(e) {
     e.preventDefault()
     if (!isValid) return
     setSubmitting(true)
     setError('')
+    const uploadedPaths = []
     try {
+      // Upload any attached evidence to storage first
+      let evidencePhotos = null
+      if (files.length > 0) {
+        const uploaded = []
+        for (const file of files) {
+          const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_')
+          const storagePath = `feedback/${user.id}/${Date.now()}_${safeName}`
+          const { data: up, error: upErr } = await supabase.storage
+            .from('uploads')
+            .upload(storagePath, file, { contentType: file.type || undefined })
+          if (upErr) throw new Error(`Failed to upload "${file.name}": ${upErr.message}`)
+          const path = up?.path || storagePath
+          uploadedPaths.push(path)
+          uploaded.push({
+            path,
+            name: file.name,
+            size: file.size,
+            type: file.type || null,
+          })
+        }
+        evidencePhotos = uploaded
+      }
+
       const { error: insertError } = await supabase.from('builder_feedback').insert({
         submitted_by: user.id,
         construction_manager_id: form.construction_manager_id || null,
@@ -86,6 +149,7 @@ export default function SubmitFeedbackPage() {
         points: points ?? 0,
         lot_or_address: form.lot_or_address.trim(),
         description: form.description.trim(),
+        evidence_photos: evidencePhotos,
       })
       if (insertError) throw insertError
 
@@ -96,9 +160,14 @@ export default function SubmitFeedbackPage() {
 
       setSuccess(true)
       setForm({ construction_manager_id: '', vendor_id: '', community_id: '', category: '', severity: '', lot_or_address: '', description: '' })
+      setFiles([])
       loadData(true)
       setTimeout(() => setSuccess(false), 4000)
     } catch (err) {
+      // Clean up any files uploaded before the failure so they don't orphan in storage
+      if (uploadedPaths.length > 0) {
+        supabase.storage.from('uploads').remove(uploadedPaths).catch(() => {})
+      }
       setError(err.message)
     } finally {
       setSubmitting(false)
@@ -279,13 +348,62 @@ export default function SubmitFeedbackPage() {
             </p>
           </div>
 
+          {/* Attachments */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Photos / Attachments <span className="text-gray-400 font-normal">(optional)</span>
+            </label>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept={ACCEPTED_TYPES}
+              multiple
+              onChange={handleFilesSelected}
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={files.length >= MAX_FILES}
+              className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              <Paperclip className="w-4 h-4" />
+              Add photos or PDFs
+            </button>
+            <p className="text-xs text-gray-400 mt-1">
+              Up to {MAX_FILES} files, {formatBytes(MAX_FILE_BYTES)} each. Images and PDFs.
+            </p>
+
+            {files.length > 0 && (
+              <ul className="mt-3 space-y-2">
+                {files.map((file, i) => (
+                  <li key={`${file.name}-${file.size}-${i}`} className="flex items-center gap-3 p-2 rounded-lg border border-gray-100 bg-gray-50">
+                    {file.type?.startsWith('image/')
+                      ? <ImageIcon className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                      : <FileText className="w-4 h-4 text-gray-400 flex-shrink-0" />}
+                    <span className="text-sm text-gray-700 truncate flex-1 min-w-0">{file.name}</span>
+                    <span className="text-xs text-gray-400 flex-shrink-0">{formatBytes(file.size)}</span>
+                    <button
+                      type="button"
+                      onClick={() => removeFile(i)}
+                      className="text-gray-400 hover:text-red-500 flex-shrink-0"
+                      aria-label={`Remove ${file.name}`}
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
           <button
             type="submit"
             disabled={submitting || !isValid}
             className="flex items-center gap-2 px-6 py-2.5 glass-btn-primary font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             <Send className="w-4 h-4" />
-            {submitting ? 'Submitting...' : 'Submit Feedback'}
+            {submitting ? (files.length > 0 ? 'Uploading...' : 'Submitting...') : 'Submit Feedback'}
           </button>
         </form>
       </div>
@@ -319,9 +437,14 @@ export default function SubmitFeedbackPage() {
                     </span>
                   </div>
                   <p className="text-xs text-gray-500 mt-1 line-clamp-2">{s.description}</p>
-                  <p className="text-xs text-gray-400 mt-1">
-                    {s.communities?.name && `${s.communities.name} · `}
-                    {new Date(s.submitted_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                  <p className="text-xs text-gray-400 mt-1 flex items-center gap-1.5 flex-wrap">
+                    {s.communities?.name && <span>{s.communities.name} ·</span>}
+                    <span>{new Date(s.submitted_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                    {Array.isArray(s.evidence_photos) && s.evidence_photos.length > 0 && (
+                      <span className="flex items-center gap-0.5 text-gray-500">
+                        · <Paperclip className="w-3 h-3" /> {s.evidence_photos.length}
+                      </span>
+                    )}
                   </p>
                 </div>
                 <div className="flex flex-col items-end gap-1 flex-shrink-0">
