@@ -300,9 +300,9 @@ export default function SnapshotsPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <h1 className="glass-page-title">Snapshots</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {compareIds.length === 2 && (
             <button onClick={runComparison} className="flex items-center gap-1 px-3 py-1.5 text-sm bg-purple-600 text-white rounded-lg hover:bg-purple-700">
               <GitCompare className="w-4 h-4" /> Compare Selected
@@ -317,7 +317,7 @@ export default function SnapshotsPage() {
       </div>
 
       {showCreate && (
-        <div className="glass-panel p-6 space-y-3">
+        <div className="glass-panel p-4 sm:p-6 space-y-3">
           <h2 className="text-lg font-semibold">Create Snapshot</h2>
           <input type="text" placeholder="Snapshot name *" value={createForm.name} onChange={e => setCreateForm(f => ({ ...f, name: e.target.value }))}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none" />
@@ -339,7 +339,7 @@ export default function SnapshotsPage() {
       )}
 
       {comparison && (
-        <div className="bg-white rounded-xl border border-purple-200 p-6">
+        <div className="bg-white rounded-xl border border-purple-200 p-4 sm:p-6">
           <h2 className="text-lg font-semibold mb-4">Comparison: {comparison.snap1Name} vs {comparison.snap2Name}</h2>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
@@ -391,13 +391,13 @@ export default function SnapshotsPage() {
         <div className="space-y-3">
           {snapshots.map(snap => (
             <div key={snap.id} className={`bg-white rounded-xl border ${compareIds.includes(snap.id) ? 'border-purple-400 ring-2 ring-purple-200' : 'border-gray-200'}`}>
-              <div className="flex items-center justify-between p-4">
-                <div className="flex items-center gap-3">
+              <div className="flex items-center justify-between p-4 gap-3">
+                <div className="flex items-center gap-3 min-w-0">
                   <input type="checkbox" checked={compareIds.includes(snap.id)} onChange={() => toggleCompare(snap.id)}
-                    className="accent-purple-600" />
-                  <div>
+                    className="accent-purple-600 w-4 h-4 shrink-0" />
+                  <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <p className="text-sm font-semibold text-gray-900">{snap.name}</p>
+                      <p className="text-sm font-semibold text-gray-900 truncate">{snap.name}</p>
                       {snap.name?.startsWith('Week ending') && (
                         <span className="text-xs px-1.5 py-0.5 rounded bg-teal-50 text-teal-700 font-medium border border-teal-200">Auto</span>
                       )}
@@ -408,7 +408,7 @@ export default function SnapshotsPage() {
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 shrink-0">
                   <button onClick={() => viewDetail(snap.id)} className="flex items-center gap-1 px-2 py-1 text-xs border border-gray-300 rounded hover:bg-gray-50">
                     {expandedId === snap.id ? <ChevronUp className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                     {expandedId === snap.id ? 'Hide' : 'View'}

@@ -35,7 +35,7 @@ function initials(name, email) {
   return (email || '?')[0].toUpperCase()
 }
 
-export default function Sidebar() {
+export default function Sidebar({ open = false, onClose = () => {} }) {
   const { profile, logout } = useAuth()
   const { dark, toggle } = useTheme()
   const [showChangePassword, setShowChangePassword] = useState(false)
@@ -63,10 +63,25 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="w-[236px] flex flex-col h-screen fixed left-0 top-0 z-30 glass-sidebar" style={{ padding: '22px 14px' }}>
+    <aside
+      className={cn(
+        'w-[236px] flex flex-col h-screen fixed left-0 top-0 z-40 glass-sidebar',
+        'transition-transform duration-200 ease-out lg:translate-x-0',
+        open ? 'translate-x-0' : '-translate-x-full',
+      )}
+      style={{ padding: '22px 14px' }}
+    >
       {/* Logo */}
-      <div className="pb-5 mb-1 border-b" style={{ borderColor: 'var(--g-line)' }}>
+      <div className="flex items-center justify-between pb-5 mb-1 border-b" style={{ borderColor: 'var(--g-line)' }}>
         <AppBrand />
+        <button
+          type="button"
+          onClick={onClose}
+          className="lg:hidden flex items-center justify-center w-9 h-9 -mr-1 rounded-lg glass-nav-item"
+          aria-label="Close navigation menu"
+        >
+          <X className="w-5 h-5" />
+        </button>
       </div>
 
       <nav className="flex-1 overflow-y-auto space-y-0.5 py-2">
@@ -75,8 +90,9 @@ export default function Sidebar() {
             key={item.to}
             to={item.to}
             end={item.end}
+            onClick={onClose}
             className={({ isActive }) => cn(
-              'flex items-center gap-3 px-3 py-2 text-sm font-medium transition-all duration-[120ms]',
+              'flex items-center gap-3 px-3 py-2.5 lg:py-2 text-sm font-medium transition-all duration-[120ms]',
               isActive ? 'glass-nav-active' : 'glass-nav-item'
             )}
           >
