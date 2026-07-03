@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { logActivity } from '../hooks/useActivityLog'
-import { MessageSquare, CheckCircle, Clock, Send, ThumbsUp, AlertTriangle, Paperclip, X, FileText, Image as ImageIcon } from 'lucide-react'
+import { MessageSquare, CheckCircle, Clock, Send, ThumbsUp, AlertTriangle, Paperclip, X, FileText, Image as ImageIcon, Camera } from 'lucide-react'
 
 const MAX_FILES = 5
 const MAX_FILE_BYTES = 10 * 1024 * 1024 // 10 MB per file
@@ -190,7 +190,7 @@ export default function SubmitFeedbackPage() {
       </div>
 
       {/* Submission form */}
-      <div className="glass-panel p-6">
+      <div className="glass-panel p-4 sm:p-6">
         {success && (
           <div className="mb-5 p-4 bg-green-50 border border-green-200 rounded-lg flex items-center gap-3 text-sm text-green-700">
             <CheckCircle className="w-5 h-5 flex-shrink-0" />
@@ -365,13 +365,13 @@ export default function SubmitFeedbackPage() {
               type="button"
               onClick={() => fileInputRef.current?.click()}
               disabled={files.length >= MAX_FILES}
-              className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              className="flex items-center justify-center gap-2 w-full sm:w-auto px-6 py-3 rounded-lg text-sm font-semibold text-white bg-[#087482] hover:bg-[#0a606c] shadow-sm disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
-              <Paperclip className="w-4 h-4" />
-              Add photos or PDFs
+              <Camera className="w-4 h-4" />
+              {files.length > 0 ? 'Add More Photos or Files' : 'Upload Photos or Files'}
             </button>
-            <p className="text-xs text-gray-400 mt-1">
-              Up to {MAX_FILES} files, {formatBytes(MAX_FILE_BYTES)} each. Images and PDFs.
+            <p className="text-xs text-gray-400 mt-1.5">
+              Click to attach — up to {MAX_FILES} files, {formatBytes(MAX_FILE_BYTES)} each. Images and PDFs.
             </p>
 
             {files.length > 0 && (
@@ -400,7 +400,7 @@ export default function SubmitFeedbackPage() {
           <button
             type="submit"
             disabled={submitting || !isValid}
-            className="flex items-center gap-2 px-6 py-2.5 glass-btn-primary font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            className="flex items-center justify-center gap-2 w-full sm:w-auto px-6 py-3 sm:py-2.5 glass-btn-primary font-medium disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             <Send className="w-4 h-4" />
             {submitting ? (files.length > 0 ? 'Uploading...' : 'Submitting...') : 'Submit Feedback'}
@@ -409,7 +409,7 @@ export default function SubmitFeedbackPage() {
       </div>
 
       {/* My recent submissions */}
-      <div className="glass-panel p-6">
+      <div className="glass-panel p-4 sm:p-6">
         <h2 className="text-base font-semibold text-gray-900 mb-4 flex items-center gap-2">
           <MessageSquare className="w-4 h-4 text-gray-500" />
           My Recent Submissions

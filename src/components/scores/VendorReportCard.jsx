@@ -135,6 +135,7 @@ export default function VendorReportCard({ scoreRow, getTier, onClose }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
+  const [evidenceUrls, setEvidenceUrls] = useState({})
   const { hasEnoughData } = useThresholds()
   const { begin, isCurrent } = useLoadGuard()
 
@@ -175,6 +176,25 @@ export default function VendorReportCard({ scoreRow, getTier, onClose }) {
     load()
   }, [scoreRow.vendor_id, begin, isCurrent])
 
+  // Exchange evidence storage paths (private bucket) for short-lived signed URLs
+  useEffect(() => {
+    const paths = []
+    for (const f of data?.feedback || []) {
+      if (Array.isArray(f.evidence_photos)) {
+        for (const p of f.evidence_photos) if (p?.path) paths.push(p.path)
+      }
+    }
+    if (paths.length === 0) { setEvidenceUrls({}); return }
+    let mounted = true
+    supabase.storage.from('uploads').createSignedUrls(paths, 60 * 60).then(({ data: rows, error }) => {
+      if (error || !mounted || !rows) return
+      const map = {}
+      rows.forEach((r, i) => { if (r?.signedUrl) map[paths[i]] = r.signedUrl })
+      setEvidenceUrls(map)
+    })
+    return () => { mounted = false }
+  }, [data])
+
   const today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
   const vendorName = scoreRow.vendors?.name || 'Unknown Vendor'
   const category = scoreRow.vendors?.vendor_categories?.name || ''
@@ -187,6 +207,18 @@ export default function VendorReportCard({ scoreRow, getTier, onClose }) {
     { label: 'Feedback', key: 'feedback_score' },
     { label: 'Total', key: 'weighted_total', large: true },
   ]
+
+  // Number the feedback entries that carry evidence so the "Evidence Photos"
+  // appendix (printed on its own page) can be cross-referenced to the comment above.
+  const evidenceRefByIndex = new Map()
+  const evidenceGroups = []
+  ;(data?.feedback || []).forEach((f, i) => {
+    if (Array.isArray(f.evidence_photos) && f.evidence_photos.length > 0) {
+      const ref = evidenceGroups.length + 1
+      evidenceRefByIndex.set(i, ref)
+      evidenceGroups.push({ ref, feedback: f })
+    }
+  })
 
   return createPortal(
     <div className="report-card-print-root fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.65)' }}>
@@ -369,7 +401,7 @@ export default function VendorReportCard({ scoreRow, getTier, onClose }) {
                     <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-3">
                       Recent Approved Feedback
                     </h2>
-                    <div className="space-y-2">
+                    <div className="space-y-2 report-card-feedback-list">
                       {data.feedback.map((f, i) => {
                         const badgeKey = f.category === 'kudos' ? 'kudos' : (f.severity || 'minor')
                         const label = f.category === 'kudos'
@@ -387,9 +419,10 @@ export default function VendorReportCard({ scoreRow, getTier, onClose }) {
                                 {communityCode && (
                                   <span className="text-xs font-mono text-gray-400">{communityCode}</span>
                                 )}
-                                {Array.isArray(f.evidence_photos) && f.evidence_photos.length > 0 && (
-                                  <span className="flex items-center gap-0.5 text-xs text-gray-400" title={`${f.evidence_photos.length} attachment${f.evidence_photos.length === 1 ? '' : 's'}`}>
-                                    <Paperclip className="w-3 h-3" />{f.evidence_photos.length}
+                                {evidenceRefByIndex.has(i) && (
+                                  <span className="flex items-center gap-0.5 text-xs font-medium" style={{ color: '#087482' }} title="See Evidence Photos page">
+                                    <Paperclip className="w-3 h-3" />
+                                    {f.evidence_photos.length} photo{f.evidence_photos.length === 1 ? '' : 's'} — see #{evidenceRefByIndex.get(i)}
                                   </span>
                                 )}
                               </div>
@@ -448,6 +481,69 @@ export default function VendorReportCard({ scoreRow, getTier, onClose }) {
                         </div>
                       </div>
                     )}
+                  </div>
+                )}
+
+                {/* Evidence photos — printed on their own page(s), referenced by # above */}
+                {evidenceGroups.length > 0 && (
+                  <div className="report-card-evidence-appendix">
+                    <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-1">
+                      Evidence Photos
+                    </h2>
+                    <p className="text-xs text-gray-400 mb-4">
+                      Each item below is numbered to match the feedback comment it supports.
+                    </p>
+                    <div className="space-y-6">
+                      {evidenceGroups.map(({ ref, feedback: f }) => {
+                        const badgeKey = f.category === 'kudos' ? 'kudos' : (f.severity || 'minor')
+                        const label = f.category === 'kudos'
+                          ? 'Kudos'
+                          : `${(f.severity || '').charAt(0).toUpperCase() + (f.severity || '').slice(1)} Complaint`
+                        const communityCode = communityAbbreviation(f.communities)
+                        return (
+                          <div key={ref} className="report-card-evidence-item border border-gray-200 rounded-lg p-4">
+                            <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                              <span className="inline-flex items-center justify-center text-xs font-bold text-white rounded px-1.5 py-0.5" style={{ background: '#087482' }}>
+                                #{ref}
+                              </span>
+                              <span className={`text-xs px-2 py-0.5 rounded font-medium ${SEVERITY_BADGE[badgeKey] || 'bg-gray-100 text-gray-600'}`}>
+                                {label}
+                              </span>
+                              {communityCode && <span className="text-xs font-mono text-gray-400">{communityCode}</span>}
+                              <span className="text-xs text-gray-400">{new Date(f.submitted_at).toLocaleDateString()}</span>
+                            </div>
+                            <p className="text-xs text-gray-600 leading-relaxed mb-3">{f.description}</p>
+                            <div className="grid grid-cols-2 gap-3 report-card-evidence-grid">
+                              {f.evidence_photos.map((p, j) => {
+                                const url = evidenceUrls[p.path]
+                                const isImage = p.type?.startsWith('image/')
+                                if (isImage) {
+                                  return (
+                                    <div key={j} className="report-card-evidence-photo border border-gray-100 rounded overflow-hidden bg-gray-50">
+                                      {url
+                                        ? <img src={url} alt={p.name || `Evidence ${ref}.${j + 1}`} className="w-full h-auto object-contain" />
+                                        : <div className="h-32 flex items-center justify-center text-xs text-gray-400">Loading…</div>}
+                                    </div>
+                                  )
+                                }
+                                return (
+                                  <a
+                                    key={j}
+                                    href={url || undefined}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="report-card-evidence-file flex items-center gap-1.5 px-2.5 py-2 border border-gray-200 rounded text-xs text-gray-600 bg-gray-50"
+                                  >
+                                    <span className="font-mono text-gray-400">PDF</span>
+                                    <span className="truncate">{p.name || 'Attachment'}</span>
+                                  </a>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
                   </div>
                 )}
 

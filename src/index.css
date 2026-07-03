@@ -84,6 +84,25 @@ html {
   color: color-mix(in srgb, var(--g-dim) 70%, transparent);
 }
 
+/* Prevent iOS Safari from zooming the viewport when a sub-16px form
+   control is focused. Applies on small screens only — desktop keeps
+   the compact 13px sizing. */
+@media (max-width: 640px) {
+  .glass-input,
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="number"],
+  input[type="search"],
+  input[type="tel"],
+  input[type="url"],
+  input[type="date"],
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
+
 .glass-btn-primary {
   background: var(--g-accent-gradient);
   color: #fff;
@@ -921,6 +940,37 @@ h1.text-2xl.font-bold.text-gray-900 {
   .report-card-content .space-y-1\.5 > div {
     break-inside: avoid;
     page-break-inside: avoid;
+  }
+
+  /* Evidence photos: always start on a fresh page, keep each item intact */
+  .report-card-evidence-appendix {
+    break-before: page;
+    page-break-before: always;
+  }
+
+  .report-card-evidence-item {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    margin-bottom: 0.6rem !important;
+  }
+
+  .report-card-evidence-grid {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 0.4rem !important;
+  }
+
+  .report-card-evidence-photo {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .report-card-evidence-photo img {
+    max-width: 100% !important;
+    max-height: 3in !important;
+    object-fit: contain !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 
   /* App shell must not clip the report card across pages */
