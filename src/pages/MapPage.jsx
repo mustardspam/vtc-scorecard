@@ -54,7 +54,15 @@ function isSaneCoord(lat, lng) {
 }
 
 export default function MapPage() {
-  const { communities, vendors, categories, managers, assignments, loading, assignmentsLoading, error } = useMapData()
+  const { communities: allCommunities, vendors, categories, managers, assignments, loading, assignmentsLoading, error } = useMapData()
+
+  const [showInactive, setShowInactive] = useState(false)
+  // Inactive communities are hidden from the map (and all its stats) unless the
+  // "Show inactive communities" toggle is on.
+  const communities = useMemo(
+    () => (showInactive ? allCommunities : allCommunities.filter(c => c.is_active)),
+    [allCommunities, showInactive]
+  )
 
   const [hiddenManagers, setHiddenManagers] = useState(new Set())
   const [selectedVendorId, setSelectedVendorId] = useState('')
@@ -176,7 +184,8 @@ export default function MapPage() {
       if (c.area_manager_id && hiddenManagers.has(c.area_manager_id)) return
       const color = colorMap[c.area_manager_id] ?? '#9e9e9e'
       const isCovered = !isFiltered || coveredIds.has(c.id)
-      const opacity = isFiltered && !isCovered ? 0.2 : 1
+      let opacity = isFiltered && !isCovered ? 0.2 : 1
+      if (!c.is_active) opacity = Math.min(opacity, 0.45) // dim inactive communities
       const icon = makeIcon(c.brand, color, opacity)
       const marker = L.marker([+c.lat, +c.lng], { icon })
       const managerName = c.area_manager_id ? (managerNames[c.area_manager_id] ?? 'Unknown') : 'Unassigned'
@@ -187,7 +196,7 @@ export default function MapPage() {
         : ''
       marker.bindTooltip(
         `<div style="font-family:system-ui,sans-serif;padding:2px 0;min-width:155px;">
-          <div style="font-weight:700;font-size:13px;margin-bottom:4px;color:#1a1a18;">${c.name}</div>
+          <div style="font-weight:700;font-size:13px;margin-bottom:4px;color:#1a1a18;">${c.name}${c.is_active ? '' : ' <span style="font-weight:600;font-size:9px;color:#c0392b;border:1px solid #c0392b;border-radius:3px;padding:0 4px;vertical-align:middle;">INACTIVE</span>'}</div>
           <div style="margin-bottom:3px;">
             <span style="background:${brandBg};color:#fff;font-size:9px;font-weight:700;border-radius:3px;padding:1px 5px;">${brandLabel}</span>
             <span style="color:#888;font-size:11px;margin-left:5px;">${c.code}</span>
@@ -246,6 +255,7 @@ export default function MapPage() {
     [communities]
   )
   const colorMap = useMemo(() => buildAcmColorMap(managers), [managers])
+  const inactiveCount = useMemo(() => allCommunities.filter(c => !c.is_active).length, [allCommunities])
 
   function toggleManager(id) {
     setHiddenManagers(prev => {
@@ -315,6 +325,15 @@ export default function MapPage() {
               })}
             </div>
           )}
+        </div>
+
+        {/* Show inactive toggle */}
+        <div style={{ padding: '12px 14px', borderBottom: '1px solid #f0ede4' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: 500, color: '#333' }}>
+            <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} style={{ cursor: 'pointer' }} />
+            <span style={{ flex: 1 }}>Show inactive communities</span>
+            {inactiveCount > 0 && <span style={{ color: '#aaa', fontWeight: 400 }}>{inactiveCount}</span>}
+          </label>
         </div>
 
         {/* Vendor / Category filter */}
