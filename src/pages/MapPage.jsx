@@ -3,7 +3,6 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import 'leaflet.markercluster'
 import 'leaflet.markercluster/dist/MarkerCluster.css'
-import 'leaflet.markercluster/dist/MarkerCluster.Default.css'
 import { useMapData } from '../hooks/useMapData'
 import { ACM_PALETTE, buildAcmColorMap } from '../lib/acm-colors'
 import { MapPin } from 'lucide-react'
@@ -22,6 +21,17 @@ function makeIcon(brand, color, opacity) {
     </g>
   </svg>`
   return L.divIcon({ html: svg, className: '', iconSize: [32, 32], iconAnchor: [16, 16], tooltipAnchor: [16, -4] })
+}
+
+// Neutral cluster bubble: white fill, black outline, dark count — matches the
+// black-outlined pin theme instead of the plugin's default green/yellow blobs.
+function makeClusterIcon(cluster) {
+  const count = cluster.getChildCount()
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="34" height="34" viewBox="0 0 34 34">
+    <circle cx="17" cy="17" r="14" fill="#ffffff" stroke="black" stroke-width="2.5"/>
+    <text x="17" y="21" text-anchor="middle" fill="#1a1a18" font-size="12" font-weight="700" font-family="system-ui,sans-serif">${count}</text>
+  </svg>`
+  return L.divIcon({ html: svg, className: '', iconSize: [34, 34], iconAnchor: [17, 17] })
 }
 
 function distinctPinnedCommunities(assignments, vendorId, pinnedIds) {
@@ -83,6 +93,8 @@ export default function MapPage() {
       showCoverageOnHover: false,
       maxClusterRadius: 45,
       spiderfyOnMaxZoom: true,
+      iconCreateFunction: makeClusterIcon,
+      spiderLegPolylineOptions: { weight: 1.5, color: '#000', opacity: 0.7 },
     }).addTo(mapRef.current)
     setMapReady(true)
     return () => {
