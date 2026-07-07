@@ -76,9 +76,11 @@ export default function HotStreakTicker() {
             byVendor[row.vendor_id] = {
               name: row.vendor_name,
               cat: row.category_name || '',
+              cats: new Set(),
               snaps: [],
             }
           }
+          if (row.category_name) byVendor[row.vendor_id].cats.add(row.category_name)
           byVendor[row.vendor_id].snaps.push({
             weighted_total: Number(row.weighted_total),
             date: row.snapshots.created_at,
@@ -86,6 +88,8 @@ export default function HotStreakTicker() {
         }
 
         const results = Object.values(byVendor)
+          // Exclude vendors/trades scored in fewer than two categories.
+          .filter(v => v.cats.size >= 2)
           .map(v => {
             v.snaps.sort((a, b) => new Date(b.date) - new Date(a.date))
             const seen = new Set()
