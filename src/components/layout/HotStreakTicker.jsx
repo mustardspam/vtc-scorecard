@@ -46,23 +46,32 @@ export default function HotStreakTicker() {
           return
         }
 
-        const { data } = await supabase
-          .from('snapshot_score_results')
-          .select('vendor_id, vendor_name, category_name, weighted_total, snapshots(created_at)')
-          .in('snapshot_id', snapIds)
-          .not('vendor_id', 'is', null)
-          .not('weighted_total', 'is', null)
+        const [{ data }, { data: activeVendors }] = await Promise.all([
+          supabase
+            .from('snapshot_score_results')
+            .select('vendor_id, vendor_name, category_name, weighted_total, snapshots(created_at)')
+            .in('snapshot_id', snapIds)
+            .not('vendor_id', 'is', null)
+            .not('weighted_total', 'is', null),
+          supabase
+            .from('vendors')
+            .select('id')
+            .eq('is_active', true),
+        ])
 
         if (!data?.length) {
           if (mounted) { setStreaks([]); setLoaded(true) }
           return
         }
 
+        // Inactive vendors/trades must not appear in the ticker.
+        const activeIds = new Set((activeVendors || []).map(v => v.id))
         const threshold = thresholds.threshold_good ?? 85
         const byVendor = {}
 
         for (const row of data) {
           if (!row.snapshots?.created_at) continue
+          if (!activeIds.has(row.vendor_id)) continue
           if (!byVendor[row.vendor_id]) {
             byVendor[row.vendor_id] = {
               name: row.vendor_name,

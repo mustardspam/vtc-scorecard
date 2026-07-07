@@ -363,7 +363,7 @@ html {
 .vtc-streak-track {
   display: inline-flex;
   align-items: center;
-  animation: vtc-streak 52s linear infinite;
+  animation: vtc-streak 66s linear infinite;
   will-change: transform;
 }
 
