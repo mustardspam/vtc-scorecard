@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
+import 'leaflet.markercluster'
+import 'leaflet.markercluster/dist/MarkerCluster.css'
+import 'leaflet.markercluster/dist/MarkerCluster.Default.css'
 import { useMapData } from '../hooks/useMapData'
 import { ACM_PALETTE, buildAcmColorMap } from '../lib/acm-colors'
 import { MapPin } from 'lucide-react'
@@ -61,6 +64,7 @@ export default function MapPage() {
   const mapContainerRef = useRef(null)
   const mapRef = useRef(null)
   const markersRef = useRef([])
+  const clusterRef = useRef(null)
   const linesRef = useRef([])
 
   useEffect(() => {
@@ -75,10 +79,16 @@ export default function MapPage() {
       maxZoom: 19,
     }).addTo(mapRef.current)
     L.control.zoom({ position: 'topright' }).addTo(mapRef.current)
+    clusterRef.current = L.markerClusterGroup({
+      showCoverageOnHover: false,
+      maxClusterRadius: 45,
+      spiderfyOnMaxZoom: true,
+    }).addTo(mapRef.current)
     setMapReady(true)
     return () => {
       mapRef.current?.remove()
       mapRef.current = null
+      clusterRef.current = null
       setMapReady(false)
     }
   }, [])
@@ -155,7 +165,7 @@ export default function MapPage() {
   // Rebuild markers
   useEffect(() => {
     if (!mapReady || loading) return
-    markersRef.current.forEach(m => m.remove())
+    clusterRef.current?.clearLayers()
     markersRef.current = []
     const colorMap = buildAcmColorMap(managers)
     const managerNames = Object.fromEntries(managers.map(m => [m.id, m.full_name]))
@@ -187,7 +197,7 @@ export default function MapPage() {
         </div>`,
         { sticky: true }
       )
-      marker.addTo(mapRef.current)
+      clusterRef.current.addLayer(marker)
       markersRef.current.push(marker)
     })
   }, [mapReady, loading, communities, managers, hiddenManagers, coveredIds])
