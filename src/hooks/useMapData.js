@@ -49,7 +49,7 @@ export function useMapData() {
       setError('')
       try {
         const [commRes, vendorRes, catRes, managerRes] = await Promise.all([
-          supabase.from('communities').select('*').order('name'),
+          supabase.from('communities').select('*').eq('is_active', true).order('name'),
           supabase.from('vendors').select('id, name, category_id').eq('is_active', true).order('name'),
           supabase.from('vendor_categories').select('id, name').order('name'),
           supabase.from('profiles').select('id, full_name').eq('is_area_manager', true).eq('is_active', true).order('full_name'),
