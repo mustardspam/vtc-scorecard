@@ -9,8 +9,8 @@ function makeIcon(brand, color, opacity) {
   const isSL = brand?.toLowerCase().includes('starlight')
   const label = isSL ? 'SL' : 'AW'
   const shape = isSL
-    ? `<polygon points="16,3 18.94,11.95 28.36,11.98 20.76,17.55 23.64,26.52 16,21 8.36,26.52 11.24,17.55 3.64,11.98 13.06,11.95" fill="${color}" stroke="white" stroke-width="2.5"/>`
-    : `<circle cx="16" cy="16" r="13" fill="${color}" stroke="white" stroke-width="2.5"/>`
+    ? `<polygon points="16,3 18.94,11.95 28.36,11.98 20.76,17.55 23.64,26.52 16,21 8.36,26.52 11.24,17.55 3.64,11.98 13.06,11.95" fill="${color}" stroke="black" stroke-width="2.5"/>`
+    : `<circle cx="16" cy="16" r="13" fill="${color}" stroke="black" stroke-width="2.5"/>`
   const textY = isSL ? '19' : '20'
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
     <g opacity="${opacity}">
@@ -445,14 +445,14 @@ export default function MapPage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '11px', color: '#666' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <svg width="18" height="18" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-                <circle cx="16" cy="16" r="13" fill="#087482" stroke="white" strokeWidth="2.5"/>
+                <circle cx="16" cy="16" r="13" fill="#087482" stroke="black" strokeWidth="2.5"/>
                 <text x="16" y="20" textAnchor="middle" fill="white" fontSize="9" fontWeight="700" fontFamily="system-ui">AW</text>
               </svg>
               Ashton Woods community
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <svg width="18" height="18" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-                <polygon points="16,3 18.94,11.95 28.36,11.98 20.76,17.55 23.64,26.52 16,21 8.36,26.52 11.24,17.55 3.64,11.98 13.06,11.95" fill="#087482" stroke="white" strokeWidth="2.5"/>
+                <polygon points="16,3 18.94,11.95 28.36,11.98 20.76,17.55 23.64,26.52 16,21 8.36,26.52 11.24,17.55 3.64,11.98 13.06,11.95" fill="#087482" stroke="black" strokeWidth="2.5"/>
                 <text x="16" y="19" textAnchor="middle" fill="white" fontSize="8" fontWeight="700" fontFamily="system-ui">SL</text>
               </svg>
               Starlight community
@@ -460,7 +460,7 @@ export default function MapPage() {
             {coveredIds !== null && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <svg width="18" height="18" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-                  <circle cx="16" cy="16" r="13" fill="#ccc" stroke="white" strokeWidth="2.5" opacity="0.3"/>
+                  <circle cx="16" cy="16" r="13" fill="#ccc" stroke="black" strokeWidth="2.5" opacity="0.3"/>
                 </svg>
                 Not covered by filter
               </div>
