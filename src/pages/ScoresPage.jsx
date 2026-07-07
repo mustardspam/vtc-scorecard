@@ -242,8 +242,11 @@ export default function ScoresPage() {
                     <span className="inline-flex items-center justify-end gap-1 w-full">{SCORE_LABELS[field]}<SortIcon field={field} /></span>
                   </th>
                 ))}
-                <th className="text-right cursor-pointer" onClick={() => handleSort('risk_exposure_12mo')}>
+                <th className="text-right cursor-pointer relative group" onClick={() => handleSort('risk_exposure_12mo')}>
                   <span className="inline-flex items-center justify-end gap-1 w-full">Risk<SortIcon field="risk_exposure_12mo" /></span>
+                  <div className="hidden group-hover:block absolute right-0 top-full mt-1 w-[240px] p-3 rounded-xl z-40 text-left text-xs font-normal normal-case glass-panel-solid shadow-lg" style={{ color: 'var(--g-dim)' }}>
+                    Estimated 12-month $ exposure from rework backcharge admin overhead, OSHA-anchored safety costs, and no-shows — projected at this vendor's recent job-volume trend.
+                  </div>
                 </th>
                 <th className="text-center">Trend</th>
                 <th className="text-center no-print w-[52px]"> </th>
