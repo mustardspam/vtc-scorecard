@@ -55,7 +55,7 @@ export default function HotStreakTicker() {
             .not('weighted_total', 'is', null),
           supabase
             .from('vendors')
-            .select('id')
+            .select('id, vendor_categories(name)')
             .eq('is_active', true),
         ])
 
@@ -66,6 +66,12 @@ export default function HotStreakTicker() {
 
         // Inactive vendors/trades must not appear in the ticker.
         const activeIds = new Set((activeVendors || []).map(v => v.id))
+        // Current category comes from the vendors table (edited in the Data tab),
+        // not the historical category_name frozen onto each snapshot row.
+        const currentCat = {}
+        for (const v of activeVendors || []) {
+          currentCat[v.id] = v.vendor_categories?.name || ''
+        }
         const threshold = thresholds.threshold_good ?? 85
         const byVendor = {}
 
@@ -75,7 +81,7 @@ export default function HotStreakTicker() {
           if (!byVendor[row.vendor_id]) {
             byVendor[row.vendor_id] = {
               name: row.vendor_name,
-              cat: row.category_name || '',
+              cat: currentCat[row.vendor_id] || row.category_name || '',
               cats: new Set(),
               snaps: [],
             }
