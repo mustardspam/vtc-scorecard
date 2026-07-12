@@ -222,6 +222,59 @@ function buildPermitBrief(permit) {
   return lines.join('\n')
 }
 
+// Per-region latest-month surge vs each region's own normal band. Regions
+// running >= 0.5σ hot signal POTENTIAL future trade demand — a permit is a
+// leading indicator that lags ~1 month and lands on-site over the next ~6-9
+// months, so this is a forward signal, not a guarantee. The month shown is the
+// permit reporting month (meta.report_month) — the same month Permit Pulse
+// reports "through" — not the month demand actually arrives. Auto-updates as
+// new permit imports land: loadPermitData always reads the newest one.
+function buildDemandOutlook(permit) {
+  if (!permit) return null
+  const { series, meta } = permit
+  const months = [...new Set(series.map(s => s.period_month))].sort()
+  if (months.length < 5) return null
+
+  const byRegion = new Map()
+  for (const r of series) {
+    if (r.scope_type !== 'region') continue
+    let m = byRegion.get(r.scope_name)
+    if (!m) { m = new Map(); byRegion.set(r.scope_name, m) }
+    m.set(r.period_month, (m.get(r.period_month) || 0) + r.permits)
+  }
+
+  const surges = []
+  for (const [name, m] of byRegion) {
+    const arr = months.map(mo => m.get(mo) || 0)
+    const base = arr.slice(0, -1)
+    const mu = base.reduce((a, x) => a + x, 0) / base.length
+    const sd = Math.sqrt(base.reduce((a, x) => a + (x - mu) ** 2, 0) / (base.length - 1))
+    if (!sd || mu <= 0) continue
+    const latest = arr[arr.length - 1]
+    const z = (latest - mu) / sd
+    if (z >= 0.5) surges.push({ name, pctAbove: (latest - mu) / mu })
+  }
+  if (surges.length === 0) return null
+  surges.sort((a, b) => b.pctAbove - a.pctAbove)
+
+  // Month label comes straight from the permit data (report_month), matching
+  // Permit Pulse; fall back to the latest series month if meta is missing.
+  const permitMonth = fmtMonthLong(meta?.report_month || months[months.length - 1])
+
+  const lines = []
+  lines.push('ANTICIPATED VENDOR DEMAND BASED ON PERMIT DATA')
+  lines.push('-'.repeat(40))
+  lines.push('POTENTIAL for increased trade demand ahead — a forward signal, not a')
+  lines.push('certainty. Consider lining up crew capacity where permits are surging.')
+  lines.push('')
+  lines.push(`  ${'Permit Month'.padEnd(14)}${'Region'.padEnd(24)}% Above Normal`)
+  for (const s of surges) {
+    lines.push(`  ${permitMonth.padEnd(14)}${s.name.padEnd(24)}${pctStr(s.pctAbove)}`)
+  }
+  lines.push('')
+  return lines.join('\n')
+}
+
 function buildExecutiveSummary({ scores, feedback, priorScores, priorSnapshotName }) {
   const valid = scores.filter(s => s.weighted_total != null)
   if (valid.length === 0) return null
@@ -326,6 +379,9 @@ function buildEmail({ scores, feedback, weights, priorScores, priorSnapshotName,
 
   const permitBrief = buildPermitBrief(permit)
   if (permitBrief) lines.push(permitBrief)
+
+  const demandOutlook = buildDemandOutlook(permit)
+  if (demandOutlook) lines.push(demandOutlook)
 
   lines.push('VENDOR/TRADE SUMMARY')
   lines.push('-'.repeat(40))

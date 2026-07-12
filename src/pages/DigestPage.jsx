@@ -1,9 +1,11 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import { useThresholds } from '../hooks/useThresholds'
 import { useAuth } from '../hooks/useAuth'
 import { useScoreData } from '../hooks/useScoreData'
 import { useReferenceData } from '../hooks/useReferenceData'
+import { usePermitData } from '../hooks/usePermitData'
+import { regionDemandSurges } from '../lib/permit-forecast'
 import { Mail, Copy, Check, Printer, RefreshCw, TrendingUp, TrendingDown, Minus, Send } from 'lucide-react'
 
 export default function DigestPage() {
@@ -21,6 +23,10 @@ export default function DigestPage() {
   const canSend = isManager()
   const { scores, loading: scoresLoading } = useScoreData()
   const { weights } = useReferenceData({ weights: true })
+  // Pulls the latest monthly permit import automatically — a new upload becomes
+  // the newest import and this box updates on the next load with no extra step.
+  const { rows: permitSeries, importMeta: permitMeta } = usePermitData()
+  const demandSurges = useMemo(() => regionDemandSurges(permitSeries, { sigma: 0.5 }), [permitSeries])
 
   useEffect(() => { loadMeta() }, [])
 
@@ -154,6 +160,32 @@ export default function DigestPage() {
     return lines.join('\n')
   }
 
+  function fmtMonthLong(monthStr) {
+    const [y, m] = String(monthStr).split('-').map(Number)
+    const names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    return `${names[m - 1]} ${y}`
+  }
+
+  function buildDemandText() {
+    if (!demandSurges.length) return null
+    // Month label comes from the permit data (report_month), matching Permit
+    // Pulse; fall back to the surge's own latest series month if meta is absent.
+    const permitMonth = fmtMonthLong(permitMeta?.report_month || demandSurges[0].month)
+    const lines = []
+    lines.push('ANTICIPATED VENDOR DEMAND BASED ON PERMIT DATA')
+    lines.push('-'.repeat(40))
+    lines.push('POTENTIAL for increased trade demand ahead — a forward signal, not a')
+    lines.push('certainty. Consider lining up crew capacity where permits are surging.')
+    lines.push('')
+    lines.push(`  ${'Permit Month'.padEnd(14)}${'Region'.padEnd(24)}% Above Normal`)
+    for (const s of demandSurges) {
+      const p = `${s.pctAbove >= 0 ? '+' : ''}${(s.pctAbove * 100).toFixed(0)}%`
+      lines.push(`  ${permitMonth.padEnd(14)}${s.name.padEnd(24)}${p}`)
+    }
+    lines.push('')
+    return lines.join('\n')
+  }
+
   function buildEmailText() {
     const date = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
     const lines = []
@@ -161,6 +193,8 @@ export default function DigestPage() {
     lines.push('='.repeat(60))
     lines.push('')
     lines.push(buildSummaryText())
+    const demand = buildDemandText()
+    if (demand) lines.push(demand)
     lines.push('VENDOR/TRADE SUMMARY')
     lines.push('-'.repeat(40))
     lines.push(`Total vendors scored: ${valid.length}`)

@@ -112,6 +112,47 @@ export function detectAnomalies(periods, { sigma = 2 } = {}) {
 }
 
 /**
+ * Per-region latest-month demand surge. For each region, the most recent month's
+ * permit volume is compared to that region's OWN trailing baseline (every earlier
+ * month), and regions running at least `sigma` standard deviations hot are
+ * returned. This is the "anticipated vendor demand" signal: a hot region means
+ * trade work is about to land there and crews should be booked ahead of it.
+ *
+ * Mirrors the sigma method in detectAnomalies but is scoped per-region and adds
+ * `pctAbove` (latest vs the region mean) for a plain-language readout.
+ *
+ * @param {Array<{scope_type, scope_name, period_month, permits}>} series
+ * @param {{sigma?: number}} opts default sigma 0.5 (the app's most sensitive band)
+ * @returns {Array<{ name, month, latest, mean, z, pctAbove }>} sorted hottest first
+ */
+export function regionDemandSurges(series, { sigma = 0.5 } = {}) {
+  const months = [...new Set(series.map(s => s.period_month))].sort()
+  if (months.length < 5) return []
+  const latestMonth = months[months.length - 1]
+
+  const byRegion = new Map()
+  for (const r of series) {
+    if (r.scope_type !== 'region') continue
+    let m = byRegion.get(r.scope_name)
+    if (!m) { m = new Map(); byRegion.set(r.scope_name, m) }
+    m.set(r.period_month, (m.get(r.period_month) || 0) + r.permits)
+  }
+
+  const surges = []
+  for (const [name, m] of byRegion) {
+    const arr = months.map(mo => m.get(mo) || 0)
+    const base = arr.slice(0, -1)
+    const mu = mean(base)
+    const sd = stddev(base, mu)
+    if (!sd || mu <= 0) continue
+    const latest = arr[arr.length - 1]
+    const z = (latest - mu) / sd
+    if (z >= sigma) surges.push({ name, month: latestMonth, latest, mean: mu, z, pctAbove: (latest - mu) / mu })
+  }
+  return surges.sort((a, b) => b.pctAbove - a.pctAbove)
+}
+
+/**
  * Build a dense actuals array (missing months filled with 0) for one entity.
  * @param {Array} rows series rows already filtered to a single scope_name
  * @param {string} firstMonth, lastMonth bounds (first-of-month strings)
