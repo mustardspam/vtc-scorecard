@@ -227,8 +227,11 @@ export default function MapPage() {
     }
   }, [mapReady, spreadStats])
 
-  const pinnedCount = communities.filter(c => c.lat && c.lng).length
-  const unpinnedCount = communities.length - pinnedCount
+  // Count only communities that actually render as pins — a coordinate must exist
+  // AND fall inside the service area. Bad-coord communities are surfaced separately
+  // in the warning below, so they must not inflate the "pinned" count.
+  const pinnedCount = communities.filter(c => c.lat && c.lng && isSaneCoord(c.lat, c.lng)).length
+  const unpinnedCount = communities.filter(c => !c.lat || !c.lng).length
   // Pinned communities whose coordinates fall outside the Houston service area —
   // bad data that would otherwise distort spread stats and place pins off-map.
   const badCoordCommunities = useMemo(
@@ -288,7 +291,7 @@ export default function MapPage() {
               {managers.map((m, i) => {
                 const color = ACM_PALETTE[i % ACM_PALETTE.length]
                 const isHidden = hiddenManagers.has(m.id)
-                const mineCount = communities.filter(c => c.area_manager_id === m.id && c.lat && c.lng).length
+                const mineCount = communities.filter(c => c.area_manager_id === m.id && c.lat && c.lng && isSaneCoord(c.lat, c.lng)).length
                 return (
                   <button key={m.id} onClick={() => toggleManager(m.id)} style={{
                     display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 10px', borderRadius: '6px',
