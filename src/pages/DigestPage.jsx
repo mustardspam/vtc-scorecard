@@ -1,11 +1,11 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { useThresholds } from '../hooks/useThresholds'
 import { useAuth } from '../hooks/useAuth'
 import { useScoreData } from '../hooks/useScoreData'
 import { useReferenceData } from '../hooks/useReferenceData'
 import { usePermitData } from '../hooks/usePermitData'
-import { regionDemandSurges } from '../lib/permit-forecast'
+import { buildDigestText } from '../lib/digest-email'
 import { Mail, Copy, Check, Printer, RefreshCw, TrendingUp, TrendingDown, Minus, Send } from 'lucide-react'
 
 export default function DigestPage() {
@@ -18,7 +18,7 @@ export default function DigestPage() {
   const [sending, setSending] = useState(false)
   const [sendStatus, setSendStatus] = useState(null)
   const textRef = useRef(null)
-  const { getTier } = useThresholds()
+  const { getTier, thresholds, minThresholds } = useThresholds()
   const { isManager } = useAuth()
   const canSend = isManager()
   const { scores, loading: scoresLoading } = useScoreData()
@@ -26,7 +26,6 @@ export default function DigestPage() {
   // Pulls the latest monthly permit import automatically — a new upload becomes
   // the newest import and this box updates on the next load with no extra step.
   const { rows: permitSeries, importMeta: permitMeta } = usePermitData()
-  const demandSurges = useMemo(() => regionDemandSurges(permitSeries, { sigma: 0.5 }), [permitSeries])
 
   useEffect(() => { loadMeta() }, [])
 
@@ -85,9 +84,6 @@ export default function DigestPage() {
     : null
 
   const critical = valid.filter(s => getTier(s.weighted_total)?.label === 'Critical')
-  const probation = valid.filter(s => getTier(s.weighted_total)?.label === 'Probation')
-  const top5 = valid.slice(0, 5)
-  const bottom5 = [...valid].reverse().slice(0, 5)
   const kudos = recentFeedback.filter(f => f.category === 'kudos')
   const complaints = recentFeedback.filter(f => f.category === 'complaint')
 
@@ -132,111 +128,26 @@ export default function DigestPage() {
   const bottomCat = catAvgs[catAvgs.length - 1]
   const priorSnapshotName = snapshots[0]?.name || null
 
-  function buildSummaryText() {
-    const lines = []
-    lines.push('EXECUTIVE SUMMARY')
-    lines.push('-'.repeat(40))
-
-    if (avgScore != null) {
-      let weekLine = priorAvg != null
-        ? `Week over week (vs snapshot "${priorSnapshotName}"): Overall average ${avgDiff >= 0 ? 'rose' : 'fell'} ${avgDiff >= 0 ? '+' : ''}${avgDiff.toFixed(1)} pts to ${avgScore.toFixed(1)}.`
-        : `This week: Overall average is ${avgScore.toFixed(1)} across ${valid.length} scored vendors.`
-      if (movedIntoCritical.length > 0) weekLine += ` ${movedIntoCritical.map(s => s.vendors?.name).join(', ')} moved into Critical.`
-      if (movedOutOfCritical.length > 0) weekLine += ` ${movedOutOfCritical.map(s => s.vendors?.name).join(', ')} improved out of Critical.`
-      if (priorAvg != null && movedIntoCritical.length === 0 && movedOutOfCritical.length === 0) weekLine += ' No vendors changed Critical status.'
-      lines.push(weekLine)
-    }
-
-    let thirtyLine = `Last 30 days: ${kudos.length + complaints.length} feedback submissions — ${kudos.length} kudos, ${complaints.length} complaints`
-    thirtyLine += kudos.length > complaints.length ? ' (kudos outpacing complaints).' : complaints.length > kudos.length ? ' (complaints outpacing kudos — worth reviewing).' : ' (even split).'
-    if (topCat && bottomCat && topCat.name !== bottomCat.name) {
-      thirtyLine += ` ${topCat.name} leads all categories at ${topCat.avg.toFixed(1)}; ${bottomCat.name} is the lowest at ${bottomCat.avg.toFixed(1)}.`
-    }
-    if (tierCounts.Critical + tierCounts.Probation > 0) {
-      thirtyLine += ` ${tierCounts.Critical + tierCounts.Probation} vendor${tierCounts.Critical + tierCounts.Probation > 1 ? 's' : ''} currently in Critical or Probation.`
-    }
-    lines.push(thirtyLine)
-    lines.push('')
-    return lines.join('\n')
-  }
-
-  function fmtMonthLong(monthStr) {
-    const [y, m] = String(monthStr).split('-').map(Number)
-    const names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-    return `${names[m - 1]} ${y}`
-  }
-
-  function buildDemandText() {
-    if (!demandSurges.length) return null
-    // Month label comes from the permit data (report_month), matching Permit
-    // Pulse; fall back to the surge's own latest series month if meta is absent.
-    const permitMonth = fmtMonthLong(permitMeta?.report_month || demandSurges[0].month)
-    const lines = []
-    lines.push('ANTICIPATED VENDOR DEMAND BASED ON PERMIT DATA')
-    lines.push('-'.repeat(40))
-    lines.push('POTENTIAL for increased trade demand ahead — a forward signal, not a')
-    lines.push('certainty. Consider lining up crew capacity where permits are surging.')
-    lines.push('')
-    lines.push(`  ${'Permit Month'.padEnd(14)}${'Region'.padEnd(24)}% Above Normal`)
-    for (const s of demandSurges) {
-      const p = `${s.pctAbove >= 0 ? '+' : ''}${(s.pctAbove * 100).toFixed(0)}%`
-      lines.push(`  ${permitMonth.padEnd(14)}${s.name.padEnd(24)}${p}`)
-    }
-    lines.push('')
-    return lines.join('\n')
-  }
-
+  // The email body is rendered by the shared builder so this preview and the
+  // delivered email (scripts/send-digest.js) can never drift. We pass the raw
+  // rows + configured thresholds; buildDigestText does all filtering, tiering,
+  // and formatting. Everything above (the styled cards) is display-only.
   function buildEmailText() {
-    const date = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
-    const lines = []
-    lines.push(`VTC SCORECARD DIGEST — ${date}`)
-    lines.push('='.repeat(60))
-    lines.push('')
-    lines.push(buildSummaryText())
-    const demand = buildDemandText()
-    if (demand) lines.push(demand)
-    lines.push('VENDOR/TRADE SUMMARY')
-    lines.push('-'.repeat(40))
-    lines.push(`Total vendors scored: ${valid.length}`)
-    lines.push(`Average score: ${avgScore?.toFixed(1) ?? '—'}`)
-    lines.push(`Good: ${tierCounts.Good}  |  Watch: ${tierCounts.Watch}  |  Probation: ${tierCounts.Probation}  |  Critical: ${tierCounts.Critical}`)
-    if (weights) lines.push(`Weights: Safety ${(weights.safety_weight*100).toFixed(0)}% · Schedule ${(weights.schedule_weight*100).toFixed(0)}% · Rework ${(weights.rework_weight*100).toFixed(0)}% · Feedback ${(weights.feedback_weight*100).toFixed(0)}%`)
-    lines.push('')
-    if (critical.length > 0) {
-      lines.push('🚨 CRITICAL VENDORS (immediate attention required)')
-      lines.push('-'.repeat(40))
-      for (const s of critical) lines.push(`  • ${s.vendors?.name} (${s.vendors?.vendor_categories?.name}) — Score: ${Number(s.weighted_total).toFixed(1)}`)
-      lines.push('')
-    }
-    if (probation.length > 0) {
-      lines.push('⚠️  PROBATION VENDORS')
-      lines.push('-'.repeat(40))
-      for (const s of probation) lines.push(`  • ${s.vendors?.name} (${s.vendors?.vendor_categories?.name}) — Score: ${Number(s.weighted_total).toFixed(1)}`)
-      lines.push('')
-    }
-    lines.push('TOP 5 PERFORMERS')
-    lines.push('-'.repeat(40))
-    top5.forEach((s, i) => lines.push(`  ${i + 1}. ${s.vendors?.name} — ${Number(s.weighted_total).toFixed(1)}`))
-    lines.push('')
-    lines.push('BOTTOM 5 PERFORMERS')
-    lines.push('-'.repeat(40))
-    bottom5.forEach((s, i) => lines.push(`  ${i + 1}. ${s.vendors?.name} — ${Number(s.weighted_total).toFixed(1)}`))
-    lines.push('')
-    if (kudos.length > 0) {
-      lines.push('👍 RECENT KUDOS (last 30 days, approved)')
-      lines.push('-'.repeat(40))
-      for (const f of kudos.slice(0, 5)) lines.push(`  • ${f.vendors?.name} — submitted by ${f.submitter?.full_name || 'Unknown'}`)
-      lines.push('')
-    }
-    if (complaints.length > 0) {
-      lines.push('👎 RECENT COMPLAINTS (last 30 days, approved)')
-      lines.push('-'.repeat(40))
-      for (const f of complaints.slice(0, 5)) lines.push(`  • ${f.vendors?.name} (${f.severity || 'unspecified'}) — submitted by ${f.submitter?.full_name || 'Unknown'}`)
-      lines.push('')
-    }
-    lines.push('='.repeat(60))
-    lines.push(`Generated from VTC Scorecard · ${date}`)
-    return lines.join('\n')
+    return buildDigestText({
+      scores,
+      feedback: recentFeedback,
+      weights,
+      priorScores,
+      priorSnapshotName,
+      permitSeries,
+      permitMeta,
+      thresholds: {
+        good: thresholds.threshold_good,
+        watch: thresholds.threshold_watch,
+        probation: thresholds.threshold_probation,
+      },
+      minThresholds,
+    })
   }
 
   async function handleCopy() {
