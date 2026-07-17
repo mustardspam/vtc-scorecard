@@ -6,6 +6,13 @@ import { RefreshCw, UserCheck, UserX, Info } from 'lucide-react'
 
 const ROLES = ['admin', 'manager', 'viewer']
 
+const STALE_LOGIN_DAYS = 14
+
+function daysSince(dateStr) {
+  if (!dateStr) return null
+  return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000)
+}
+
 const ROLE_DESCRIPTIONS = {
   admin: 'Full access — manage users, uploads, settings',
   manager: 'Upload data, review feedback, view all reports',
@@ -325,8 +332,28 @@ function UserRow({ u, isSelf, onRoleChange, onToggleActive, onToggleAreaManager,
       <td className="px-3 py-2 text-xs text-gray-400">
         {new Date(u.created_at).toLocaleDateString()}
       </td>
-      <td className="px-3 py-2 text-xs text-gray-400">
-        {u.last_sign_in_at ? new Date(u.last_sign_in_at).toLocaleString() : 'Never'}
+      <td className="px-3 py-2 text-xs">
+        {(() => {
+          const days = daysSince(u.last_sign_in_at)
+          const isStale = days !== null && days >= STALE_LOGIN_DAYS
+          return (
+            <span className="inline-flex items-center gap-2">
+              <span
+                className={`inline-block w-2 h-2 rounded-full ${
+                  days === null ? 'bg-gray-300' : isStale ? 'bg-red-600' : 'bg-green-500'
+                }`}
+              />
+              <span className={isStale ? 'font-semibold text-red-600' : 'text-gray-400'}>
+                {u.last_sign_in_at ? new Date(u.last_sign_in_at).toLocaleString() : 'Never'}
+              </span>
+              {isStale && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-50 text-red-600 border border-red-200">
+                  {days}d idle
+                </span>
+              )}
+            </span>
+          )
+        })()}
       </td>
     </tr>
   )
