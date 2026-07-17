@@ -2,7 +2,6 @@ import { lazy, Suspense, useEffect, useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import { Menu } from 'lucide-react'
 import Sidebar from './Sidebar'
-import AIChatWidget from './AIChatWidget'
 import AppBrand from './AppBrand'
 import { cn } from '../../lib/cn'
 
@@ -81,7 +80,6 @@ export default function AppLayout() {
           </div>
         </main>
       </div>
-      <AIChatWidget />
     </div>
   )
 }
