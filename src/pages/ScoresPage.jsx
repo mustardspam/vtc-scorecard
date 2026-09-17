@@ -146,11 +146,19 @@ export default function ScoresPage() {
         return name.includes(q) || cat.includes(q)
       })
       .sort((a, b) => {
+        if (sortField === 'trend') {
+          const aDelta = trendDelta((trendMap[a.vendor_id] || []).map(h => h.score))
+          const bDelta = trendDelta((trendMap[b.vendor_id] || []).map(h => h.score))
+          // Vendors without enough history stay at the bottom in both directions
+          if (aDelta == null) return bDelta == null ? 0 : 1
+          if (bDelta == null) return -1
+          return sortDir === 'asc' ? aDelta - bDelta : bDelta - aDelta
+        }
         const aVal = a[sortField] ?? -Infinity
         const bVal = b[sortField] ?? -Infinity
         return sortDir === 'asc' ? aVal - bVal : bVal - aVal
       })
-  }, [scores, search, sortField, sortDir])
+  }, [scores, search, sortField, sortDir, trendMap])
 
   function exportCSV() {
     const headers = ['Rank', 'Vendor', 'Category', 'Jobs (score period)', 'Safety', 'Schedule', 'Rework', 'Feedback', 'Total', 'Risk (12mo)']
@@ -248,7 +256,9 @@ export default function ScoresPage() {
                     Estimated 12-month $ exposure from rework backcharge admin overhead, OSHA-anchored safety costs, and no-shows — projected at this vendor's recent job-volume trend.
                   </div>
                 </th>
-                <th className="text-center">Trend</th>
+                <th className="text-center cursor-pointer" onClick={() => handleSort('trend')} title="Change in total score since the previous snapshot — click to sort best/worst">
+                  <span className="inline-flex items-center justify-center gap-1 w-full">Trend<SortIcon field="trend" /></span>
+                </th>
                 <th className="text-center no-print w-[52px]"> </th>
               </tr>
             </thead>
