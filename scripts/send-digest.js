@@ -1,3 +1,4 @@
+const crypto = require('crypto')
 const { createClient } = require('@supabase/supabase-js')
 // Single source of truth for the digest body — shared with the in-app preview
 // (src/pages/DigestPage.jsx) so the delivered email can never drift from the
@@ -9,6 +10,15 @@ const SUPABASE_URL = process.env.SUPABASE_URL
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY
 
 const FROM_ADDRESS = 'VTC Scorecard <digest@vtcouncil.online>'
+
+// system_config key where we remember the content fingerprint of the last digest
+// we actually sent. The weekly job only sends when the fingerprint changes, so a
+// week with no website updates doesn't re-send the same stale scores.
+const CONTENT_HASH_KEY = 'digest_content_hash'
+
+// Set FORCE_DIGEST=true (e.g. via the manual "Run workflow" input) to send even
+// when the content is unchanged.
+const FORCE = /^(1|true|yes)$/i.test(process.env.FORCE_DIGEST || '')
 
 if (!RESEND_API_KEY || !SUPABASE_SERVICE_ROLE_KEY) {
   console.error('Missing required env vars: RESEND_API_KEY, SUPABASE_SERVICE_ROLE_KEY')
@@ -159,6 +169,45 @@ async function sendEmail(subject, text, recipients) {
   return { id: ids.join(', ') }
 }
 
+// Fingerprint the digest CONTENT, ignoring the calendar date. buildDigestText
+// stamps today's date into the header and footer, so we rebuild the body with a
+// fixed date before hashing — otherwise every week would look "changed" purely
+// because the date advanced. Any real change (scores, feedback, permits,
+// weights, thresholds, tier moves) still changes the hash.
+function contentHash(data) {
+  const canonical = buildDigestText({ ...data, now: new Date(0) })
+  return crypto.createHash('sha256').update(canonical).digest('hex')
+}
+
+async function loadLastContentHash() {
+  const { data, error } = await supabase
+    .from('system_config')
+    .select('value')
+    .eq('key', CONTENT_HASH_KEY)
+    .maybeSingle()
+  if (error) {
+    console.warn(`Could not read ${CONTENT_HASH_KEY} (will treat as changed):`, error.message)
+    return null
+  }
+  const raw = data?.value
+  return raw == null ? null : String(raw)
+}
+
+async function saveContentHash(hash) {
+  const { error } = await supabase
+    .from('system_config')
+    .upsert(
+      {
+        key: CONTENT_HASH_KEY,
+        value: hash,
+        description: 'SHA-256 of the last digest content actually sent; the weekly job skips sending when this is unchanged.',
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'key' }
+    )
+  if (error) throw new Error(`Failed to save ${CONTENT_HASH_KEY}: ${error.message}`)
+}
+
 async function main() {
   console.log('Loading recipients from Supabase...')
   const recipients = await loadRecipients()
@@ -172,12 +221,33 @@ async function main() {
   console.log(`Loaded ${data.scores.length} scores, ${data.feedback.length} feedback entries, ${data.priorScores.length} prior snapshot scores`)
 
   const text = buildDigestText(data)
+
+  // Only send if the content has changed since the last delivered digest, so a
+  // week with no website updates doesn't re-send the same stale scores.
+  const hash = contentHash(data)
+  const lastHash = await loadLastContentHash()
+  if (hash === lastHash && !FORCE) {
+    console.log(`Content unchanged since last digest (hash ${hash.slice(0, 12)}…) — skipping send.`)
+    console.log('To send anyway, re-run with FORCE_DIGEST=true.')
+    process.exit(0)
+  }
+  if (FORCE && hash === lastHash) {
+    console.log('Content unchanged, but FORCE_DIGEST is set — sending anyway.')
+  } else {
+    console.log(`Content changed (was ${lastHash ? lastHash.slice(0, 12) + '…' : 'none'}, now ${hash.slice(0, 12)}…) — sending.`)
+  }
+
   const date = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
   const subject = `VTC Scorecard Weekly Digest — ${date}`
 
   console.log(`Sending to ${recipients.length} recipients: ${recipients.join(', ')}`)
   const result = await sendEmail(subject, text, recipients)
   console.log('Sent successfully:', result.id)
+
+  // Record the fingerprint only after a successful send, so a failed send is
+  // retried (and doesn't silently suppress the next run).
+  await saveContentHash(hash)
+  console.log('Saved content fingerprint for change detection.')
 }
 
 main().catch(err => {

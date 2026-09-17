@@ -8,6 +8,11 @@ on:
     # want a true 8:00 AM year-round during standard time.
     - cron: '0 13 * * 1'
   workflow_dispatch: # Allow manual trigger from GitHub Actions UI
+    inputs:
+      force:
+        description: 'Send even if the content is unchanged since the last digest'
+        type: boolean
+        default: false
 
 jobs:
   send-digest:
@@ -30,4 +35,5 @@ jobs:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           SUPABASE_URL: https://jwsajxjpaapcpieutrdi.supabase.co
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          FORCE_DIGEST: ${{ github.event.inputs.force }}
         run: node send-digest.js
