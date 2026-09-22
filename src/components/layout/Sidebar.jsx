@@ -5,7 +5,7 @@ import { useState } from 'react'
 import { cn } from '../../lib/cn'
 import {
   LayoutDashboard, Table2, MessageSquare, Upload, Camera,
-  Activity, Settings, LogOut, Send, KeyRound, X, Database, Sun, Moon, MapPin, Mail, Map, Users
+  Activity, Settings, LogOut, Send, KeyRound, X, Database, Sun, Moon, MapPin, Mail, Map, Users, TrendingUp
 } from 'lucide-react'
 import { authErrorMessage } from '../../lib/auth-errors'
 import { supabase } from '../../lib/supabase'
@@ -16,6 +16,7 @@ const ALL_STAFF = ['admin', 'manager', 'viewer']
 const navItems = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', roles: ALL_STAFF },
   { to: '/scores', icon: Table2, label: 'Scores', roles: ALL_STAFF },
+  { to: '/trends', icon: TrendingUp, label: 'Trends', roles: ALL_STAFF },
   { to: '/data', icon: Database, label: 'Data', roles: ALL_STAFF },
   { to: '/feedback/submit', icon: Send, label: 'Submit Feedback', roles: ALL_STAFF },
   { to: '/feedback', icon: MessageSquare, label: 'Feedback Review', roles: ALL_STAFF, end: true },

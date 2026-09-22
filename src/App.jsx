@@ -23,6 +23,7 @@ const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage'))
 const DashboardPage = lazy(() => import('./pages/DashboardPage'))
 
 const ScoresPage = lazy(() => import('./pages/ScoresPage'))
+const TrendsPage = lazy(() => import('./pages/TrendsPage'))
 
 const FeedbackPage = lazy(() => import('./pages/FeedbackPage'))
 
@@ -101,6 +102,7 @@ export default function App() {
         <Route path="/dashboard" element={<LazyPage><DashboardPage /></LazyPage>} />
 
         <Route path="/scores" element={<LazyPage><ScoresPage /></LazyPage>} />
+        <Route path="/trends" element={<LazyPage><TrendsPage /></LazyPage>} />
 
         <Route path="/data" element={<LazyPage><DataPage /></LazyPage>} />
 
