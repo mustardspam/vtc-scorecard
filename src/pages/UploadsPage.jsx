@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import { logActivity } from '../hooks/useActivityLog'
 import { useAuth } from '../hooks/useAuth'
@@ -93,6 +93,17 @@ function ofiSeverity(category) {
   if (/fall/.test(c)) return 'near_miss'
   if (/tool|equipment/.test(c)) return 'equipment'
   return 'ppe'
+}
+
+/** Active vendors, aliases and ERP vendor ID references, for matching imported names. */
+async function fetchVendorData() {
+  const [vRes, aRes, brRes] = await Promise.all([
+    supabase.from('vendors').select('id, name, category_id').eq('is_active', true).order('name'),
+    supabase.from('vendor_aliases').select('*'),
+    supabase.from('vendor_brand_references').select('jc_vendor_id, vendor_id, brand'),
+  ])
+  for (const r of [vRes, aRes, brRes]) if (r.error) throw new Error('Loading vendors failed: ' + r.error.message)
+  return { vendors: vRes.data || [], aliases: aRes.data || [], brandRefs: brRes.data || [] }
 }
 
 /** One-line summary of what an ERP pull imported, per upload type. */
@@ -194,14 +205,10 @@ export default function UploadsPage() {
 
   async function loadVendors() {
     try {
-      const [vRes, aRes, brRes] = await Promise.all([
-        supabase.from('vendors').select('id, name, category_id').eq('is_active', true).order('name'),
-        supabase.from('vendor_aliases').select('*'),
-        supabase.from('vendor_brand_references').select('jc_vendor_id, vendor_id, brand'),
-      ])
-      setVendors(vRes.data || [])
-      setAliases(aRes.data || [])
-      setBrandRefs(brRes.data || [])
+      const v = await fetchVendorData()
+      setVendors(v.vendors)
+      setAliases(v.aliases)
+      setBrandRefs(v.brandRefs)
     } catch (err) {
       console.error('loadVendors error:', err)
     }
@@ -323,32 +330,7 @@ export default function UploadsPage() {
     setErpPulling(brandName)
     setErpStep('Contacting ResPlan...')
     try {
-      const result = await pullFromErp(type, brandName, month, setErpStep)
-      const typeLabel = FILE_TYPES.find(t => t.value === type)?.label || type
-      const label = erpPullLabel(result.range, result.pulledAt)
-      const name = `ERP pull - ${typeLabel} - ${brandName} - ${label}.json`
-      const sourceFile = new File([JSON.stringify(result)], name, { type: 'application/json' })
-      const pullInfo = {
-        erp_pull: true, brand: brandName, month, pulled_at: result.pulledAt,
-        range_from: result.range?.from ?? null, range_to: result.range?.to ?? null,
-      }
-
-      let summary, unmatched = [], review = null
-      if (type === 'jc_vendor_report') {
-        const imported = await importJCVendors({
-          parsed: result, codes: new Set(result.communities.map(c => c.code)), brandName, sourceFile,
-          extraMapping: pullInfo, progress: setErpStep,
-        })
-        summary = { ...imported, errors: result.summary.errors }
-      } else if (!result.records.length) {
-        // Nothing in the ERP for this period: leave VTC (and any earlier pull) as it is.
-        setErpResult({ type, brand: brandName, label, summary: result.summary, unmatched: [], empty: true })
-        return
-      } else {
-        ({ unmatched, review } = await importErpRecords(type, result.records, sourceFile, pullInfo))
-        summary = result.summary
-      }
-      setErpResult({ type, brand: brandName, label, summary, unmatched, review })
+      setErpResult(await runErpPull(type, brandName, month, setErpStep))
       loadHistory()
       loadLastUploads()
       loadVendors()
@@ -360,13 +342,100 @@ export default function UploadsPage() {
     }
   }
 
+  /** One pull from ResPlan, imported. Resolves to what happened (shown under the Pull buttons). */
+  async function runErpPull(type, brandName, month, progress) {
+    const result = await pullFromErp(type, brandName, month, progress)
+    const typeLabel = FILE_TYPES.find(t => t.value === type)?.label || type
+    const label = erpPullLabel(result.range, result.pulledAt)
+    const name = `ERP pull - ${typeLabel} - ${brandName} - ${label}.json`
+    const sourceFile = new File([JSON.stringify(result)], name, { type: 'application/json' })
+    const pullInfo = {
+      erp_pull: true, brand: brandName, month, pulled_at: result.pulledAt,
+      range_from: result.range?.from ?? null, range_to: result.range?.to ?? null,
+    }
+
+    if (type === 'jc_vendor_report') {
+      const imported = await importJCVendors({
+        parsed: result, codes: new Set(result.communities.map(c => c.code)), brandName, sourceFile,
+        extraMapping: pullInfo, progress,
+      })
+      return { type, brand: brandName, label, summary: { ...imported, errors: result.summary.errors }, unmatched: [] }
+    }
+    // Nothing in the ERP for this period: leave VTC (and any earlier pull) as it is.
+    if (!result.records.length) return { type, brand: brandName, label, summary: result.summary, unmatched: [], empty: true }
+    const { unmatched, review } = await importErpRecords(type, result.records, sourceFile, pullInfo, progress)
+    return { type, brand: brandName, label, summary: result.summary, unmatched, review }
+  }
+
+  // Nightly pulls: ResPlan opens /uploads?autopull=nightly in its own browser (signed
+  // in to VTC) at midnight and reads window.__vtcAutopull for the outcome. Every pull
+  // runs for the current month; on the 1st-3rd the previous month is pulled once more
+  // so its last days are in. Pulling a month again needs an admin.
+  const [autopull, setAutopull] = useState(null)
+  const autopullStarted = useRef(false)
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('autopull') !== 'nightly') return
+    if (!user || autopullStarted.current) return
+    autopullStarted.current = true
+    runNightlyPulls()
+  // Runs once, as soon as the signed-in user is known.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user])
+
+  async function runNightlyPulls() {
+    const report = { status: 'running', startedAt: new Date().toISOString(), step: '', results: [] }
+    const publish = () => { window.__vtcAutopull = { ...report, results: [...report.results] }; setAutopull(window.__vtcAutopull) }
+    publish()
+    if (!isAdmin()) {
+      Object.assign(report, { status: 'error', error: 'Nightly pulls need an admin account (pulling a month again replaces it).' })
+      return publish()
+    }
+    const today = new Date()
+    const months = [thisMonth()]
+    if (today.getDate() <= 3) {
+      const prev = new Date(today.getFullYear(), today.getMonth() - 1, 1)
+      months.unshift(`${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`)
+    }
+    // JC vendors first: it adds vendors and their ERP IDs that the other pulls match on.
+    const jobs = []
+    for (const type of ['jc_vendor_report', 'schedule', 'rework', 'safety']) {
+      for (const b of erpBrandsFor(type)) {
+        for (const month of type === 'jc_vendor_report' ? [null] : months) jobs.push({ type, brand: b, month })
+      }
+    }
+    for (const job of jobs) {
+      const typeLabel = FILE_TYPES.find(t => t.value === job.type)?.label || job.type
+      const what = `${typeLabel} - ${job.brand}${job.month ? ` - ${job.month}` : ''}`
+      report.step = what
+      publish()
+      try {
+        const r = await runErpPull(job.type, job.brand, job.month, s => { report.step = `${what}: ${s}`; publish() })
+        report.results.push({
+          ...job, ok: true, label: r.label,
+          text: r.empty ? 'no data for this period' : erpSummaryText(r.type, r.summary),
+          unmatched: r.unmatched.length + (r.review?.names.filter(n => !n.vendorId && !n.tradeOnly).length || 0),
+        })
+      } catch (err) {
+        report.results.push({ ...job, ok: false, error: err.message })
+      }
+      publish()
+    }
+    const failed = report.results.filter(r => !r.ok).length
+    Object.assign(report, { status: failed ? 'partial' : 'done', step: '', finishedAt: new Date().toISOString() })
+    publish()
+    await logActivity('nightly_erp_pull', `Nightly pulls: ${report.results.length - failed} of ${report.results.length} imported${failed ? `, ${failed} failed` : ''}`, { results: report.results })
+    loadHistory()
+    loadLastUploads()
+    loadVendors()
+  }
+
   /**
    * Imports pulled schedule / rework / safety records as an approved batch.
    * Returns { unmatched } (vendor names that couldn't be matched) and, for safety,
    * { review }: the batch and each OFI name with its vendor, to check and correct.
    */
-  async function importErpRecords(type, records, sourceFile, pullInfo) {
-    setErpStep('Checking for an earlier pull of this month...')
+  async function importErpRecords(type, records, sourceFile, pullInfo, progress = setErpStep) {
+    progress('Checking for an earlier pull of this month...')
     const { data: previous, error: prevErr } = await supabase.from('import_batches')
       .select('id, file_type, uploaded_file_id, uploaded_files(storage_path)')
       .eq('file_type', type)
@@ -381,7 +450,9 @@ export default function UploadsPage() {
 
     // Vendor matching without review: ERP vendor ID via brand references first, then
     // alias / exact / confident fuzzy name match. Anything else stays unmatched.
-    setErpStep('Matching vendors...')
+    progress('Matching vendors...')
+    // Fresh vendor data rather than the page's: nightly pulls run several imports in a row.
+    const { vendors, aliases, brandRefs } = await fetchVendorData()
     const { resolveVendorForImport, resolveOfiVendor } = await import('../lib/parsers/vendor-matcher')
     const vendorMap = new Map()
     const matchLog = []
@@ -410,7 +481,7 @@ export default function UploadsPage() {
     }
     const unmatched = matchLog.filter(m => !m.matched).map(m => m.raw)
 
-    setErpStep('Saving import...')
+    progress('Saving import...')
     const storagePath = `${Date.now()}_${sourceFile.name}`
     const { data: fileRecord } = await supabase.storage.from('uploads').upload(storagePath, sourceFile)
     const { data: uploadedFile, error: fileErr } = await supabase.from('uploaded_files').insert({
@@ -444,14 +515,14 @@ export default function UploadsPage() {
       )
     }
 
-    setErpStep(`Importing ${records.length} records...`)
+    progress(`Importing ${records.length} records...`)
     // Schedule uploads have always been stored under the month they were uploaded,
     // i.e. the month after the data (July's report -> 2026-08-01). ERP pulls follow suit.
     if (type === 'schedule') await insertScheduleRecords(batch.id, records.map(r => ({ ...r, period_month: monthAfter(r.period_month) })), vendorMap)
     else if (type === 'safety') await insertSafetyRecords(batch.id, records.map(r => ({ ...r, severity: ofiSeverity(r.category), incident_type: r.category })), vendorMap)
     else await insertReworkRecords(batch.id, records.map(r => ({ ...r, lot_or_address: r.community })), vendorMap)
 
-    setErpStep('Recalculating scores...')
+    progress('Recalculating scores...')
     await supabase.rpc('calculate_scores')
     await logActivity('import_approved', `Pulled ${type} data from ERP: ${sourceFile.name.replace(/^ERP pull - /, '').replace(/\.json$/, '')} (${records.length} rows)`, {
       batch_id: batch.id, file_id: uploadedFile.id, filename: sourceFile.name, row_count: records.length, ...pullInfo,
@@ -1064,6 +1135,26 @@ export default function UploadsPage() {
     <div className="space-y-6 min-w-0">
       <h1 className="glass-page-title">Upload Center</h1>
       {canUpload && step !== 'upload' && <UploadStepper step={step} />}
+
+      {autopull && (
+        <div className="glass-panel p-4 space-y-2 text-sm">
+          <div className="flex items-center gap-2">
+            {autopull.status === 'running' ? <Loader2 className="w-4 h-4 animate-spin" /> : <CloudDownload className="w-4 h-4" style={{ color: 'var(--g-accent)' }} />}
+            <h3 className="font-medium">
+              Nightly pulls {autopull.status === 'running' ? 'running' : autopull.status === 'done' ? 'finished' : autopull.status === 'partial' ? 'finished with failures' : 'could not run'}
+            </h3>
+          </div>
+          {autopull.error && <p className="text-xs text-red-600">{autopull.error}</p>}
+          {autopull.step && <p className="text-xs text-gray-500">{autopull.step}</p>}
+          {autopull.results.map((r, i) => (
+            <p key={i} className={`text-xs ${r.ok ? 'text-gray-700' : 'text-red-600'}`}>
+              {r.ok ? <CheckCircle className="inline w-3 h-3 mr-1 text-green-600" /> : <XCircle className="inline w-3 h-3 mr-1" />}
+              {FILE_TYPES.find(t => t.value === r.type)?.label} – {r.brand}{r.month ? ` – ${r.month}` : ''}: {r.ok ? r.text : r.error}
+              {r.unmatched > 0 && <span className="text-amber-700"> ({r.unmatched} unmatched)</span>}
+            </p>
+          ))}
+        </div>
+      )}
 
       {!canUpload && (
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3">
