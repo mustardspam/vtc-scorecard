@@ -79,10 +79,27 @@ function erpPullLabel(range, pulledAt) {
 /** Brands ResPlan can pull from the ERP (each is its own ERP login). */
 const ERP_BRANDS = ['Starlight', 'Ashton Woods']
 
+/** Brands a pull type exists for: safety OFIs (HB NEXT) are only kept for Ashton Woods Houston. */
+const erpBrandsFor = type => (type === 'safety' ? ['Ashton Woods'] : ERP_BRANDS)
+
+/**
+ * Severity of a safety OFI from its violation category (HB NEXT "nature of safety
+ * violation"). Fall protection is scored as a near miss; tools and equipment
+ * operation as equipment; everything else (PPE, ladders, electrical, site/trailer
+ * general...) as PPE.
+ */
+function ofiSeverity(category) {
+  const c = (category || '').toLowerCase()
+  if (/fall/.test(c)) return 'near_miss'
+  if (/tool|equipment/.test(c)) return 'equipment'
+  return 'ppe'
+}
+
 /** One-line summary of what an ERP pull imported, per upload type. */
 function erpSummaryText(fileType, s) {
   if (fileType === 'schedule') return `${s.vendors} vendors, ${s.tasks} tasks, ${s.noShows} no-shows`
   if (fileType === 'rework') return `${s.backcharges} backcharges totaling $${s.total.toLocaleString()}`
+  if (fileType === 'safety') return `${s.ofis} OFIs${s.fines ? `, $${s.fines.toLocaleString()} in fines` : ''}`
   if (fileType === 'jc_vendor_report') return `${s.vendors} vendors, ${s.communities} communities, ${s.assignments} assignments`
   return ''
 }
@@ -316,7 +333,7 @@ export default function UploadsPage() {
         range_from: result.range?.from ?? null, range_to: result.range?.to ?? null,
       }
 
-      let summary, unmatched = []
+      let summary, unmatched = [], review = null
       if (type === 'jc_vendor_report') {
         const imported = await importJCVendors({
           parsed: result, codes: new Set(result.communities.map(c => c.code)), brandName, sourceFile,
@@ -328,10 +345,10 @@ export default function UploadsPage() {
         setErpResult({ type, brand: brandName, label, summary: result.summary, unmatched: [], empty: true })
         return
       } else {
-        unmatched = await importErpRecords(type, result.records, sourceFile, pullInfo)
+        ({ unmatched, review } = await importErpRecords(type, result.records, sourceFile, pullInfo))
         summary = result.summary
       }
-      setErpResult({ type, brand: brandName, label, summary, unmatched })
+      setErpResult({ type, brand: brandName, label, summary, unmatched, review })
       loadHistory()
       loadLastUploads()
       loadVendors()
@@ -343,7 +360,11 @@ export default function UploadsPage() {
     }
   }
 
-  /** Imports pulled schedule / rework records as an approved batch. Returns vendor names that couldn't be matched. */
+  /**
+   * Imports pulled schedule / rework / safety records as an approved batch.
+   * Returns { unmatched } (vendor names that couldn't be matched) and, for safety,
+   * { review }: the batch and each OFI name with its vendor, to check and correct.
+   */
   async function importErpRecords(type, records, sourceFile, pullInfo) {
     setErpStep('Checking for an earlier pull of this month...')
     const { data: previous, error: prevErr } = await supabase.from('import_batches')
@@ -361,9 +382,22 @@ export default function UploadsPage() {
     // Vendor matching without review: ERP vendor ID via brand references first, then
     // alias / exact / confident fuzzy name match. Anything else stays unmatched.
     setErpStep('Matching vendors...')
-    const { resolveVendorForImport } = await import('../lib/parsers/vendor-matcher')
+    const { resolveVendorForImport, resolveOfiVendor } = await import('../lib/parsers/vendor-matcher')
     const vendorMap = new Map()
     const matchLog = []
+    if (type === 'safety') {
+      // An OFI names the trade partner loosely, or only the trade with the company
+      // under "Subcontractor Involved"; vendor_name becomes the company as written.
+      const { data: categories } = await supabase.from('vendor_categories').select('name')
+      records = records.map(r => {
+        const m = resolveOfiVendor(r, vendors, aliases, categories || [])
+        if (!vendorMap.has(m.name)) {
+          vendorMap.set(m.name, m.vendor?.id || null)
+          matchLog.push({ raw: m.name, matched: m.vendor?.name, source: m.source, trade_only: m.tradeOnly || undefined })
+        }
+        return { ...r, vendor_name: m.name }
+      })
+    }
     for (const r of records) {
       if (vendorMap.has(r.vendor_name)) continue
       let vendor = null, match = null
@@ -414,6 +448,7 @@ export default function UploadsPage() {
     // Schedule uploads have always been stored under the month they were uploaded,
     // i.e. the month after the data (July's report -> 2026-08-01). ERP pulls follow suit.
     if (type === 'schedule') await insertScheduleRecords(batch.id, records.map(r => ({ ...r, period_month: monthAfter(r.period_month) })), vendorMap)
+    else if (type === 'safety') await insertSafetyRecords(batch.id, records.map(r => ({ ...r, severity: ofiSeverity(r.category), incident_type: r.category })), vendorMap)
     else await insertReworkRecords(batch.id, records.map(r => ({ ...r, lot_or_address: r.community })), vendorMap)
 
     setErpStep('Recalculating scores...')
@@ -421,7 +456,42 @@ export default function UploadsPage() {
     await logActivity('import_approved', `Pulled ${type} data from ERP: ${sourceFile.name.replace(/^ERP pull - /, '').replace(/\.json$/, '')} (${records.length} rows)`, {
       batch_id: batch.id, file_id: uploadedFile.id, filename: sourceFile.name, row_count: records.length, ...pullInfo,
     })
-    return unmatched
+    if (type !== 'safety') return { unmatched }
+    const counts = new Map()
+    for (const r of records) counts.set(r.vendor_name, (counts.get(r.vendor_name) || 0) + 1)
+    return {
+      unmatched: [],
+      review: {
+        batchId: batch.id,
+        names: matchLog.map(m => ({
+          name: m.raw, count: counts.get(m.raw) || 0, source: m.source, tradeOnly: !!m.trade_only,
+          vendorId: vendorMap.get(m.raw) || '',
+        })).sort((a, b) => (!!a.vendorId - !!b.vendorId) || a.name.localeCompare(b.name)),
+      },
+    }
+  }
+
+  /**
+   * Corrects the vendor of one OFI name in a safety pull: re-points its records,
+   * remembers the name as an alias (so the next pull matches it) and rescores.
+   */
+  async function assignOfiVendor(batchId, name, vendorId) {
+    const { error } = await supabase.from('safety_records')
+      .update({ vendor_id: vendorId || null })
+      .eq('batch_id', batchId)
+      .eq('vendor_name_raw', name)
+    if (error) throw new Error('Updating the safety records failed: ' + error.message)
+    // Remember the choice for the next pull (or forget it when cleared).
+    const { error: aliasErr } = vendorId
+      ? await supabase.from('vendor_aliases').upsert({ alias_name: name, vendor_id: vendorId, created_by: user?.id }, { onConflict: 'alias_name' })
+      : await supabase.from('vendor_aliases').delete().eq('alias_name', name)
+    if (aliasErr) console.warn('Alias save failed (non-fatal):', aliasErr.message)
+    await supabase.rpc('calculate_scores')
+    setErpResult(prev => prev?.review?.batchId === batchId ? {
+      ...prev,
+      review: { ...prev.review, names: prev.review.names.map(n => n.name === name ? { ...n, vendorId, source: vendorId ? 'confirmed' : 'unmatched' } : n) },
+    } : prev)
+    loadVendors()
   }
 
   async function handleParse() {
@@ -1077,10 +1147,12 @@ export default function UploadsPage() {
             <div className="glass-panel p-4 space-y-3">
               <div className="flex items-center gap-2">
                 <CloudDownload className="w-4 h-4" style={{ color: 'var(--g-accent)' }} />
-                <h3 className="text-sm font-medium">Or pull it straight from the ERP</h3>
+                <h3 className="text-sm font-medium">{fileType === 'safety' ? 'Or pull the OFIs straight from HB NEXT' : 'Or pull it straight from the ERP'}</h3>
               </div>
               <p className="text-xs text-gray-500">
-                ResPlan runs the reports in Dynamic Builder (Houston) and the data is imported right away — no file needed.
+                {fileType === 'safety'
+                  ? 'ResPlan reads the trade partner OFIs for Ashton Woods Homes - Houston from HB NEXT (Safety Manager › View OFIs), opening each OFI’s PDF for the company, community and violation, and imports them right away — no file needed. Each OFI is scored by its violation: fall protection as a near miss, tools and equipment as equipment, everything else as PPE.'
+                  : 'ResPlan runs the reports in Dynamic Builder (Houston) and the data is imported right away — no file needed.'}
                 {fileType !== 'jc_vendor_report' && ' Pull whenever you need: the current month covers the 1st through today, and pulling a month again replaces its earlier pull with the latest data.'}
                 {fileType === 'schedule' && ' Like a manual upload, a month’s schedule data is filed under the following month.'}
                 {' '}Works on the office PC while ResPlan is running.
@@ -1107,7 +1179,7 @@ export default function UploadsPage() {
                     className="block w-full mt-1 px-3 py-1.5 border border-gray-300 rounded-lg text-sm bg-white"
                   />
                 </label>
-                {ERP_BRANDS.map(b => (
+                {erpBrandsFor(fileType).map(b => (
                   <button
                     key={b}
                     onClick={() => handleErpImport(b)}
@@ -1127,7 +1199,7 @@ export default function UploadsPage() {
                   <div>
                     <p>
                       {erpResult.empty ? (
-                        <><span className="font-medium">{erpResult.brand} ({erpResult.label}):</span> the ERP returned no data for this period, so nothing was imported.</>
+                        <><span className="font-medium">{erpResult.brand} ({erpResult.label}):</span> {erpResult.type === 'safety' ? 'HB NEXT has no OFIs for this period' : 'the ERP returned no data for this period'}, so nothing was imported.</>
                       ) : (
                         <><span className="font-medium">Imported {erpResult.brand} ({erpResult.label}):</span>{' '}{erpSummaryText(erpResult.type, erpResult.summary)}</>
                       )}
@@ -1145,7 +1217,12 @@ export default function UploadsPage() {
                       </p>
                     )}
                     {erpResult.summary.errors?.length > 0 && (
-                      <p className="text-xs text-amber-700 mt-1">Some projects failed and are missing: {erpResult.summary.errors.join('; ')}</p>
+                      <p className="text-xs text-amber-700 mt-1">
+                        {erpResult.type === 'safety' ? 'Some OFIs couldn’t be read and are missing' : 'Some projects failed and are missing'}: {erpResult.summary.errors.join('; ')}
+                      </p>
+                    )}
+                    {erpResult.review && (
+                      <OfiVendorReview review={erpResult.review} vendors={vendors} onAssign={assignOfiVendor} />
                     )}
                     {erpResult.summary.noShowVendorsWithoutTasks?.length > 0 && (
                       <p className="text-xs text-green-700 mt-1">
@@ -1675,6 +1752,65 @@ function VendorMatchCard({ match, vendors, onConfirm, onSkip }) {
         >
           Skip
         </button>
+      </div>
+    </div>
+  )
+}
+
+const OFI_MATCH_LABELS = {
+  alias: 'remembered', exact: 'exact', exact_ci: 'exact', normalized: 'same name',
+  fuzzy: 'similar name', name_words: 'similar name', confirmed: 'confirmed', unmatched: 'not matched',
+}
+
+/**
+ * After a safety pull: each trade partner name as the OFIs wrote it, with the vendor
+ * it was matched to. Unmatched names come first; any match can be corrected.
+ */
+function OfiVendorReview({ review, vendors, onAssign }) {
+  const [saving, setSaving] = useState(null)
+  const [error, setError] = useState('')
+  const unmatched = review.names.filter(n => !n.vendorId && !n.tradeOnly).length
+
+  async function assign(name, vendorId) {
+    setSaving(name)
+    setError('')
+    try { await onAssign(review.batchId, name, vendorId) } catch (err) { setError(err.message) } finally { setSaving(null) }
+  }
+
+  return (
+    <div className="mt-3 text-gray-800">
+      <p className="text-xs font-medium">
+        Trade partners in these OFIs{unmatched > 0 && <span className="text-amber-700"> — {unmatched} not matched yet</span>}
+      </p>
+      <p className="text-xs text-gray-500 mb-2">
+        Names are as the OFIs wrote them. Pick the scorecard vendor for any that are wrong or missing; the choice is remembered for the next pull.
+      </p>
+      {error && <p className="text-xs text-red-600 mb-2">{error}</p>}
+      <div className="space-y-1 max-h-80 overflow-y-auto pr-1">
+        {review.names.map(n => (
+          <div key={n.name} className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="w-48 truncate font-medium" title={n.name}>{n.name}</span>
+            <span className="w-10 text-gray-500">{n.count} OFI{n.count !== 1 ? 's' : ''}</span>
+            {n.tradeOnly ? (
+              <span className="text-amber-700">Only the trade was named, so it can’t be attributed to a vendor</span>
+            ) : (
+              <>
+                <select
+                  value={n.vendorId}
+                  disabled={saving === n.name}
+                  onChange={e => assign(n.name, e.target.value)}
+                  className={`flex-1 min-w-[12rem] border rounded px-2 py-1 bg-white ${n.vendorId ? 'border-gray-300' : 'border-amber-400'}`}
+                >
+                  <option value="">— Not matched —</option>
+                  {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                </select>
+                <span className={`w-24 ${n.vendorId ? 'text-gray-500' : 'text-amber-700'}`}>
+                  {saving === n.name ? 'Saving…' : OFI_MATCH_LABELS[n.source] || n.source}
+                </span>
+              </>
+            )}
+          </div>
+        ))}
       </div>
     </div>
   )

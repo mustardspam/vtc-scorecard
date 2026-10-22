@@ -12,9 +12,13 @@ const POLL_MS = 3000
 const MAX_WAIT_MS = 20 * 60 * 1000
 const POLL_FAILURE_LIMIT_MS = 2 * 60 * 1000
 
-/** VTC upload type -> ResPlan pull kind (Houston: Starlight and Ashton Woods). */
+/**
+ * VTC upload type -> ResPlan pull kind (Houston: Starlight and Ashton Woods). Safety
+ * comes from HB NEXT's OFIs rather than the ERP, Ashton Woods only.
+ */
 export const ERP_PULL_KINDS = {
   schedule: 'schedule',
+  safety: 'safety',
   rework: 'rework',
   jc_vendor_report: 'jc_vendors',
 }
