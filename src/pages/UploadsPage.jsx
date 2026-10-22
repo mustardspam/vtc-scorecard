@@ -2,8 +2,9 @@ import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 import { logActivity } from '../hooks/useActivityLog'
 import { useAuth } from '../hooks/useAuth'
-import { Upload, FileText, CheckCircle, XCircle, AlertTriangle, ArrowRight, Loader2, Building2, Trash2 } from 'lucide-react'
+import { Upload, FileText, CheckCircle, XCircle, AlertTriangle, ArrowRight, Loader2, Building2, Trash2, CloudDownload } from 'lucide-react'
 import UploadStepper from '../components/ui/UploadStepper'
+import { ERP_PULL_KINDS, pullFromErp, getResplanKey, setResplanKey } from '../lib/resplan'
 
 const FILE_TYPES = [
   { value: 'schedule', label: 'Schedule Data', description: 'Monthly schedule adherence report' },
@@ -47,6 +48,45 @@ const INTERNAL_FIELDS = {
   vendor_master: ['vendor_name', 'vendor_id', 'category'],
 }
 
+/** "2026-09-01" -> "2026-10-01" */
+function monthAfter(isoDate) {
+  const [y, m] = isoDate.split('-').map(Number)
+  return m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, '0')}-01`
+}
+
+/** "YYYY-MM" of this month — the default for an ERP pull (month-to-date). */
+function thisMonth() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+/** "2026-10-01" -> "Oct 1, 2026" (local date, no timezone shift). */
+function formatDay(iso) {
+  const [y, m, d] = iso.split('-').map(Number)
+  return new Date(y, m - 1, d).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+/** "Oct 22, 2026, 9:41 AM" */
+function formatStamp(iso) {
+  return new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
+}
+
+/** How an ERP pull is labelled: the dates it covers and when it was pulled. */
+function erpPullLabel(range, pulledAt) {
+  return `${range ? `${formatDay(range.from)} – ${formatDay(range.to)}, ` : ''}pulled ${formatStamp(pulledAt)}`
+}
+
+/** Brands ResPlan can pull from the ERP (each is its own ERP login). */
+const ERP_BRANDS = ['Starlight', 'Ashton Woods']
+
+/** One-line summary of what an ERP pull imported, per upload type. */
+function erpSummaryText(fileType, s) {
+  if (fileType === 'schedule') return `${s.vendors} vendors, ${s.tasks} tasks, ${s.noShows} no-shows`
+  if (fileType === 'rework') return `${s.backcharges} backcharges totaling $${s.total.toLocaleString()}`
+  if (fileType === 'jc_vendor_report') return `${s.vendors} vendors, ${s.communities} communities, ${s.assignments} assignments`
+  return ''
+}
+
 function importTypeLabel(batch) {
   if (batch.column_mapping?.source === 'jc_vendor_report') return 'JC Vendor Report'
   const match = FILE_TYPES.find(t => t.value === batch.file_type)
@@ -78,6 +118,12 @@ export default function UploadsPage() {
   const [selectedUnmatched, setSelectedUnmatched] = useState(new Set())
   const [deleting, setDeleting] = useState(null)
   const [lastUploads, setLastUploads] = useState({})
+  const [erpMonth, setErpMonth] = useState(thisMonth)
+  const [erpPulling, setErpPulling] = useState(null)
+  const [erpStep, setErpStep] = useState('')
+  const [erpError, setErpError] = useState('')
+  const [erpResult, setErpResult] = useState(null)
+  const [resplanKey, setResplanKeyState] = useState(getResplanKey)
   const { user, isManager, isAdmin } = useAuth()
   const canUpload = isManager()
 
@@ -196,38 +242,43 @@ export default function UploadsPage() {
     }
   }
 
+  /** Deletes a batch, its records, and its file when no other batch uses it. Admin only (RLS). */
+  async function removeBatchData(batch) {
+    const batchId = batch.id
+    const fileId = batch.uploaded_file_id
+
+    await supabase.from('schedule_records').delete().eq('batch_id', batchId)
+    await supabase.from('safety_records').delete().eq('batch_id', batchId)
+    await supabase.from('rework_records').delete().eq('batch_id', batchId)
+    await supabase.from('raw_import_rows').delete().eq('batch_id', batchId)
+    await supabase.from('import_batches').delete().eq('id', batchId)
+
+    if (fileId) {
+      const { data: otherBatches } = await supabase
+        .from('import_batches')
+        .select('id')
+        .eq('uploaded_file_id', fileId)
+        .limit(1)
+      if (!otherBatches?.length) {
+        if (batch.uploaded_files?.storage_path) {
+          await supabase.storage.from('uploads').remove([batch.uploaded_files.storage_path])
+        }
+        await supabase.from('uploaded_files').delete().eq('id', fileId)
+      }
+    }
+  }
+
   async function handleDeleteImport(batch) {
     if (!confirm(`Delete import "${batch.uploaded_files?.original_filename || 'unknown'}" and all its data? This cannot be undone.`)) return
     setDeleting(batch.id)
     try {
-      const batchId = batch.id
-      const fileId = batch.uploaded_file_id
-
-      await supabase.from('schedule_records').delete().eq('batch_id', batchId)
-      await supabase.from('safety_records').delete().eq('batch_id', batchId)
-      await supabase.from('rework_records').delete().eq('batch_id', batchId)
-      await supabase.from('raw_import_rows').delete().eq('batch_id', batchId)
-      await supabase.from('import_batches').delete().eq('id', batchId)
-
-      if (fileId) {
-        const { data: otherBatches } = await supabase
-          .from('import_batches')
-          .select('id')
-          .eq('uploaded_file_id', fileId)
-          .limit(1)
-        if (!otherBatches?.length) {
-          if (batch.uploaded_files?.storage_path) {
-            await supabase.storage.from('uploads').remove([batch.uploaded_files.storage_path])
-          }
-          await supabase.from('uploaded_files').delete().eq('id', fileId)
-        }
-      }
+      await removeBatchData(batch)
 
       if (['schedule', 'safety', 'rework'].includes(batch.file_type)) {
         await supabase.rpc('calculate_scores')
       }
 
-      await logActivity('import_deleted', `Deleted import: ${batch.uploaded_files?.original_filename}`, { batch_id: batchId, file_type: batch.file_type })
+      await logActivity('import_deleted', `Deleted import: ${batch.uploaded_files?.original_filename}`, { batch_id: batch.id, file_type: batch.file_type })
       await loadHistory()
       loadLastUploads()
     } catch (err) {
@@ -243,6 +294,135 @@ export default function UploadsPage() {
     const droppedFile = e.dataTransfer?.files?.[0] || e.target?.files?.[0]
     if (droppedFile) setFile(droppedFile)
   }, [])
+
+  // Pull from ERP: ResPlan (on the office PC) runs the reports, and the result is
+  // imported straight away, the same as an approved upload. Pulling a month again
+  // replaces that month's earlier pull for the brand.
+  async function handleErpImport(brandName) {
+    const type = fileType
+    const month = type === 'jc_vendor_report' ? null : erpMonth
+    setErpError('')
+    setErpResult(null)
+    setErpPulling(brandName)
+    setErpStep('Contacting ResPlan...')
+    try {
+      const result = await pullFromErp(type, brandName, month, setErpStep)
+      const typeLabel = FILE_TYPES.find(t => t.value === type)?.label || type
+      const label = erpPullLabel(result.range, result.pulledAt)
+      const name = `ERP pull - ${typeLabel} - ${brandName} - ${label}.json`
+      const sourceFile = new File([JSON.stringify(result)], name, { type: 'application/json' })
+      const pullInfo = {
+        erp_pull: true, brand: brandName, month, pulled_at: result.pulledAt,
+        range_from: result.range?.from ?? null, range_to: result.range?.to ?? null,
+      }
+
+      let summary, unmatched = []
+      if (type === 'jc_vendor_report') {
+        const imported = await importJCVendors({
+          parsed: result, codes: new Set(result.communities.map(c => c.code)), brandName, sourceFile,
+          extraMapping: pullInfo, progress: setErpStep,
+        })
+        summary = { ...imported, errors: result.summary.errors }
+      } else if (!result.records.length) {
+        // Nothing in the ERP for this period: leave VTC (and any earlier pull) as it is.
+        setErpResult({ type, brand: brandName, label, summary: result.summary, unmatched: [], empty: true })
+        return
+      } else {
+        unmatched = await importErpRecords(type, result.records, sourceFile, pullInfo)
+        summary = result.summary
+      }
+      setErpResult({ type, brand: brandName, label, summary, unmatched })
+      loadHistory()
+      loadLastUploads()
+      loadVendors()
+    } catch (err) {
+      setErpError(`${brandName}: ${err.message}`)
+    } finally {
+      setErpPulling(null)
+      setErpStep('')
+    }
+  }
+
+  /** Imports pulled schedule / rework records as an approved batch. Returns vendor names that couldn't be matched. */
+  async function importErpRecords(type, records, sourceFile, pullInfo) {
+    setErpStep('Checking for an earlier pull of this month...')
+    const { data: previous, error: prevErr } = await supabase.from('import_batches')
+      .select('id, file_type, uploaded_file_id, uploaded_files(storage_path)')
+      .eq('file_type', type)
+      .eq('column_mapping->>source', 'erp_pull')
+      .eq('column_mapping->>brand', pullInfo.brand)
+      .eq('column_mapping->>month', pullInfo.month)
+    if (prevErr) throw new Error('Checking earlier pulls failed: ' + prevErr.message)
+    if (previous?.length && !isAdmin()) {
+      throw new Error(`${pullInfo.month} was already pulled. Only an admin can replace it.`)
+    }
+    for (const batch of previous || []) await removeBatchData(batch)
+
+    // Vendor matching without review: ERP vendor ID via brand references first, then
+    // alias / exact / confident fuzzy name match. Anything else stays unmatched.
+    setErpStep('Matching vendors...')
+    const { resolveVendorForImport } = await import('../lib/parsers/vendor-matcher')
+    const vendorMap = new Map()
+    const matchLog = []
+    for (const r of records) {
+      if (vendorMap.has(r.vendor_name)) continue
+      let vendor = null, match = null
+      for (const raw of [r.erp_vendor_id && `${r.erp_vendor_id} ${r.vendor_name}`, r.vendor_name].filter(Boolean)) {
+        ({ vendor, match } = resolveVendorForImport(raw, vendors, aliases, brandRefs, { importBrand: pullInfo.brand }))
+        if (vendor) break
+      }
+      vendorMap.set(r.vendor_name, vendor?.id || null)
+      matchLog.push({ raw: r.vendor_name, matched: vendor?.name, confidence: match?.confidence, source: vendor ? match?.source : 'unmatched' })
+    }
+    const unmatched = matchLog.filter(m => !m.matched).map(m => m.raw)
+
+    setErpStep('Saving import...')
+    const storagePath = `${Date.now()}_${sourceFile.name}`
+    const { data: fileRecord } = await supabase.storage.from('uploads').upload(storagePath, sourceFile)
+    const { data: uploadedFile, error: fileErr } = await supabase.from('uploaded_files').insert({
+      original_filename: sourceFile.name,
+      storage_path: fileRecord?.path || storagePath,
+      file_type: type,
+      file_size_bytes: sourceFile.size,
+      mime_type: sourceFile.type,
+      uploaded_by: user.id,
+    }).select().single()
+    if (fileErr) throw new Error('Saving import record failed: ' + fileErr.message)
+
+    const { data: batch, error: batchErr } = await supabase.from('import_batches').insert({
+      uploaded_file_id: uploadedFile.id,
+      file_type: type,
+      status: 'approved',
+      column_mapping: { source: 'erp_pull', ...pullInfo },
+      row_count: records.length,
+      valid_row_count: records.length,
+      error_row_count: 0,
+      vendor_match_log: matchLog,
+      imported_by: user.id,
+      approved_by: user.id,
+      approved_at: new Date().toISOString(),
+    }).select().single()
+    if (batchErr) throw new Error('Saving import batch failed: ' + batchErr.message)
+
+    if (records.length) {
+      await supabase.from('raw_import_rows').insert(
+        records.map((row, i) => ({ batch_id: batch.id, row_number: i + 1, raw_data: row, is_valid: true }))
+      )
+    }
+
+    setErpStep(`Importing ${records.length} records...`)
+    // Schedule uploads have always been stored under the month they were uploaded,
+    // i.e. the month after the data (July's report -> 2026-08-01). ERP pulls follow suit.
+    if (type === 'schedule') await insertScheduleRecords(batch.id, records.map(r => ({ ...r, period_month: monthAfter(r.period_month) })), vendorMap)
+    else await insertReworkRecords(batch.id, records.map(r => ({ ...r, lot_or_address: r.community })), vendorMap)
+
+    setErpStep('Recalculating scores...')
+    await supabase.rpc('calculate_scores')
+    await logActivity('import_approved', `Pulled ${type} data from ERP: ${sourceFile.name.replace(/^ERP pull - /, '').replace(/\.json$/, '')} (${records.length} rows)`, {
+      batch_id: batch.id, file_id: uploadedFile.id, filename: sourceFile.name, row_count: records.length, ...pullInfo,
+    })
+    return unmatched
+  }
 
   async function handleParse() {
     if (!file || !fileType) return
@@ -461,230 +641,243 @@ export default function UploadsPage() {
     ])
   }
 
+  /** Imports parsed JC Preferred Vendors data (from a file or an ERP pull). Throws on failure. */
+  async function importJCVendors({ parsed, codes, brandName, sourceFile, extraMapping = {}, progress = () => {} }) {
+    const activeCommunities = parsed.communities.filter(c => codes.has(c.code))
+
+    // 1. Upsert communities — preserve existing brand when code already exists
+    progress('Fetching existing communities...')
+    const existingCommRes = await supabase.from('communities').select('code, brand')
+    if (existingCommRes.error) throw new Error('Fetch communities failed: ' + existingCommRes.error.message)
+    const existingBrandByCode = new Map((existingCommRes.data || []).map(c => [c.code, c.brand]))
+
+    progress(`Upserting ${activeCommunities.length} communities...`)
+    const { error: upsertCommErr } = await supabase.from('communities').upsert(
+      activeCommunities.map(c => ({
+        name: c.name,
+        code: c.code,
+        brand: existingBrandByCode.get(c.code) || brandName,
+        is_active: true,
+      })),
+      { onConflict: 'code' }
+    )
+    if (upsertCommErr) throw new Error('Communities upsert failed: ' + upsertCommErr.message)
+
+    // 2. Fetch lookup maps
+    progress('Fetching communities...')
+    console.log('[JC] Step 2a: fetching all communities')
+    const commRes = await supabase.from('communities').select('id, code, brand')
+    console.log('[JC] Step 2a result:', commRes.data?.length, commRes.error)
+    if (commRes.error) throw new Error('Fetch communities failed: ' + commRes.error.message)
+
+    progress('Fetching vendors...')
+    console.log('[JC] Step 2b: fetching vendors')
+    const [vendorRes, aliasRes] = await Promise.all([
+      supabase.from('vendors').select('id, name').eq('is_active', true),
+      supabase.from('vendor_aliases').select('alias_name, vendor_id'),
+    ])
+    console.log('[JC] Step 2b result:', vendorRes.data?.length, vendorRes.error)
+    if (vendorRes.error) throw new Error('Fetch vendors failed: ' + vendorRes.error.message)
+    if (aliasRes.error) throw new Error('Fetch aliases failed: ' + aliasRes.error.message)
+
+    progress('Fetching brand references...')
+    console.log('[JC] Step 2c: fetching brand refs')
+    const refRes = await supabase.from('vendor_brand_references').select('jc_vendor_id, vendor_id, brand')
+    console.log('[JC] Step 2c result:', refRes.data?.length, refRes.error)
+    if (refRes.error) throw new Error('Fetch brand refs failed: ' + refRes.error.message)
+
+    const { resolveVendorForImport } = await import('../lib/parsers/vendor-matcher')
+    const vendorList = vendorRes.data || []
+    const aliasList = aliasRes.data || []
+    const allBrandRefs = refRes.data || []
+
+    const communityCodeMap = new Map((commRes.data || []).map(c => [c.code, c.id]))
+    const communityBrandByCode = new Map((commRes.data || []).map(c => [c.code, c.brand]))
+    const existingRefSet = new Set(allBrandRefs.map(r => `${r.brand}:${r.jc_vendor_id}`))
+    const refVendorByBrandJc = new Map(allBrandRefs.map(r => [`${r.brand}:${r.jc_vendor_id}`, r.vendor_id]))
+    const aliasesToSave = new Map()
+
+    function rememberAlias(aliasName, vendorId) {
+      if (!aliasName || !vendorId) return
+      aliasesToSave.set(aliasName, vendorId)
+    }
+
+    // 3. Determine which vendors have active assignments
+    const activeVendors = parsed.vendors.map(v => ({
+      ...v,
+      filteredAssignments: v.assignments.filter(a => codes.has(a.communityCode))
+    })).filter(v => v.filteredAssignments.length > 0)
+
+    /** Brands inferred from assigned communities (vendors can span AW + SL with different JC IDs). */
+    function brandsForVendor(jcVendor) {
+      const brands = new Set()
+      for (const a of jcVendor.filteredAssignments || []) {
+        const commBrand = communityBrandByCode.get(a.communityCode)
+        if (commBrand) brands.add(commBrand)
+      }
+      if (brands.size === 0) brands.add(brandName)
+      return [...brands]
+    }
+
+    function resolveJCVendor(jcVendor) {
+      for (const refBrand of brandsForVendor(jcVendor)) {
+        const existingRefVendorId = refVendorByBrandJc.get(`${refBrand}:${jcVendor.jcVendorId}`)
+        if (existingRefVendorId) return existingRefVendorId
+      }
+
+      const withId = `${jcVendor.jcVendorId} ${jcVendor.name}`
+      for (const rawName of [withId, jcVendor.name]) {
+        const { vendor, match } = resolveVendorForImport(rawName, vendorList, aliasList, allBrandRefs)
+        if (vendor) {
+          if (match?.source !== 'exact' && match?.source !== 'exact_ci' && match?.source !== 'jc_id') {
+            rememberAlias(jcVendor.name, vendor.id)
+          }
+          return vendor.id
+        }
+      }
+      return null
+    }
+
+    // 4. Fetch default category for new vendors (vendors table requires category_id NOT NULL)
+    const { data: cats } = await supabase.from('vendor_categories').select('id, name').eq('name', 'Supplier').maybeSingle()
+    const defaultCategoryId = cats?.id || null
+
+    // 5. Batch insert new vendors (only when matcher + aliases can't find a match).
+    // A vendor someone deactivated stays out: it isn't recreated or assigned.
+    const { data: inactiveRows, error: inactiveErr } = await supabase.from('vendors').select('name').eq('is_active', false)
+    if (inactiveErr) throw new Error('Fetch inactive vendors failed: ' + inactiveErr.message)
+    const inactiveNames = new Set((inactiveRows || []).map(v => v.name))
+    const unresolvedNames = [...new Set(
+      activeVendors
+        .filter(v => !resolveJCVendor(v))
+        .map(v => v.name)
+    )]
+    const skippedInactive = unresolvedNames.filter(name => inactiveNames.has(name))
+    const newVendorNames = unresolvedNames.filter(name => !inactiveNames.has(name))
+    if (newVendorNames.length > 0) {
+      progress(`Inserting ${newVendorNames.length} new vendors...`)
+      console.log('[JC] Step 4: inserting vendors, defaultCategoryId =', defaultCategoryId)
+      const { data: inserted, error } = await supabase.from('vendors')
+        .insert(newVendorNames.map(name => ({
+          name, is_active: true, created_by: user?.id,
+          category_id: defaultCategoryId,
+        })))
+        .select('id, name')
+      console.log('[JC] Step 4 result:', inserted?.length, error)
+      if (error) throw new Error('Vendor insert failed: ' + error.message)
+      for (const v of (inserted || [])) vendorList.push(v)
+    }
+
+    // Remember name variants so the next import auto-matches
+    if (aliasesToSave.size > 0) {
+      progress(`Saving ${aliasesToSave.size} vendor aliases...`)
+      const { error: aliasErr } = await supabase.from('vendor_aliases').upsert(
+        [...aliasesToSave.entries()].map(([alias_name, vendor_id]) => ({
+          alias_name, vendor_id, created_by: user?.id,
+        })),
+        { onConflict: 'alias_name' }
+      )
+      if (aliasErr) console.warn('[JC] Alias save failed (non-fatal):', aliasErr.message)
+    }
+
+    function vendorIdFor(jcVendor) {
+      return resolveJCVendor(jcVendor) || vendorList.find(v => v.name === jcVendor.name)?.id
+    }
+
+    // 6. Batch insert new brand references (one per brand when vendor spans AW + SL)
+    const newRefs = []
+    for (const v of activeVendors) {
+      const vendorId = vendorIdFor(v)
+      if (!vendorId) continue
+      for (const refBrand of brandsForVendor(v)) {
+        const refKey = `${refBrand}:${v.jcVendorId}`
+        if (existingRefSet.has(refKey)) continue
+        existingRefSet.add(refKey)
+        newRefs.push({
+          vendor_id: vendorId,
+          brand: refBrand,
+          jc_vendor_id: v.jcVendorId,
+          jc_vendor_name: v.name,
+        })
+      }
+    }
+    if (newRefs.length > 0) {
+      progress(`Inserting ${newRefs.length} brand references...`)
+      const { error } = await supabase.from('vendor_brand_references').insert(newRefs)
+      if (error) throw new Error('Brand refs insert failed: ' + error.message)
+    }
+
+    // 7. Batch upsert community assignments in chunks of 500
+    const allAssignments = activeVendors.flatMap(v => {
+      const vendorId = vendorIdFor(v)
+      if (!vendorId) return []
+      return v.filteredAssignments
+        .filter(a => communityCodeMap.has(a.communityCode))
+        .map(a => ({
+          vendor_id: vendorId,
+          community_id: communityCodeMap.get(a.communityCode),
+          cost_code: a.costCode,
+          brand: communityBrandByCode.get(a.communityCode) || brandName,
+        }))
+    })
+    const CHUNK = 500
+    for (let i = 0; i < allAssignments.length; i += CHUNK) {
+      progress(`Upserting assignments ${i + 1}–${Math.min(i + CHUNK, allAssignments.length)} of ${allAssignments.length}...`)
+      const { error } = await supabase.from('vendor_community_assignments').upsert(
+        allAssignments.slice(i, i + CHUNK),
+        { onConflict: 'vendor_id,community_id,cost_code' }
+      )
+      if (error) throw new Error('Assignments upsert failed: ' + error.message)
+    }
+
+    progress('Logging activity...')
+    const importedVendors = activeVendors.filter(v => vendorIdFor(v)).length
+    const importedAssignments = allAssignments.length
+    if (skippedInactive.length) console.warn('[JC] Skipped deactivated vendors:', skippedInactive)
+
+    // Record in import history (JC imports previously skipped import_batches)
+    if (sourceFile && user?.id) {
+      progress('Saving import record...')
+      const storagePath = `${Date.now()}_${sourceFile.name}`
+      const { data: fileRecord } = await supabase.storage.from('uploads').upload(storagePath, sourceFile)
+      const { data: uploadedFile, error: uploadedFileErr } = await supabase.from('uploaded_files').insert({
+        original_filename: sourceFile.name,
+        storage_path: fileRecord?.path || storagePath,
+        file_type: 'other',
+        file_size_bytes: sourceFile.size,
+        mime_type: sourceFile.type,
+        uploaded_by: user.id,
+      }).select().single()
+      if (!uploadedFileErr && uploadedFile) {
+        await supabase.from('import_batches').insert({
+          uploaded_file_id: uploadedFile.id,
+          file_type: 'other',
+          status: 'approved',
+          column_mapping: { source: 'jc_vendor_report', brand: brandName, ...extraMapping },
+          row_count: importedAssignments,
+          valid_row_count: importedAssignments,
+          error_row_count: 0,
+          imported_by: user.id,
+          approved_by: user.id,
+          approved_at: new Date().toISOString(),
+        })
+      }
+    }
+
+    await logActivity('import_approved',
+      `Imported JC Vendor Report (${brandName}${extraMapping.erp_pull ? ', pulled from ERP' : ''}): ${importedVendors} vendors, ${activeCommunities.length} communities, ${importedAssignments} assignments`,
+      { brand: brandName, vendor_count: importedVendors, community_count: activeCommunities.length, assignment_count: importedAssignments }
+    )
+
+    return { vendors: importedVendors, communities: activeCommunities.length, assignments: importedAssignments, skippedInactive }
+  }
+
   async function insertJCVendorReport() {
     setImporting(true)
     setImportError(null)
     setImportProgress('')
     try {
-      const activeCommunities = jcParsed.communities.filter(c => selectedCommunities.has(c.code))
-
-      // 1. Upsert communities — preserve existing brand when code already exists
-      setImportProgress('Fetching existing communities...')
-      const existingCommRes = await supabase.from('communities').select('code, brand')
-      if (existingCommRes.error) throw new Error('Fetch communities failed: ' + existingCommRes.error.message)
-      const existingBrandByCode = new Map((existingCommRes.data || []).map(c => [c.code, c.brand]))
-
-      setImportProgress(`Upserting ${activeCommunities.length} communities...`)
-      const { error: upsertCommErr } = await supabase.from('communities').upsert(
-        activeCommunities.map(c => ({
-          name: c.name,
-          code: c.code,
-          brand: existingBrandByCode.get(c.code) || brand,
-          is_active: true,
-        })),
-        { onConflict: 'code' }
-      )
-      if (upsertCommErr) throw new Error('Communities upsert failed: ' + upsertCommErr.message)
-
-      // 2. Fetch lookup maps
-      setImportProgress('Fetching communities...')
-      console.log('[JC] Step 2a: fetching all communities')
-      const commRes = await supabase.from('communities').select('id, code, brand')
-      console.log('[JC] Step 2a result:', commRes.data?.length, commRes.error)
-      if (commRes.error) throw new Error('Fetch communities failed: ' + commRes.error.message)
-
-      setImportProgress('Fetching vendors...')
-      console.log('[JC] Step 2b: fetching vendors')
-      const [vendorRes, aliasRes] = await Promise.all([
-        supabase.from('vendors').select('id, name').eq('is_active', true),
-        supabase.from('vendor_aliases').select('alias_name, vendor_id'),
-      ])
-      console.log('[JC] Step 2b result:', vendorRes.data?.length, vendorRes.error)
-      if (vendorRes.error) throw new Error('Fetch vendors failed: ' + vendorRes.error.message)
-      if (aliasRes.error) throw new Error('Fetch aliases failed: ' + aliasRes.error.message)
-
-      setImportProgress('Fetching brand references...')
-      console.log('[JC] Step 2c: fetching brand refs')
-      const refRes = await supabase.from('vendor_brand_references').select('jc_vendor_id, vendor_id, brand')
-      console.log('[JC] Step 2c result:', refRes.data?.length, refRes.error)
-      if (refRes.error) throw new Error('Fetch brand refs failed: ' + refRes.error.message)
-
-      const { resolveVendorForImport } = await import('../lib/parsers/vendor-matcher')
-      const vendorList = vendorRes.data || []
-      const aliasList = aliasRes.data || []
-      const allBrandRefs = refRes.data || []
-
-      const communityCodeMap = new Map((commRes.data || []).map(c => [c.code, c.id]))
-      const communityBrandByCode = new Map((commRes.data || []).map(c => [c.code, c.brand]))
-      const existingRefSet = new Set(allBrandRefs.map(r => `${r.brand}:${r.jc_vendor_id}`))
-      const refVendorByBrandJc = new Map(allBrandRefs.map(r => [`${r.brand}:${r.jc_vendor_id}`, r.vendor_id]))
-      const aliasesToSave = new Map()
-
-      function rememberAlias(aliasName, vendorId) {
-        if (!aliasName || !vendorId) return
-        aliasesToSave.set(aliasName, vendorId)
-      }
-
-      // 3. Determine which vendors have active assignments
-      const activeVendors = jcParsed.vendors.map(v => ({
-        ...v,
-        filteredAssignments: v.assignments.filter(a => selectedCommunities.has(a.communityCode))
-      })).filter(v => v.filteredAssignments.length > 0)
-
-      /** Brands inferred from assigned communities (vendors can span AW + SL with different JC IDs). */
-      function brandsForVendor(jcVendor) {
-        const brands = new Set()
-        for (const a of jcVendor.filteredAssignments || []) {
-          const commBrand = communityBrandByCode.get(a.communityCode)
-          if (commBrand) brands.add(commBrand)
-        }
-        if (brands.size === 0) brands.add(brand)
-        return [...brands]
-      }
-
-      function resolveJCVendor(jcVendor) {
-        for (const refBrand of brandsForVendor(jcVendor)) {
-          const existingRefVendorId = refVendorByBrandJc.get(`${refBrand}:${jcVendor.jcVendorId}`)
-          if (existingRefVendorId) return existingRefVendorId
-        }
-
-        const withId = `${jcVendor.jcVendorId} ${jcVendor.name}`
-        for (const rawName of [withId, jcVendor.name]) {
-          const { vendor, match } = resolveVendorForImport(rawName, vendorList, aliasList, allBrandRefs)
-          if (vendor) {
-            if (match?.source !== 'exact' && match?.source !== 'exact_ci' && match?.source !== 'jc_id') {
-              rememberAlias(jcVendor.name, vendor.id)
-            }
-            return vendor.id
-          }
-        }
-        return null
-      }
-
-      // 4. Fetch default category for new vendors (vendors table requires category_id NOT NULL)
-      const { data: cats } = await supabase.from('vendor_categories').select('id, name').eq('name', 'Supplier').maybeSingle()
-      const defaultCategoryId = cats?.id || null
-
-      // 5. Batch insert new vendors (only when matcher + aliases can't find a match)
-      const newVendorNames = [...new Set(
-        activeVendors
-          .filter(v => !resolveJCVendor(v))
-          .map(v => v.name)
-      )]
-      if (newVendorNames.length > 0) {
-        setImportProgress(`Inserting ${newVendorNames.length} new vendors...`)
-        console.log('[JC] Step 4: inserting vendors, defaultCategoryId =', defaultCategoryId)
-        const { data: inserted, error } = await supabase.from('vendors')
-          .insert(newVendorNames.map(name => ({
-            name, is_active: true, created_by: user?.id,
-            category_id: defaultCategoryId,
-          })))
-          .select('id, name')
-        console.log('[JC] Step 4 result:', inserted?.length, error)
-        if (error) throw new Error('Vendor insert failed: ' + error.message)
-        for (const v of (inserted || [])) vendorList.push(v)
-      }
-
-      // Remember name variants so the next import auto-matches
-      if (aliasesToSave.size > 0) {
-        setImportProgress(`Saving ${aliasesToSave.size} vendor aliases...`)
-        const { error: aliasErr } = await supabase.from('vendor_aliases').upsert(
-          [...aliasesToSave.entries()].map(([alias_name, vendor_id]) => ({
-            alias_name, vendor_id, created_by: user?.id,
-          })),
-          { onConflict: 'alias_name' }
-        )
-        if (aliasErr) console.warn('[JC] Alias save failed (non-fatal):', aliasErr.message)
-      }
-
-      function vendorIdFor(jcVendor) {
-        return resolveJCVendor(jcVendor) || vendorList.find(v => v.name === jcVendor.name)?.id
-      }
-
-      // 6. Batch insert new brand references (one per brand when vendor spans AW + SL)
-      const newRefs = []
-      for (const v of activeVendors) {
-        const vendorId = vendorIdFor(v)
-        if (!vendorId) continue
-        for (const refBrand of brandsForVendor(v)) {
-          const refKey = `${refBrand}:${v.jcVendorId}`
-          if (existingRefSet.has(refKey)) continue
-          existingRefSet.add(refKey)
-          newRefs.push({
-            vendor_id: vendorId,
-            brand: refBrand,
-            jc_vendor_id: v.jcVendorId,
-            jc_vendor_name: v.name,
-          })
-        }
-      }
-      if (newRefs.length > 0) {
-        setImportProgress(`Inserting ${newRefs.length} brand references...`)
-        const { error } = await supabase.from('vendor_brand_references').insert(newRefs)
-        if (error) throw new Error('Brand refs insert failed: ' + error.message)
-      }
-
-      // 7. Batch upsert community assignments in chunks of 500
-      const allAssignments = activeVendors.flatMap(v => {
-        const vendorId = vendorIdFor(v)
-        if (!vendorId) return []
-        return v.filteredAssignments
-          .filter(a => communityCodeMap.has(a.communityCode))
-          .map(a => ({
-            vendor_id: vendorId,
-            community_id: communityCodeMap.get(a.communityCode),
-            cost_code: a.costCode,
-            brand: communityBrandByCode.get(a.communityCode) || brand,
-          }))
-      })
-      const CHUNK = 500
-      for (let i = 0; i < allAssignments.length; i += CHUNK) {
-        setImportProgress(`Upserting assignments ${i + 1}–${Math.min(i + CHUNK, allAssignments.length)} of ${allAssignments.length}...`)
-        const { error } = await supabase.from('vendor_community_assignments').upsert(
-          allAssignments.slice(i, i + CHUNK),
-          { onConflict: 'vendor_id,community_id,cost_code' }
-        )
-        if (error) throw new Error('Assignments upsert failed: ' + error.message)
-      }
-
-      setImportProgress('Logging activity...')
-      const importedVendors = activeVendors.length
-      const importedAssignments = allAssignments.length
-
-      // Record in import history (JC imports previously skipped import_batches)
-      if (file && user?.id) {
-        setImportProgress('Saving import record...')
-        const storagePath = `${Date.now()}_${file.name}`
-        const { data: fileRecord } = await supabase.storage.from('uploads').upload(storagePath, file)
-        const { data: uploadedFile, error: uploadedFileErr } = await supabase.from('uploaded_files').insert({
-          original_filename: file.name,
-          storage_path: fileRecord?.path || storagePath,
-          file_type: 'other',
-          file_size_bytes: file.size,
-          mime_type: file.type,
-          uploaded_by: user.id,
-        }).select().single()
-        if (!uploadedFileErr && uploadedFile) {
-          await supabase.from('import_batches').insert({
-            uploaded_file_id: uploadedFile.id,
-            file_type: 'other',
-            status: 'approved',
-            column_mapping: { source: 'jc_vendor_report', brand },
-            row_count: importedAssignments,
-            valid_row_count: importedAssignments,
-            error_row_count: 0,
-            imported_by: user.id,
-            approved_by: user.id,
-            approved_at: new Date().toISOString(),
-          })
-        }
-      }
-
-      await logActivity('import_approved',
-        `Imported JC Vendor Report (${brand}): ${importedVendors} vendors, ${activeCommunities.length} communities, ${importedAssignments} assignments`,
-        { brand, vendor_count: importedVendors, community_count: activeCommunities.length, assignment_count: importedAssignments }
-      )
-
+      await importJCVendors({ parsed: jcParsed, codes: selectedCommunities, brandName: brand, sourceFile: file, progress: setImportProgress })
       setStep('done')
       loadHistory()
       loadVendors()
@@ -792,6 +985,8 @@ export default function UploadsPage() {
     setImportError(null)
     setImportProgress('')
     setSelectedUnmatched(new Set())
+    setErpResult(null)
+    setErpError('')
     loadHistory()
   }
 
@@ -876,6 +1071,92 @@ export default function UploadsPage() {
           >
             Parse File <ArrowRight className="w-4 h-4" />
           </button>
+
+          {/* Pull from ERP: ResPlan on the office PC runs the reports and the data is imported directly */}
+          {ERP_PULL_KINDS[fileType] && (
+            <div className="glass-panel p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <CloudDownload className="w-4 h-4" style={{ color: 'var(--g-accent)' }} />
+                <h3 className="text-sm font-medium">Or pull it straight from the ERP</h3>
+              </div>
+              <p className="text-xs text-gray-500">
+                ResPlan runs the reports in Dynamic Builder (Houston) and the data is imported right away — no file needed.
+                {fileType !== 'jc_vendor_report' && ' Pull whenever you need: the current month covers the 1st through today, and pulling a month again replaces its earlier pull with the latest data.'}
+                {fileType === 'schedule' && ' Like a manual upload, a month’s schedule data is filed under the following month.'}
+                {' '}Works on the office PC while ResPlan is running.
+              </p>
+              <div className="flex flex-wrap items-end gap-3">
+                {fileType !== 'jc_vendor_report' && (
+                  <label className="text-xs text-gray-600">
+                    Data month
+                    <input
+                      type="month"
+                      value={erpMonth}
+                      onChange={e => setErpMonth(e.target.value)}
+                      className="block mt-1 px-3 py-1.5 border border-gray-300 rounded-lg text-sm bg-white"
+                    />
+                  </label>
+                )}
+                <label className="text-xs text-gray-600 flex-1 min-w-[12rem]">
+                  ResPlan key <span className="text-gray-400">(ResPlan › Settings › VTC Scorecard)</span>
+                  <input
+                    type="password"
+                    value={resplanKey}
+                    onChange={e => { setResplanKeyState(e.target.value); setResplanKey(e.target.value) }}
+                    placeholder="Paste once; saved in this browser"
+                    className="block w-full mt-1 px-3 py-1.5 border border-gray-300 rounded-lg text-sm bg-white"
+                  />
+                </label>
+                {ERP_BRANDS.map(b => (
+                  <button
+                    key={b}
+                    onClick={() => handleErpImport(b)}
+                    disabled={!!erpPulling || !resplanKey || (fileType !== 'jc_vendor_report' && !erpMonth)}
+                    className="glass-btn-primary flex items-center gap-2 px-4 py-2 disabled:opacity-50"
+                  >
+                    {erpPulling === b ? <Loader2 className="w-4 h-4 animate-spin" /> : <CloudDownload className="w-4 h-4" />}
+                    Pull {b}
+                  </button>
+                ))}
+              </div>
+              {erpPulling && erpStep && <p className="text-xs text-gray-500">{erpStep} — this can take a few minutes.</p>}
+              {erpError && <p className="text-xs text-red-600">{erpError}</p>}
+              {erpResult && erpResult.type === fileType && (
+                <div className="flex items-start gap-2 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-800">
+                  <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p>
+                      {erpResult.empty ? (
+                        <><span className="font-medium">{erpResult.brand} ({erpResult.label}):</span> the ERP returned no data for this period, so nothing was imported.</>
+                      ) : (
+                        <><span className="font-medium">Imported {erpResult.brand} ({erpResult.label}):</span>{' '}{erpSummaryText(erpResult.type, erpResult.summary)}</>
+                      )}
+                    </p>
+                    {erpResult.unmatched.length > 0 && (
+                      <p className="text-xs text-amber-700 mt-1">
+                        {erpResult.unmatched.length} vendor{erpResult.unmatched.length !== 1 ? 's' : ''} not matched to a scorecard vendor (imported without a vendor):{' '}
+                        {erpResult.unmatched.join(', ')}
+                      </p>
+                    )}
+                    {erpResult.summary.skippedInactive?.length > 0 && (
+                      <p className="text-xs text-amber-700 mt-1">
+                        Skipped {erpResult.summary.skippedInactive.length} vendor{erpResult.summary.skippedInactive.length !== 1 ? 's' : ''} deactivated in the scorecard:{' '}
+                        {erpResult.summary.skippedInactive.join(', ')}
+                      </p>
+                    )}
+                    {erpResult.summary.errors?.length > 0 && (
+                      <p className="text-xs text-amber-700 mt-1">Some projects failed and are missing: {erpResult.summary.errors.join('; ')}</p>
+                    )}
+                    {erpResult.summary.noShowVendorsWithoutTasks?.length > 0 && (
+                      <p className="text-xs text-green-700 mt-1">
+                        Left out (no-shows but no tasks this month): {erpResult.summary.noShowVendorsWithoutTasks.join(', ')}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -905,7 +1186,7 @@ export default function UploadsPage() {
                   <span className={`px-2 py-0.5 rounded text-xs ${h.status === 'approved' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
                     {h.status}
                   </span>
-                  <span>{h.created_at ? new Date(h.created_at).toLocaleDateString() : '—'}</span>
+                  <span>{h.created_at ? formatStamp(h.created_at) : '—'}</span>
                   {isAdmin() && (
                     <button
                       onClick={() => handleDeleteImport(h)}
