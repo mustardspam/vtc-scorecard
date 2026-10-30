@@ -116,7 +116,7 @@ function FeedbackSubmissionsTab() {
     if (filters.severity) query = query.eq('severity', filters.severity)
     if (filters.approved === 'approved') query = query.eq('is_approved', true)
     if (filters.approved === 'rejected') query = query.eq('is_approved', false).not('reviewed_at', 'is', null)
-    if (filters.approved === 'pending') query = query.is('reviewed_at', null)
+    if (filters.approved === 'pending') query = query.eq('is_approved', false).is('reviewed_at', null)
 
     try {
       const { data } = await query

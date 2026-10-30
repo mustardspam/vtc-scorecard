@@ -150,6 +150,8 @@ export default function SubmitFeedbackPage() {
         lot_or_address: form.lot_or_address.trim(),
         description: form.description.trim(),
         evidence_photos: evidencePhotos,
+        // Builder feedback posts immediately; managers can still remove it from Feedback Review
+        is_approved: true,
       })
       if (insertError) throw insertError
 
@@ -185,7 +187,7 @@ export default function SubmitFeedbackPage() {
       <div>
         <h1 className="glass-page-title">Submit Field Feedback</h1>
         <p className="glass-page-subtitle">
-          Report vendor and trade performance issues or commendations. All submissions are reviewed by management.
+          Report vendor and trade performance issues or commendations. Submissions post to the scorecard immediately.
         </p>
       </div>
 
@@ -195,8 +197,8 @@ export default function SubmitFeedbackPage() {
           <div className="mb-5 p-4 bg-green-50 border border-green-200 rounded-lg flex items-center gap-3 text-sm text-green-700">
             <CheckCircle className="w-5 h-5 flex-shrink-0" />
             <div>
-              <p className="font-medium">Feedback submitted successfully.</p>
-              <p className="text-green-600 text-xs mt-0.5">Management will review and approve it shortly.</p>
+              <p className="font-medium">Feedback posted.</p>
+              <p className="text-green-600 text-xs mt-0.5">It now counts toward the vendor's feedback score.</p>
             </div>
           </div>
         )}
@@ -451,10 +453,10 @@ export default function SubmitFeedbackPage() {
                   <span className="text-sm font-mono font-medium text-gray-700">{s.points} pts</span>
                   {s.is_approved ? (
                     <span className="flex items-center gap-1 text-xs text-green-600 font-medium">
-                      <CheckCircle className="w-3 h-3" /> Approved
+                      <CheckCircle className="w-3 h-3" /> Posted
                     </span>
                   ) : s.reviewed_at ? (
-                    <span className="flex items-center gap-1 text-xs text-red-500 font-medium">Rejected</span>
+                    <span className="flex items-center gap-1 text-xs text-red-500 font-medium">Removed</span>
                   ) : (
                     <span className="flex items-center gap-1 text-xs text-yellow-600">
                       <Clock className="w-3 h-3" /> Pending

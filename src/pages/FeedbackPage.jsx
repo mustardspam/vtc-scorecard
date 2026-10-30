@@ -7,9 +7,9 @@ import { cn } from '../lib/cn'
 import EvidenceGallery from '../components/feedback/EvidenceGallery'
 
 const FILTERS = [
+  { value: 'approved', label: 'Posted' },
+  { value: 'rejected', label: 'Removed' },
   { value: 'pending', label: 'Pending' },
-  { value: 'approved', label: 'Approved' },
-  { value: 'rejected', label: 'Rejected' },
   { value: 'all', label: 'All' },
 ]
 
@@ -18,7 +18,7 @@ const FEEDBACK_PAGE_SIZE = 100
 export default function FeedbackPage() {
   const [feedback, setFeedback] = useState([])
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState('pending')
+  const [filter, setFilter] = useState('approved')
   const [search, setSearch] = useState('')
   const [rejectTarget, setRejectTarget] = useState(null)
   const [rejectReason, setRejectReason] = useState('')
@@ -80,7 +80,7 @@ export default function FeedbackPage() {
         is_approved: false, reviewed_by: user.id, reviewed_at: new Date().toISOString(), review_notes: rejectReason.trim()
       }).eq('id', id)
       if (error) throw error
-      logActivity('feedback_rejected', 'Rejected builder feedback', { feedback_id: id, reason: rejectReason }).catch(() => {})
+      logActivity('feedback_rejected', 'Removed builder feedback', { feedback_id: id, reason: rejectReason }).catch(() => {})
       setRejectTarget(null)
       loadFeedback()
     } catch (err) {
@@ -105,12 +105,12 @@ export default function FeedbackPage() {
         <div className="glass-modal-backdrop">
           <div className="glass-modal w-full max-w-[460px] p-6 space-y-4">
             <div className="flex items-center justify-between">
-              <h2 className="glass-section-title">Reject Feedback</h2>
+              <h2 className="glass-section-title">Remove Feedback</h2>
               <button type="button" onClick={() => setRejectTarget(null)} className="bg-transparent border-none cursor-pointer" style={{ color: 'var(--g-dim)' }}>
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <p className="text-sm" style={{ color: 'var(--g-dim)' }}>Provide a reason for rejection. This is required and saved to review notes.</p>
+            <p className="text-sm" style={{ color: 'var(--g-dim)' }}>Removed feedback stops counting toward the vendor's score. A reason is required and saved to review notes.</p>
             <textarea
               value={rejectReason}
               onChange={e => setRejectReason(e.target.value)}
@@ -127,7 +127,7 @@ export default function FeedbackPage() {
                 disabled={!rejectReason.trim()}
                 className="glass-btn-reject flex items-center gap-1 disabled:opacity-50"
               >
-                <XCircle className="w-4 h-4" /> Confirm Rejection
+                <XCircle className="w-4 h-4" /> Confirm Removal
               </button>
             </div>
           </div>
@@ -136,7 +136,7 @@ export default function FeedbackPage() {
 
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="glass-page-title">Feedback Review</h1>
+          <h1 className="glass-page-title">Builder Feedback</h1>
           {filter === 'pending' && !loading && (
             <p className="glass-page-subtitle">{filtered.length} awaiting review</p>
           )}
@@ -193,23 +193,32 @@ export default function FeedbackPage() {
                     {f.review_notes && <p className="text-xs mt-2 italic" style={{ color: 'var(--g-dim)' }}>Note: {f.review_notes}</p>}
                     <EvidenceGallery photos={f.evidence_photos} />
                   </div>
-                  {!f.reviewed_at && canReview && (
+                  {/* Legacy items submitted before auto-posting still need a decision */}
+                  {!f.is_approved && !f.reviewed_at && canReview && (
                     <div className="flex items-center gap-2 shrink-0">
                       <button type="button" onClick={() => handleApprove(f.id)} className="glass-btn-approve flex items-center gap-1 text-xs px-3 py-1.5">
-                        <CheckCircle className="w-3.5 h-3.5" /> Approve
+                        <CheckCircle className="w-3.5 h-3.5" /> Post
                       </button>
                       <button type="button" onClick={() => handleReject(f.id)} className="glass-btn-reject flex items-center gap-1 text-xs px-3 py-1.5">
-                        <XCircle className="w-3.5 h-3.5" /> Reject
+                        <XCircle className="w-3.5 h-3.5" /> Remove
                       </button>
                     </div>
                   )}
-                  {!f.reviewed_at && !canReview && (
+                  {!f.is_approved && !f.reviewed_at && !canReview && (
                     <span className="glass-tier-pill shrink-0" style={{ background: '#f8ecc9', color: '#8a5a08' }}>Pending</span>
                   )}
-                  {f.reviewed_at && (
-                    <span className="glass-tier-pill shrink-0" style={f.is_approved ? { background: '#dcf2e4', color: '#1f7a44' } : { background: '#f8dada', color: '#a72727' }}>
-                      {f.is_approved ? '✓ Approved' : '✕ Rejected'}
-                    </span>
+                  {f.is_approved && (
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="glass-tier-pill" style={{ background: '#dcf2e4', color: '#1f7a44' }}>✓ Posted</span>
+                      {canReview && (
+                        <button type="button" onClick={() => handleReject(f.id)} className="glass-btn-reject flex items-center gap-1 text-xs px-3 py-1.5">
+                          <XCircle className="w-3.5 h-3.5" /> Remove
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {!f.is_approved && f.reviewed_at && (
+                    <span className="glass-tier-pill shrink-0" style={{ background: '#f8dada', color: '#a72727' }}>✕ Removed</span>
                   )}
                 </div>
               </div>
