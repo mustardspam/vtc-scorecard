@@ -18,4 +18,9 @@ export default defineConfig([
       parserOptions: { ecmaFeatures: { jsx: true } },
     },
   },
+  {
+    // The nightly import job and MCP servers run in Node, not the browser.
+    files: ['vtc-automation/**/*.js'],
+    languageOptions: { globals: globals.node },
+  },
 ])
