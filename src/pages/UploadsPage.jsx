@@ -5,6 +5,11 @@ import { useAuth } from '../hooks/useAuth'
 import { Upload, FileText, CheckCircle, XCircle, AlertTriangle, ArrowRight, Loader2, Building2, Trash2, CloudDownload } from 'lucide-react'
 import UploadStepper from '../components/ui/UploadStepper'
 import { ERP_PULL_KINDS, pullFromErp, getResplanKey, setResplanKey } from '../lib/resplan'
+import {
+  erpBrandsFor, erpSummaryText, fetchVendorData as fetchVendorDataShared,
+  removeBatchData as removeBatchDataShared, importErpRecords as importErpRecordsShared,
+  importJCVendors as importJCVendorsShared, insertScheduleRecords, insertSafetyRecords, insertReworkRecords,
+} from '../lib/importers/erp-import'
 
 const FILE_TYPES = [
   { value: 'schedule', label: 'Schedule Data', description: 'Monthly schedule adherence report' },
@@ -48,12 +53,6 @@ const INTERNAL_FIELDS = {
   vendor_master: ['vendor_name', 'vendor_id', 'category'],
 }
 
-/** "2026-09-01" -> "2026-10-01" */
-function monthAfter(isoDate) {
-  const [y, m] = isoDate.split('-').map(Number)
-  return m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, '0')}-01`
-}
-
 /** "YYYY-MM" of this month — the default for an ERP pull (month-to-date). */
 function thisMonth() {
   const d = new Date()
@@ -74,45 +73,6 @@ function formatStamp(iso) {
 /** How an ERP pull is labelled: the dates it covers and when it was pulled. */
 function erpPullLabel(range, pulledAt) {
   return `${range ? `${formatDay(range.from)} – ${formatDay(range.to)}, ` : ''}pulled ${formatStamp(pulledAt)}`
-}
-
-/** Brands ResPlan can pull from the ERP (each is its own ERP login). */
-const ERP_BRANDS = ['Starlight', 'Ashton Woods']
-
-/** Brands a pull type exists for: safety OFIs (HB NEXT) are only kept for Ashton Woods Houston. */
-const erpBrandsFor = type => (type === 'safety' ? ['Ashton Woods'] : ERP_BRANDS)
-
-/**
- * Severity of a safety OFI from its violation category (HB NEXT "nature of safety
- * violation"). Fall protection is scored as a near miss; tools and equipment
- * operation as equipment; everything else (PPE, ladders, electrical, site/trailer
- * general...) as PPE.
- */
-function ofiSeverity(category) {
-  const c = (category || '').toLowerCase()
-  if (/fall/.test(c)) return 'near_miss'
-  if (/tool|equipment/.test(c)) return 'equipment'
-  return 'ppe'
-}
-
-/** Active vendors, aliases and ERP vendor ID references, for matching imported names. */
-async function fetchVendorData() {
-  const [vRes, aRes, brRes] = await Promise.all([
-    supabase.from('vendors').select('id, name, category_id').eq('is_active', true).order('name'),
-    supabase.from('vendor_aliases').select('*'),
-    supabase.from('vendor_brand_references').select('jc_vendor_id, vendor_id, brand'),
-  ])
-  for (const r of [vRes, aRes, brRes]) if (r.error) throw new Error('Loading vendors failed: ' + r.error.message)
-  return { vendors: vRes.data || [], aliases: aRes.data || [], brandRefs: brRes.data || [] }
-}
-
-/** One-line summary of what an ERP pull imported, per upload type. */
-function erpSummaryText(fileType, s) {
-  if (fileType === 'schedule') return `${s.vendors} vendors, ${s.tasks} tasks, ${s.noShows} no-shows`
-  if (fileType === 'rework') return `${s.backcharges} backcharges totaling $${s.total.toLocaleString()}`
-  if (fileType === 'safety') return `${s.ofis} OFIs${s.fines ? `, $${s.fines.toLocaleString()} in fines` : ''}`
-  if (fileType === 'jc_vendor_report') return `${s.vendors} vendors, ${s.communities} communities, ${s.assignments} assignments`
-  return ''
 }
 
 function importTypeLabel(batch) {
@@ -154,6 +114,8 @@ export default function UploadsPage() {
   const [resplanKey, setResplanKeyState] = useState(getResplanKey)
   const { user, isManager, isAdmin } = useAuth()
   const canUpload = isManager()
+  /** Context for the shared importers (src/lib/importers/erp-import.js). */
+  const importCtx = () => ({ supabase, user, isAdmin: isAdmin(), logActivity })
 
   useEffect(() => {
     let mounted = true
@@ -205,7 +167,7 @@ export default function UploadsPage() {
 
   async function loadVendors() {
     try {
-      const v = await fetchVendorData()
+      const v = await fetchVendorDataShared(supabase)
       setVendors(v.vendors)
       setAliases(v.aliases)
       setBrandRefs(v.brandRefs)
@@ -267,29 +229,8 @@ export default function UploadsPage() {
   }
 
   /** Deletes a batch, its records, and its file when no other batch uses it. Admin only (RLS). */
-  async function removeBatchData(batch) {
-    const batchId = batch.id
-    const fileId = batch.uploaded_file_id
-
-    await supabase.from('schedule_records').delete().eq('batch_id', batchId)
-    await supabase.from('safety_records').delete().eq('batch_id', batchId)
-    await supabase.from('rework_records').delete().eq('batch_id', batchId)
-    await supabase.from('raw_import_rows').delete().eq('batch_id', batchId)
-    await supabase.from('import_batches').delete().eq('id', batchId)
-
-    if (fileId) {
-      const { data: otherBatches } = await supabase
-        .from('import_batches')
-        .select('id')
-        .eq('uploaded_file_id', fileId)
-        .limit(1)
-      if (!otherBatches?.length) {
-        if (batch.uploaded_files?.storage_path) {
-          await supabase.storage.from('uploads').remove([batch.uploaded_files.storage_path])
-        }
-        await supabase.from('uploaded_files').delete().eq('id', fileId)
-      }
-    }
+  function removeBatchData(batch) {
+    return removeBatchDataShared(supabase, batch)
   }
 
   async function handleDeleteImport(batch) {
@@ -318,6 +259,52 @@ export default function UploadsPage() {
     const droppedFile = e.dataTransfer?.files?.[0] || e.target?.files?.[0]
     if (droppedFile) setFile(droppedFile)
   }, [])
+
+  // Refresh now: ResPlan only listens on the office PC, so any manager's browser queues
+  // a request (erp_refresh_requests) and the vtc-automation job on that PC runs it.
+  const [refreshReq, setRefreshReq] = useState(null)
+  const [refreshRequesting, setRefreshRequesting] = useState(false)
+  const [refreshError, setRefreshError] = useState('')
+  const refreshOpen = ['pending', 'running'].includes(refreshReq?.status)
+  const refreshStale = refreshReq?.status === 'pending' && Date.now() - new Date(refreshReq.requested_at).getTime() > 15 * 60 * 1000
+
+  async function loadRefreshRequest() {
+    const { data, error } = await supabase.from('erp_refresh_requests')
+      .select('*').order('requested_at', { ascending: false }).limit(1).maybeSingle()
+    if (error) { console.warn('loadRefreshRequest failed:', error.message); return null }
+    setRefreshReq(data)
+    return data
+  }
+
+  async function requestRefresh() {
+    setRefreshError('')
+    setRefreshRequesting(true)
+    try {
+      const { data, error } = await supabase.from('erp_refresh_requests').insert({ requested_by: user.id }).select().single()
+      if (error?.code === '23505') { await loadRefreshRequest(); return }  // someone already queued one
+      if (error) throw error
+      setRefreshReq(data)
+      await logActivity('erp_refresh_requested', 'Requested an ERP / HB NEXT data refresh', { request_id: data.id })
+    } catch (err) {
+      setRefreshError('Could not queue the refresh: ' + err.message)
+    } finally {
+      setRefreshRequesting(false)
+    }
+  }
+
+  useEffect(() => { loadRefreshRequest() }, [])
+
+  // While a refresh is queued or running, check on it; reload the page's data when it ends.
+  useEffect(() => {
+    if (!refreshOpen) return
+    const timer = setInterval(async () => {
+      const r = await loadRefreshRequest()
+      if (r && !['pending', 'running'].includes(r.status)) { loadHistory(); loadLastUploads(); loadVendors() }
+    }, 10000)
+    return () => clearInterval(timer)
+  // Polls only while a request is open; the loaders are plain functions of this component.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshOpen])
 
   // Pull from ERP: ResPlan (on the office PC) runs the reports, and the result is
   // imported straight away, the same as an approved upload. Pulling a month again
@@ -371,43 +358,58 @@ export default function UploadsPage() {
   // in to VTC) at midnight and reads window.__vtcAutopull for the outcome. Every pull
   // runs for the current month; on the 1st-3rd the previous month is pulled once more
   // so its last days are in. Pulling a month again needs an admin.
+  // Refresh requests: ResPlan opens /uploads?autopull=request every few minutes; the page
+  // runs the oldest queued "Refresh now" (see runRefreshRequest) or reports 'idle'.
   const [autopull, setAutopull] = useState(null)
   const autopullStarted = useRef(false)
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get('autopull') !== 'nightly') return
+    const mode = new URLSearchParams(window.location.search).get('autopull')
+    if (mode !== 'nightly' && mode !== 'request') return
     if (!user || autopullStarted.current) return
     autopullStarted.current = true
-    runNightlyPulls()
+    if (mode === 'request') runRefreshRequest()
+    else runNightlyPulls()
   // Runs once, as soon as the signed-in user is known.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user])
 
-  async function runNightlyPulls() {
-    const report = { status: 'running', startedAt: new Date().toISOString(), step: '', results: [] }
+  /**
+   * Runs every pull (JC vendors first, then schedule, rework, safety; both brands) and
+   * publishes progress on window.__vtcAutopull for ResPlan. months defaults to this
+   * month, plus last month on the 1st-3rd; types limits the pull types; onJob hears
+   * each pull as it starts. Returns the final report.
+   */
+  async function runNightlyPulls({ months = null, types = null, onJob = () => {}, title = 'Nightly pulls' } = {}) {
+    const report = { title, status: 'running', startedAt: new Date().toISOString(), step: '', results: [] }
     const publish = () => { window.__vtcAutopull = { ...report, results: [...report.results] }; setAutopull(window.__vtcAutopull) }
     publish()
     if (!isAdmin()) {
-      Object.assign(report, { status: 'error', error: 'Nightly pulls need an admin account (pulling a month again replaces it).' })
-      return publish()
+      Object.assign(report, { status: 'error', error: `${title} need an admin account (pulling a month again replaces it).` })
+      publish()
+      return report
     }
-    const today = new Date()
-    const months = [thisMonth()]
-    if (today.getDate() <= 3) {
-      const prev = new Date(today.getFullYear(), today.getMonth() - 1, 1)
-      months.unshift(`${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`)
+    if (!months) {
+      const today = new Date()
+      months = [thisMonth()]
+      if (today.getDate() <= 3) {
+        const prev = new Date(today.getFullYear(), today.getMonth() - 1, 1)
+        months.unshift(`${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`)
+      }
     }
     // JC vendors first: it adds vendors and their ERP IDs that the other pulls match on.
     const jobs = []
     for (const type of ['jc_vendor_report', 'schedule', 'rework', 'safety']) {
+      if (types?.length && !types.includes(type)) continue
       for (const b of erpBrandsFor(type)) {
         for (const month of type === 'jc_vendor_report' ? [null] : months) jobs.push({ type, brand: b, month })
       }
     }
-    for (const job of jobs) {
+    for (const [i, job] of jobs.entries()) {
       const typeLabel = FILE_TYPES.find(t => t.value === job.type)?.label || job.type
       const what = `${typeLabel} - ${job.brand}${job.month ? ` - ${job.month}` : ''}`
       report.step = what
       publish()
+      await onJob(`${what} (${i + 1} of ${jobs.length})`)
       try {
         const r = await runErpPull(job.type, job.brand, job.month, s => { report.step = `${what}: ${s}`; publish() })
         report.results.push({
@@ -423,123 +425,70 @@ export default function UploadsPage() {
     const failed = report.results.filter(r => !r.ok).length
     Object.assign(report, { status: failed ? 'partial' : 'done', step: '', finishedAt: new Date().toISOString() })
     publish()
-    await logActivity('nightly_erp_pull', `Nightly pulls: ${report.results.length - failed} of ${report.results.length} imported${failed ? `, ${failed} failed` : ''}`, { results: report.results })
+    await logActivity('nightly_erp_pull', `${title}: ${report.results.length - failed} of ${report.results.length} imported${failed ? `, ${failed} failed` : ''}`, { results: report.results })
     loadHistory()
     loadLastUploads()
     loadVendors()
+    return report
   }
 
   /**
-   * Imports pulled schedule / rework / safety records as an approved batch.
-   * Returns { unmatched } (vendor names that couldn't be matched) and, for safety,
-   * { review }: the batch and each OFI name with its vendor, to check and correct.
+   * Runs the oldest queued "Refresh now" request (erp_refresh_requests), writing progress
+   * and the outcome back to it for the manager's page. Pulls every month since the last
+   * finished refresh (at most 3), so days nobody refreshed are still filled in.
    */
-  async function importErpRecords(type, records, sourceFile, pullInfo, progress = setErpStep) {
-    progress('Checking for an earlier pull of this month...')
-    const { data: previous, error: prevErr } = await supabase.from('import_batches')
-      .select('id, file_type, uploaded_file_id, uploaded_files(storage_path)')
-      .eq('file_type', type)
-      .eq('column_mapping->>source', 'erp_pull')
-      .eq('column_mapping->>brand', pullInfo.brand)
-      .eq('column_mapping->>month', pullInfo.month)
-    if (prevErr) throw new Error('Checking earlier pulls failed: ' + prevErr.message)
-    if (previous?.length && !isAdmin()) {
-      throw new Error(`${pullInfo.month} was already pulled. Only an admin can replace it.`)
-    }
-    for (const batch of previous || []) await removeBatchData(batch)
+  async function runRefreshRequest() {
+    const idle = extra => { window.__vtcAutopull = { status: 'idle', results: [], ...extra } }
+    const fail = error => { window.__vtcAutopull = { title: 'Refresh request', status: 'error', error, results: [] }; setAutopull(window.__vtcAutopull) }
+    if (!isAdmin()) return fail('Refresh requests need an admin account (pulling a month again replaces it).')
+    const requests = () => supabase.from('erp_refresh_requests')
+    try {
+      // A run that died mid-request would leave it "running" and block new ones: give up on it.
+      await requests().update({ status: 'failed', error: 'Stopped responding after 2 hours', step: null, finished_at: new Date().toISOString() })
+        .eq('status', 'running').lt('started_at', new Date(Date.now() - 2 * 3600 * 1000).toISOString())
 
-    // Vendor matching without review: ERP vendor ID via brand references first, then
-    // alias / exact / confident fuzzy name match. Anything else stays unmatched.
-    progress('Matching vendors...')
-    // Fresh vendor data rather than the page's: nightly pulls run several imports in a row.
-    const { vendors, aliases, brandRefs } = await fetchVendorData()
-    const { resolveVendorForImport, resolveOfiVendor } = await import('../lib/parsers/vendor-matcher')
-    const vendorMap = new Map()
-    const matchLog = []
-    if (type === 'safety') {
-      // An OFI names the trade partner loosely, or only the trade with the company
-      // under "Subcontractor Involved"; vendor_name becomes the company as written.
-      const { data: categories } = await supabase.from('vendor_categories').select('name')
-      records = records.map(r => {
-        const m = resolveOfiVendor(r, vendors, aliases, categories || [])
-        if (!vendorMap.has(m.name)) {
-          vendorMap.set(m.name, m.vendor?.id || null)
-          matchLog.push({ raw: m.name, matched: m.vendor?.name, source: m.source, trade_only: m.tradeOnly || undefined })
-        }
-        return { ...r, vendor_name: m.name }
+      const { data: pending, error } = await requests().select('id, categories')
+        .eq('status', 'pending').order('requested_at').limit(1).maybeSingle()
+      if (error) throw error
+      if (!pending) return idle()
+      const { data: claimed, error: claimErr } = await requests()
+        .update({ status: 'running', started_at: new Date().toISOString(), step: 'Starting...' })
+        .eq('id', pending.id).eq('status', 'pending').select('id').maybeSingle()
+      if (claimErr) throw claimErr
+      if (!claimed) return idle()  // another run took it
+
+      const { data: last } = await requests().select('finished_at')
+        .in('status', ['done', 'partial']).not('finished_at', 'is', null)
+        .order('finished_at', { ascending: false }).limit(1).maybeSingle()
+      const today = new Date()
+      const from = new Date(today.getFullYear(), today.getMonth() - 2, 1)  // at most 3 months
+      const since = last ? new Date(last.finished_at) : today
+      const start = since > from ? new Date(since.getFullYear(), since.getMonth(), 1) : from
+      if (today.getDate() <= 3 && start.getFullYear() === today.getFullYear() && start.getMonth() === today.getMonth()) start.setMonth(start.getMonth() - 1)
+      const months = []
+      for (const d = start; d <= today; d.setMonth(d.getMonth() + 1)) months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+
+      const report = await runNightlyPulls({
+        months, types: pending.categories, title: 'Refresh requested from the Uploads page',
+        onJob: step => requests().update({ step }).eq('id', pending.id).then(({ error: e }) => e && console.warn('Refresh progress update failed:', e.message)),
       })
+      const ok = report.results.filter(r => r.ok).length
+      const { error: doneErr } = await requests().update({
+        status: report.status === 'error' || ok === 0 ? 'failed' : ok < report.results.length ? 'partial' : 'done',
+        error: report.error || null,
+        step: null,
+        finished_at: new Date().toISOString(),
+        result: report.results.map(r => ({ category: r.type, brand: r.brand, month: r.month, status: r.ok ? 'imported' : 'failed', text: r.text || null, error: r.error || null })),
+      }).eq('id', pending.id)
+      if (doneErr) console.warn('Saving the refresh outcome failed:', doneErr.message)
+    } catch (err) {
+      fail('Refresh request: ' + err.message)
     }
-    for (const r of records) {
-      if (vendorMap.has(r.vendor_name)) continue
-      let vendor = null, match = null
-      for (const raw of [r.erp_vendor_id && `${r.erp_vendor_id} ${r.vendor_name}`, r.vendor_name].filter(Boolean)) {
-        ({ vendor, match } = resolveVendorForImport(raw, vendors, aliases, brandRefs, { importBrand: pullInfo.brand }))
-        if (vendor) break
-      }
-      vendorMap.set(r.vendor_name, vendor?.id || null)
-      matchLog.push({ raw: r.vendor_name, matched: vendor?.name, confidence: match?.confidence, source: vendor ? match?.source : 'unmatched' })
-    }
-    const unmatched = matchLog.filter(m => !m.matched).map(m => m.raw)
+  }
 
-    progress('Saving import...')
-    const storagePath = `${Date.now()}_${sourceFile.name}`
-    const { data: fileRecord } = await supabase.storage.from('uploads').upload(storagePath, sourceFile)
-    const { data: uploadedFile, error: fileErr } = await supabase.from('uploaded_files').insert({
-      original_filename: sourceFile.name,
-      storage_path: fileRecord?.path || storagePath,
-      file_type: type,
-      file_size_bytes: sourceFile.size,
-      mime_type: sourceFile.type,
-      uploaded_by: user.id,
-    }).select().single()
-    if (fileErr) throw new Error('Saving import record failed: ' + fileErr.message)
-
-    const { data: batch, error: batchErr } = await supabase.from('import_batches').insert({
-      uploaded_file_id: uploadedFile.id,
-      file_type: type,
-      status: 'approved',
-      column_mapping: { source: 'erp_pull', ...pullInfo },
-      row_count: records.length,
-      valid_row_count: records.length,
-      error_row_count: 0,
-      vendor_match_log: matchLog,
-      imported_by: user.id,
-      approved_by: user.id,
-      approved_at: new Date().toISOString(),
-    }).select().single()
-    if (batchErr) throw new Error('Saving import batch failed: ' + batchErr.message)
-
-    if (records.length) {
-      await supabase.from('raw_import_rows').insert(
-        records.map((row, i) => ({ batch_id: batch.id, row_number: i + 1, raw_data: row, is_valid: true }))
-      )
-    }
-
-    progress(`Importing ${records.length} records...`)
-    // Schedule uploads have always been stored under the month they were uploaded,
-    // i.e. the month after the data (July's report -> 2026-08-01). ERP pulls follow suit.
-    if (type === 'schedule') await insertScheduleRecords(batch.id, records.map(r => ({ ...r, period_month: monthAfter(r.period_month) })), vendorMap)
-    else if (type === 'safety') await insertSafetyRecords(batch.id, records.map(r => ({ ...r, severity: ofiSeverity(r.category), incident_type: r.category })), vendorMap)
-    else await insertReworkRecords(batch.id, records.map(r => ({ ...r, lot_or_address: r.community })), vendorMap)
-
-    progress('Recalculating scores...')
-    await supabase.rpc('calculate_scores')
-    await logActivity('import_approved', `Pulled ${type} data from ERP: ${sourceFile.name.replace(/^ERP pull - /, '').replace(/\.json$/, '')} (${records.length} rows)`, {
-      batch_id: batch.id, file_id: uploadedFile.id, filename: sourceFile.name, row_count: records.length, ...pullInfo,
-    })
-    if (type !== 'safety') return { unmatched }
-    const counts = new Map()
-    for (const r of records) counts.set(r.vendor_name, (counts.get(r.vendor_name) || 0) + 1)
-    return {
-      unmatched: [],
-      review: {
-        batchId: batch.id,
-        names: matchLog.map(m => ({
-          name: m.raw, count: counts.get(m.raw) || 0, source: m.source, tradeOnly: !!m.trade_only,
-          vendorId: vendorMap.get(m.raw) || '',
-        })).sort((a, b) => (!!a.vendorId - !!b.vendorId) || a.name.localeCompare(b.name)),
-      },
-    }
+  /** Imports pulled schedule / rework / safety records as an approved batch (see erp-import.js). */
+  function importErpRecords(type, records, sourceFile, pullInfo, progress = setErpStep) {
+    return importErpRecordsShared(importCtx(), type, records, sourceFile, pullInfo, progress)
   }
 
   /**
@@ -750,9 +699,9 @@ export default function UploadsPage() {
 
       const vendorMap = new Map(vendorMatches.map(m => [m.rawName, m.matchedVendor?.id]))
 
-      if (fileType === 'schedule') await insertScheduleRecords(batch.id, mappedRows, vendorMap)
-      else if (fileType === 'safety') await insertSafetyRecords(batch.id, mappedRows, vendorMap)
-      else if (fileType === 'rework') await insertReworkRecords(batch.id, mappedRows, vendorMap)
+      if (fileType === 'schedule') await insertScheduleRecords(supabase, batch.id, mappedRows, vendorMap)
+      else if (fileType === 'safety') await insertSafetyRecords(supabase, batch.id, mappedRows, vendorMap)
+      else if (fileType === 'rework') await insertReworkRecords(supabase, batch.id, mappedRows, vendorMap)
       else if (fileType === 'vendor_master') await insertVendorMaster(mappedRows)
 
       if (['schedule', 'safety', 'rework'].includes(fileType)) {
@@ -783,234 +732,8 @@ export default function UploadsPage() {
   }
 
   /** Imports parsed JC Preferred Vendors data (from a file or an ERP pull). Throws on failure. */
-  async function importJCVendors({ parsed, codes, brandName, sourceFile, extraMapping = {}, progress = () => {} }) {
-    const activeCommunities = parsed.communities.filter(c => codes.has(c.code))
-
-    // 1. Upsert communities — preserve existing brand when code already exists
-    progress('Fetching existing communities...')
-    const existingCommRes = await supabase.from('communities').select('code, brand')
-    if (existingCommRes.error) throw new Error('Fetch communities failed: ' + existingCommRes.error.message)
-    const existingBrandByCode = new Map((existingCommRes.data || []).map(c => [c.code, c.brand]))
-
-    progress(`Upserting ${activeCommunities.length} communities...`)
-    const { error: upsertCommErr } = await supabase.from('communities').upsert(
-      activeCommunities.map(c => ({
-        name: c.name,
-        code: c.code,
-        brand: existingBrandByCode.get(c.code) || brandName,
-        is_active: true,
-      })),
-      { onConflict: 'code' }
-    )
-    if (upsertCommErr) throw new Error('Communities upsert failed: ' + upsertCommErr.message)
-
-    // 2. Fetch lookup maps
-    progress('Fetching communities...')
-    console.log('[JC] Step 2a: fetching all communities')
-    const commRes = await supabase.from('communities').select('id, code, brand')
-    console.log('[JC] Step 2a result:', commRes.data?.length, commRes.error)
-    if (commRes.error) throw new Error('Fetch communities failed: ' + commRes.error.message)
-
-    progress('Fetching vendors...')
-    console.log('[JC] Step 2b: fetching vendors')
-    const [vendorRes, aliasRes] = await Promise.all([
-      supabase.from('vendors').select('id, name').eq('is_active', true),
-      supabase.from('vendor_aliases').select('alias_name, vendor_id'),
-    ])
-    console.log('[JC] Step 2b result:', vendorRes.data?.length, vendorRes.error)
-    if (vendorRes.error) throw new Error('Fetch vendors failed: ' + vendorRes.error.message)
-    if (aliasRes.error) throw new Error('Fetch aliases failed: ' + aliasRes.error.message)
-
-    progress('Fetching brand references...')
-    console.log('[JC] Step 2c: fetching brand refs')
-    const refRes = await supabase.from('vendor_brand_references').select('jc_vendor_id, vendor_id, brand')
-    console.log('[JC] Step 2c result:', refRes.data?.length, refRes.error)
-    if (refRes.error) throw new Error('Fetch brand refs failed: ' + refRes.error.message)
-
-    const { resolveVendorForImport } = await import('../lib/parsers/vendor-matcher')
-    const vendorList = vendorRes.data || []
-    const aliasList = aliasRes.data || []
-    const allBrandRefs = refRes.data || []
-
-    const communityCodeMap = new Map((commRes.data || []).map(c => [c.code, c.id]))
-    const communityBrandByCode = new Map((commRes.data || []).map(c => [c.code, c.brand]))
-    const existingRefSet = new Set(allBrandRefs.map(r => `${r.brand}:${r.jc_vendor_id}`))
-    const refVendorByBrandJc = new Map(allBrandRefs.map(r => [`${r.brand}:${r.jc_vendor_id}`, r.vendor_id]))
-    const aliasesToSave = new Map()
-
-    function rememberAlias(aliasName, vendorId) {
-      if (!aliasName || !vendorId) return
-      aliasesToSave.set(aliasName, vendorId)
-    }
-
-    // 3. Determine which vendors have active assignments
-    const activeVendors = parsed.vendors.map(v => ({
-      ...v,
-      filteredAssignments: v.assignments.filter(a => codes.has(a.communityCode))
-    })).filter(v => v.filteredAssignments.length > 0)
-
-    /** Brands inferred from assigned communities (vendors can span AW + SL with different JC IDs). */
-    function brandsForVendor(jcVendor) {
-      const brands = new Set()
-      for (const a of jcVendor.filteredAssignments || []) {
-        const commBrand = communityBrandByCode.get(a.communityCode)
-        if (commBrand) brands.add(commBrand)
-      }
-      if (brands.size === 0) brands.add(brandName)
-      return [...brands]
-    }
-
-    function resolveJCVendor(jcVendor) {
-      for (const refBrand of brandsForVendor(jcVendor)) {
-        const existingRefVendorId = refVendorByBrandJc.get(`${refBrand}:${jcVendor.jcVendorId}`)
-        if (existingRefVendorId) return existingRefVendorId
-      }
-
-      const withId = `${jcVendor.jcVendorId} ${jcVendor.name}`
-      for (const rawName of [withId, jcVendor.name]) {
-        const { vendor, match } = resolveVendorForImport(rawName, vendorList, aliasList, allBrandRefs)
-        if (vendor) {
-          if (match?.source !== 'exact' && match?.source !== 'exact_ci' && match?.source !== 'jc_id') {
-            rememberAlias(jcVendor.name, vendor.id)
-          }
-          return vendor.id
-        }
-      }
-      return null
-    }
-
-    // 4. Fetch default category for new vendors (vendors table requires category_id NOT NULL)
-    const { data: cats } = await supabase.from('vendor_categories').select('id, name').eq('name', 'Supplier').maybeSingle()
-    const defaultCategoryId = cats?.id || null
-
-    // 5. Batch insert new vendors (only when matcher + aliases can't find a match).
-    // A vendor someone deactivated stays out: it isn't recreated or assigned.
-    const { data: inactiveRows, error: inactiveErr } = await supabase.from('vendors').select('name').eq('is_active', false)
-    if (inactiveErr) throw new Error('Fetch inactive vendors failed: ' + inactiveErr.message)
-    const inactiveNames = new Set((inactiveRows || []).map(v => v.name))
-    const unresolvedNames = [...new Set(
-      activeVendors
-        .filter(v => !resolveJCVendor(v))
-        .map(v => v.name)
-    )]
-    const skippedInactive = unresolvedNames.filter(name => inactiveNames.has(name))
-    const newVendorNames = unresolvedNames.filter(name => !inactiveNames.has(name))
-    if (newVendorNames.length > 0) {
-      progress(`Inserting ${newVendorNames.length} new vendors...`)
-      console.log('[JC] Step 4: inserting vendors, defaultCategoryId =', defaultCategoryId)
-      const { data: inserted, error } = await supabase.from('vendors')
-        .insert(newVendorNames.map(name => ({
-          name, is_active: true, created_by: user?.id,
-          category_id: defaultCategoryId,
-        })))
-        .select('id, name')
-      console.log('[JC] Step 4 result:', inserted?.length, error)
-      if (error) throw new Error('Vendor insert failed: ' + error.message)
-      for (const v of (inserted || [])) vendorList.push(v)
-    }
-
-    // Remember name variants so the next import auto-matches
-    if (aliasesToSave.size > 0) {
-      progress(`Saving ${aliasesToSave.size} vendor aliases...`)
-      const { error: aliasErr } = await supabase.from('vendor_aliases').upsert(
-        [...aliasesToSave.entries()].map(([alias_name, vendor_id]) => ({
-          alias_name, vendor_id, created_by: user?.id,
-        })),
-        { onConflict: 'alias_name' }
-      )
-      if (aliasErr) console.warn('[JC] Alias save failed (non-fatal):', aliasErr.message)
-    }
-
-    function vendorIdFor(jcVendor) {
-      return resolveJCVendor(jcVendor) || vendorList.find(v => v.name === jcVendor.name)?.id
-    }
-
-    // 6. Batch insert new brand references (one per brand when vendor spans AW + SL)
-    const newRefs = []
-    for (const v of activeVendors) {
-      const vendorId = vendorIdFor(v)
-      if (!vendorId) continue
-      for (const refBrand of brandsForVendor(v)) {
-        const refKey = `${refBrand}:${v.jcVendorId}`
-        if (existingRefSet.has(refKey)) continue
-        existingRefSet.add(refKey)
-        newRefs.push({
-          vendor_id: vendorId,
-          brand: refBrand,
-          jc_vendor_id: v.jcVendorId,
-          jc_vendor_name: v.name,
-        })
-      }
-    }
-    if (newRefs.length > 0) {
-      progress(`Inserting ${newRefs.length} brand references...`)
-      const { error } = await supabase.from('vendor_brand_references').insert(newRefs)
-      if (error) throw new Error('Brand refs insert failed: ' + error.message)
-    }
-
-    // 7. Batch upsert community assignments in chunks of 500
-    const allAssignments = activeVendors.flatMap(v => {
-      const vendorId = vendorIdFor(v)
-      if (!vendorId) return []
-      return v.filteredAssignments
-        .filter(a => communityCodeMap.has(a.communityCode))
-        .map(a => ({
-          vendor_id: vendorId,
-          community_id: communityCodeMap.get(a.communityCode),
-          cost_code: a.costCode,
-          brand: communityBrandByCode.get(a.communityCode) || brandName,
-        }))
-    })
-    const CHUNK = 500
-    for (let i = 0; i < allAssignments.length; i += CHUNK) {
-      progress(`Upserting assignments ${i + 1}–${Math.min(i + CHUNK, allAssignments.length)} of ${allAssignments.length}...`)
-      const { error } = await supabase.from('vendor_community_assignments').upsert(
-        allAssignments.slice(i, i + CHUNK),
-        { onConflict: 'vendor_id,community_id,cost_code' }
-      )
-      if (error) throw new Error('Assignments upsert failed: ' + error.message)
-    }
-
-    progress('Logging activity...')
-    const importedVendors = activeVendors.filter(v => vendorIdFor(v)).length
-    const importedAssignments = allAssignments.length
-    if (skippedInactive.length) console.warn('[JC] Skipped deactivated vendors:', skippedInactive)
-
-    // Record in import history (JC imports previously skipped import_batches)
-    if (sourceFile && user?.id) {
-      progress('Saving import record...')
-      const storagePath = `${Date.now()}_${sourceFile.name}`
-      const { data: fileRecord } = await supabase.storage.from('uploads').upload(storagePath, sourceFile)
-      const { data: uploadedFile, error: uploadedFileErr } = await supabase.from('uploaded_files').insert({
-        original_filename: sourceFile.name,
-        storage_path: fileRecord?.path || storagePath,
-        file_type: 'other',
-        file_size_bytes: sourceFile.size,
-        mime_type: sourceFile.type,
-        uploaded_by: user.id,
-      }).select().single()
-      if (!uploadedFileErr && uploadedFile) {
-        await supabase.from('import_batches').insert({
-          uploaded_file_id: uploadedFile.id,
-          file_type: 'other',
-          status: 'approved',
-          column_mapping: { source: 'jc_vendor_report', brand: brandName, ...extraMapping },
-          row_count: importedAssignments,
-          valid_row_count: importedAssignments,
-          error_row_count: 0,
-          imported_by: user.id,
-          approved_by: user.id,
-          approved_at: new Date().toISOString(),
-        })
-      }
-    }
-
-    await logActivity('import_approved',
-      `Imported JC Vendor Report (${brandName}${extraMapping.erp_pull ? ', pulled from ERP' : ''}): ${importedVendors} vendors, ${activeCommunities.length} communities, ${importedAssignments} assignments`,
-      { brand: brandName, vendor_count: importedVendors, community_count: activeCommunities.length, assignment_count: importedAssignments }
-    )
-
-    return { vendors: importedVendors, communities: activeCommunities.length, assignments: importedAssignments, skippedInactive }
+  function importJCVendors(args) {
+    return importJCVendorsShared(importCtx(), args)
   }
 
   async function insertJCVendorReport() {
@@ -1027,70 +750,6 @@ export default function UploadsPage() {
       setImportError(err.message)
     } finally {
       setImporting(false)
-    }
-  }
-
-  async function insertScheduleRecords(batchId, rows, vendorMap) {
-    const records = rows.filter(r => r.vendor_name).map(r => {
-      const totalJobs = Number(r.total_jobs) || 0
-      const noShows = Number(r.no_shows) || 0
-      const adherence = totalJobs > 0 ? (totalJobs - noShows) / totalJobs : 1
-      return {
-        batch_id: batchId,
-        vendor_id: vendorMap.get(r.vendor_name) || null,
-        vendor_name_raw: r.vendor_name,
-        period_month: r.period_month || new Date().toISOString().slice(0, 8) + '01',
-        total_jobs: totalJobs, no_shows: noShows, adherence_pct: adherence,
-      }
-    })
-    if (records.length > 0) {
-      const { error } = await supabase.from('schedule_records').insert(records)
-      if (error) throw new Error('Schedule records insert failed: ' + error.message)
-    }
-  }
-
-  async function insertSafetyRecords(batchId, rows, vendorMap) {
-    const severityPoints = { equipment: 1, ppe: 2, near_miss: 5, first_aid: 10, recordable: 25, lost_time: 50 }
-    const records = rows.filter(r => r.vendor_name).map(r => {
-      const sev = (r.severity || '').toLowerCase().replace(/\s+/g, '_')
-      return {
-        batch_id: batchId,
-        vendor_id: vendorMap.get(r.vendor_name) || null,
-        vendor_name_raw: r.vendor_name,
-        incident_date: r.incident_date || null,
-        incident_type: r.incident_type || null,
-        severity: sev || 'ppe',
-        severity_points: severityPoints[sev] || 2,
-        record_date: r.incident_date || new Date().toISOString().slice(0, 10),
-      }
-    })
-    if (records.length > 0) {
-      const { error } = await supabase.from('safety_records').insert(records)
-      if (error) throw new Error('Safety records insert failed: ' + error.message)
-    }
-  }
-
-  async function insertReworkRecords(batchId, rows, vendorMap) {
-    const records = rows.filter(r => r.vendor_name).map(r => {
-      const cost = Math.abs(Number(String(r.cost).replace(/[$,()]/g, '').trim()) || 0)
-      let severity, penaltyPoints
-      if (cost <= 100) { severity = 'low'; penaltyPoints = 2 }
-      else if (cost <= 250) { severity = 'medium'; penaltyPoints = 5 }
-      else { severity = 'high'; penaltyPoints = 10 }
-      return {
-        batch_id: batchId,
-        vendor_id: vendorMap.get(r.vendor_name) || null,
-        vendor_name_raw: r.vendor_name,
-        rework_date: r.rework_date || null,
-        description: r.description || null,
-        cost, severity, penalty_points: penaltyPoints,
-        lot_or_address: r.lot_or_address || null,
-        record_date: r.rework_date || new Date().toISOString().slice(0, 10),
-      }
-    })
-    if (records.length > 0) {
-      const { error } = await supabase.from('rework_records').insert(records)
-      if (error) throw new Error('Rework records insert failed: ' + error.message)
     }
   }
 
@@ -1141,7 +800,7 @@ export default function UploadsPage() {
           <div className="flex items-center gap-2">
             {autopull.status === 'running' ? <Loader2 className="w-4 h-4 animate-spin" /> : <CloudDownload className="w-4 h-4" style={{ color: 'var(--g-accent)' }} />}
             <h3 className="font-medium">
-              Nightly pulls {autopull.status === 'running' ? 'running' : autopull.status === 'done' ? 'finished' : autopull.status === 'partial' ? 'finished with failures' : 'could not run'}
+              {autopull.title || 'Nightly pulls'} {autopull.status === 'running' ? 'running' : autopull.status === 'done' ? 'finished' : autopull.status === 'partial' ? 'finished with failures' : 'could not run'}
             </h3>
           </div>
           {autopull.error && <p className="text-xs text-red-600">{autopull.error}</p>}
@@ -1153,6 +812,44 @@ export default function UploadsPage() {
               {r.unmatched > 0 && <span className="text-amber-700"> ({r.unmatched} unmatched)</span>}
             </p>
           ))}
+        </div>
+      )}
+
+      {canUpload && (
+        <div className="glass-panel p-4 space-y-2 text-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              {refreshOpen ? <Loader2 className="w-4 h-4 animate-spin" /> : <CloudDownload className="w-4 h-4" style={{ color: 'var(--g-accent)' }} />}
+              <div>
+                <h3 className="font-medium">Refresh ERP &amp; HB NEXT data now</h3>
+                <p className="text-xs text-gray-500">Pulls schedule, rework, safety and JC vendor data for the current month instead of waiting for the midnight import.</p>
+              </div>
+            </div>
+            <button
+              onClick={requestRefresh}
+              disabled={refreshOpen || refreshRequesting}
+              className="glass-btn-primary flex items-center gap-2 px-4 py-2 disabled:opacity-50"
+            >
+              {refreshRequesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <CloudDownload className="w-4 h-4" />}
+              {refreshOpen ? 'Refresh in progress' : 'Refresh now'}
+            </button>
+          </div>
+          {refreshError && <p className="text-xs text-red-600">{refreshError}</p>}
+          {refreshReq && (
+            <p className={`text-xs ${['failed', 'partial'].includes(refreshReq.status) ? 'text-red-600' : 'text-gray-500'}`}>
+              {refreshReq.status === 'pending' && <>Queued {formatStamp(refreshReq.requested_at)}. The ResPlan PC picks it up within a few minutes{refreshStale ? ' — it seems to be off or offline; the refresh will run as soon as it is back' : ''}.</>}
+              {refreshReq.status === 'running' && <>Running since {formatStamp(refreshReq.started_at)}{refreshReq.step ? `: ${refreshReq.step}` : ''}. This can take 10–30 minutes.</>}
+              {refreshReq.status === 'done' && <><CheckCircle className="inline w-3 h-3 mr-1 text-green-600" />Last refreshed {formatStamp(refreshReq.finished_at)}: {refreshReq.result?.length || 0} pulls imported.</>}
+              {['partial', 'failed'].includes(refreshReq.status) && <>
+                <XCircle className="inline w-3 h-3 mr-1" />
+                Last refresh {formatStamp(refreshReq.finished_at)} {refreshReq.status === 'partial' ? 'finished with failures' : 'failed'}
+                {refreshReq.error ? `: ${refreshReq.error}` : ''}
+                {(refreshReq.result || []).filter(r => r.error).map((r, i) => (
+                  <span key={i} className="block">{FILE_TYPES.find(t => t.value === r.category)?.label} – {r.brand}{r.month ? ` – ${r.month}` : ''}: {r.error}</span>
+                ))}
+              </>}
+            </p>
+          )}
         </div>
       )}
 

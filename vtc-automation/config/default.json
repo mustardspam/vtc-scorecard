@@ -1,0 +1,19 @@
+{
+  "supabaseUrl": "https://jwsajxjpaapcpieutrdi.supabase.co",
+  "resplanUrl": "http://127.0.0.1:4870",
+  "pullTimeoutMinutes": 20,
+  "retry": { "attempts": 3, "baseDelayMs": 30000 },
+  "maxCatchUpDays": 62,
+  "retentionDays": 90,
+  "validation": {
+    "maxInvalidRowRatio": 0,
+    "rowCountDropThreshold": 0.5,
+    "minRowsForDropCheck": 10
+  },
+  "notify": {
+    "to": "me",
+    "onFailure": true,
+    "dailySummary": false
+  },
+  "mcp": { "cacheHours": 24, "maxRows": 500 }
+}
