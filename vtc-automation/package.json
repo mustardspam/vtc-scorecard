@@ -1,0 +1,22 @@
+{
+  "name": "vtc-automation",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Nightly ERP / HB NEXT imports into the VTC Scorecard (via ResPlan), plus read-only MCP servers",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "nightly": "node vtc-automation/jobs/nightly_import.js",
+    "credentials": "node vtc-automation/jobs/set_credentials.js",
+    "test": "node --test vtc-automation/tests/*.test.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.0",
+    "@napi-rs/keyring": "^1.1.0",
+    "@supabase/supabase-js": "^2.105.3",
+    "string-similarity-js": "^2.1.4",
+    "zod": "^3.25.0"
+  }
+}
